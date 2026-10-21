@@ -2,12 +2,13 @@
 
 ERP for a UG sump / bio-septic tank / precast concrete manufacturer. See `CLAUDE.md` for the full scope and build phases.
 
-**Current status: Phases 1–3 and the web part of Phase 5 are done.** The Phase 4 mobile app and the HR modules are not started.
+**Current status: Phases 1–3, the web part of Phase 5, and the web HR pieces are done.** The Phase 4 mobile app (GPS attendance, location check-in, dialer) is not started.
 
 - **Phase 1:** DB schema for users, roles and permission tags, JWT auth (login/logout), the RBAC guard, and admin endpoints for assigning tags.
 - **Phase 2:** leads (#1), sales follow-ups (#2), closed/won leads (#3), and the follow-up calendar (#17).
 - **Phase 3:** sales orders and revenue per employee (#7), customer payments and overdue balances (#13), vendors, purchases and payables (#14), and the production stock dashboard (#6).
 - **Phase 5 (web):** installation scheduling (#12), post-install service jobs (#4), service follow-ups (#5), and site visits with admin-managed tags (#18).
+- **HR (web):** leave application and approval (#19), company holidays and the team leave calendar (#16), the Loss of Pay monthly summary (#19), and allowances (#8).
 
 ```
 /api   NestJS 12 + Prisma 7 + PostgreSQL   (port 4000)
@@ -27,7 +28,7 @@ cd api
 cp .env.example .env        # set DATABASE_URL, JWT_SECRET, SEED_USER_PASSWORD
 npm install                 # also generates the Prisma client
 npm run db:deploy           # apply migrations
-npm run db:seed             # roles, tags, demo users, sample leads, orders, vendors, stock, installations, service, site visits
+npm run db:seed             # roles, tags, demo users, and sample data for every module
 npm run start:dev           # http://localhost:4000/api/v1  (Swagger: http://localhost:4000/api/docs)
 
 # 3. Web (new terminal)
@@ -47,6 +48,8 @@ npm run dev                 # http://localhost:3000
 | telecaller         | telecaller@precon.local   | none yet (dialer comes in Phase 4) |
 | factory_supervisor | supervisor@precon.local (Farid) | `stock.*`, `installations.read`, `installations.write`, `sitevisit.read`, `sitevisit.write` |
 | factory_supervisor | tech@precon.local (Ravi, service technician) | the supervisor's tags **plus `service.read` and `service.write` granted to him alone** (a per-user override) |
+
+Every role also gets the employee HR tags: `leave.apply`, `leave.read`, `allowances.read` and `allowances.claim`.
 
 The seed also adds 10 sample leads. Suresh has 5, Priya has 4, and 1 is unassigned. They cover every source, product and status. There are 14 follow-ups, dated relative to the day you seed, so some are always overdue, some due today and some upcoming. The seed adds sample leads only when the leads table is empty. Run `npm run db:reset` to start over.
 
@@ -84,6 +87,21 @@ The service seed adds the following.
 - **5 site-visit tags:** survey, measurement, complaint-visit, installation-check and soil-test.
 - **4 site visits** that use the tags.
 
+The HR seed adds the following.
+
+- **12 company holidays for 2026.** This is a *sample* Tamil Nadu list; check it against the official one.
+- **9 leave applications** covering every status:
+  - Suresh: approved casual (last month), approved sick (this month), and pending casual (next week).
+  - Priya: approved **unpaid** (2 days, LOP) and a rejected casual request with a reason.
+  - Tara: pending casual.
+  - Farid: approved casual coming up, and a cancelled sick request.
+  - Ravi: approved **unpaid** (1 day, LOP).
+- **2 absences without approval**, for Tara and Ravi. In October: Priya has 2 LOP days, Ravi 2 and Tara 1.
+- **9 allowance entries:**
+  - Approved, pending and rejected ones.
+  - Some linked to Ravi's and Farid's site visits or installations.
+  - One of Priya's is from last month.
+
 ## How access control works
 
 - Each user has one **role**. Each role has default **permission tags**, e.g. `users.read`.
@@ -93,6 +111,7 @@ The service seed adds the following.
   - `@Public()`: no login needed
   - `@AuthenticatedOnly()`: any logged-in active user
   - `@RequirePermissions('tag', ...)`: needs all the listed tags. Checks tags, never role names.
+  - `@RequireAnyPermission('tag', ...)`: needs at least one of the listed tags (e.g. an employee picker used by both approvers and allowance managers).
 - Tags are read from the DB on every request, so admin changes take effect immediately.
 - Logout revokes the token's `jti`. That token is rejected from then on.
 - The tag catalog lives in `api/src/access-control/permission-catalog.ts`. To add a module, add its tags there, re-run the seed, and decorate its endpoints.
@@ -145,6 +164,49 @@ The service seed adds the following.
 - Admin holds all of these.
 - The factory supervisor holds the installation and site-visit tags.
 - Salespeople hold `service.read`, so they see their own customers' jobs but can't change them.
+
+### HR tags
+
+| Tag | Allows |
+|-----|--------|
+| `leave.apply` | Apply for and withdraw your own leave; see your own history, balance and monthly LOP |
+| `leave.read` | Team calendar (holidays and who is on approved leave) and the holiday list |
+| `leave.approve` | See every application, approve or reject (never your own), record absences without approval, and see everyone's LOP summary |
+| `holidays.manage` | Add, edit and remove company holidays |
+| `allowances.read` | See your own allowances and monthly total |
+| `allowances.claim` | Submit your own allowance claims (pending until approved) |
+| `allowances.manage` | See everyone's allowances, add for anyone (approved immediately), and approve or reject claims |
+
+- Every employee gets `leave.apply`, `leave.read`, `allowances.read` and `allowances.claim`.
+- Admin gets all the HR tags.
+- The leave type is hidden on the team calendar except from approvers and the person themselves, so sick leave stays private.
+
+## HR rules (leave, holidays, LOP, allowances)
+
+The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. They are deliberately simple: the output feeds payroll later, but this is not payroll.
+
+- **Working days:** every day except the weekly off and company holidays.
+  - The weekly off defaults to Sunday. Change it with `WEEKLY_OFF_DAYS`, e.g. `0,6` for a 5-day week.
+  - Leave and LOP **day counts are always computed from the dates**, never stored, so editing a holiday updates every number.
+- **Leave:** the types are casual, sick and unpaid. Status runs `PENDING → APPROVED` or `REJECTED`, and the employee can `CANCEL` (withdraw) it.
+  - Paid leave per calendar year: **12 casual and 6 sick**. Unused days don't carry over, and there's no pro-rating for joining date.
+  - Applying for casual or sick leave is refused if it exceeds what's left after approved and pending leave. The error suggests applying the extra days as unpaid.
+  - A date range that's all holidays or weekly offs is refused, as is one that overlaps your own pending or approved leave.
+  - One application covers at most 60 calendar days.
+  - Withdrawing works while pending, or while approved but not yet started.
+  - Approvers can't decide their own leave, and rejecting needs a reason.
+- **LOP, per employee per month (working days only):**
+  - **Paid leave** = approved casual and sick days.
+  - **LOP** = approved **unpaid** leave days + **absences without approval**. An absence is a working day an approver recorded as away without approved leave. It's only counted if no approved leave covers that day.
+  - **Present-equivalent** = working days − paid leave − LOP. These are days assumed worked, since there's no attendance data yet.
+  - **Paid days** = working days − LOP. This is what payroll will use.
+  - Pending leave counts as neither. It's reported separately so it can be decided before the month closes.
+  - Rejected or cancelled leave counts as nothing. If the person stayed away anyway, record an absence.
+  - Absences can only be recorded for today or earlier, on a working day, once per person per day. When GPS attendance arrives with the mobile app, it can create these automatically.
+- **Allowances:** the types are travel, food, site and other. Each records an amount, a date (not in the future), a description, and optionally a linked site visit or installation. Without `allowances.manage`, you can only link your own visits or installations assigned to you.
+  - Employee claims start **pending**. Entries added by an `allowances.manage` holder are **approved** immediately.
+  - Rejecting needs a reason. Employees can withdraw their own pending claims.
+  - The monthly total counts **approved** entries only. Pending amounts are shown separately.
 
 ## Service and installation rules
 
@@ -264,6 +326,32 @@ The service seed adds the following.
 | POST   | `/site-visit-tags`       | `sitevisit.manage_tags` | `{name, description?, color?}`. The name is lowercased and hyphenated |
 | PATCH  | `/site-visit-tags/:id`   | `sitevisit.manage_tags` | `{name?, description?, color?, isActive?}`. `isActive: false` retires the tag |
 | DELETE | `/site-visit-tags/:id`   | `sitevisit.manage_tags` | Delete an unused tag (409 if in use) |
+| GET    | `/leave/mine`            | `leave.apply`          | Your applications for a year (`year=`), each with `days` (working days) |
+| GET    | `/leave/balance`         | `leave.apply`          | Casual and sick entitlement, taken, pending, remaining, available, and unpaid days. `userId=` needs `leave.approve` |
+| GET    | `/leave/lop/mine`        | `leave.apply`          | Your LOP summary for `month=YYYY-MM` |
+| GET    | `/leave/calendar`        | `leave.read`           | `from`/`to` (at most about 2 months): holidays and approved leave (plus pending for approvers) |
+| POST   | `/leave`                 | `leave.apply`          | Apply: `{type, startDate, endDate, reason}` |
+| POST   | `/leave/:id/cancel`      | `leave.apply`          | Withdraw your own (pending, or approved and not started) |
+| GET    | `/leave/applications`    | `leave.approve`        | Everyone's, pending first. Filters: `status`, `userId`, `from`/`to` |
+| POST   | `/leave/:id/approve`     | `leave.approve`        | `{note?}` (not your own) |
+| POST   | `/leave/:id/reject`      | `leave.approve`        | `{note}` (required) |
+| GET    | `/holidays`              | `leave.read`           | Holidays for `year=` |
+| GET    | `/holidays/upcoming`     | `leave.read`           | Next 3 holidays |
+| POST   | `/holidays`              | `holidays.manage`      | `{date, name}` |
+| PATCH  | `/holidays/:id`          | `holidays.manage`      | `{date?, name?}` |
+| DELETE | `/holidays/:id`          | `holidays.manage`      | Remove a holiday |
+| GET    | `/lop/summary`           | `leave.approve`        | `month=YYYY-MM` (`userId=` optional): per-employee working, paid leave, unpaid, absent, LOP, present-equivalent, paid days, pending, and LOP dates |
+| GET    | `/lop/absences`          | `leave.approve`        | Absences recorded in a month |
+| POST   | `/lop/absences`          | `leave.approve`        | `{userId, date, note?}` |
+| DELETE | `/lop/absences/:id`      | `leave.approve`        | Remove an absence recorded by mistake |
+| GET    | `/allowances`            | `allowances.read`      | Yours, or everyone's with `allowances.manage`. Filters: `month`, `userId`, `status` |
+| GET    | `/allowances/summary`    | `allowances.read`      | `month=`: approved and pending totals per employee, approved by type |
+| GET    | `/allowances/linkable`   | `allowances.claim` or `allowances.manage` | Recent site visits and installations the allowance can link to (`userId=` needs manage) |
+| POST   | `/allowances`            | `allowances.claim` or `allowances.manage` | `{type, amount, date, description, siteVisitId?, installationId?, userId?}` |
+| POST   | `/allowances/:id/approve` | `allowances.manage`   | Approve a pending claim |
+| POST   | `/allowances/:id/reject` | `allowances.manage`    | `{note}` (required) |
+| DELETE | `/allowances/:id`        | `allowances.claim` or `allowances.manage` | Withdraw your pending claim, or remove any entry (manage) |
+| GET    | `/hr/employees`          | `leave.approve` or `allowances.manage` | Active employees, for pickers |
 
 Interactive docs: `http://localhost:4000/api/docs`.
 
@@ -293,6 +381,12 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/site-visits` | `sitevisit.read` | Visits with tag filter chips. "Record visit" needs `sitevisit.write` |
 | `/site-visits/:id` | `sitevisit.read` | Visit details and edit |
 | `/site-visits/tags` | `sitevisit.manage_tags` | Manage the tag list: add, edit, retire or restore, delete if unused |
+| `/leave` | `leave.apply` | My leave: balance cards, this month's LOP, apply, history with withdraw |
+| `/leave/calendar` | `leave.read` | Month calendar of holidays (amber) and who is on leave. Click a day for details |
+| `/holidays` | `leave.read` | Holiday list by year. Add, edit and remove need `holidays.manage` |
+| `/allowances` | `allowances.read` | Month picker, totals (per employee for managers), entries, claim or add form, approve or reject |
+| `/leave/approvals` | `leave.approve` | Pending first. Approve, or reject with a reason |
+| `/hr/lop` | `leave.approve` | Monthly LOP table (click an LOP number to see its dates), "How this is calculated", and record an absence |
 
 The dashboard also shows these cards:
 
@@ -301,6 +395,8 @@ The dashboard also shows these cards:
 - **Stock**, with low items flagged (`stock.read`)
 - **Installations**: next 7 days, in progress, late, and the next few (`installations.read`)
 - **Service**: open, in progress, urgent, and overdue or upcoming service follow-ups, within your scope (`service.read`)
+- **My leave & allowances**: days left, pending requests, next holiday, allowances this month (`leave.apply`)
+- **HR**: leave and allowance claims to approve, LOP this month, who is off today (`leave.approve` / `allowances.manage`)
 
 ## Useful scripts (in `/api`)
 

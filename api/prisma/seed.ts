@@ -1,7 +1,7 @@
 /**
  * Seeds roles, permission tags, demo users (one per role, two salespeople),
  * sample CRM leads with follow-ups, finance/stock data, and installations,
- * service jobs and site visits.
+ * service jobs, site visits, and HR (holidays, leave, absences, allowances).
  * Safe to re-run: it syncs roles/tags to the catalog, only creates demo users
  * that don't exist yet (existing passwords are left alone), and only adds
  * sample leads when the leads table is empty.
@@ -21,6 +21,7 @@ import {
 import { seedSampleLeads } from './seed-crm.js';
 import { seedFinanceAndStock } from './seed-finance.js';
 import { seedServiceAndInstallations } from './seed-service.js';
+import { seedHr } from './seed-hr.js';
 
 const DEMO_USERS: { email: string; fullName: string; phone: string; role: RoleKey }[] = [
   { email: 'admin@precon.local', fullName: 'Asha Admin', phone: '9000000001', role: ROLES.ADMIN },
@@ -107,6 +108,9 @@ async function main() {
 
     // 6. Sample installations, service jobs and site visits
     await seedServiceAndInstallations(prisma);
+
+    // 7. Sample HR data: holidays, leave, absences, allowances
+    await seedHr(prisma);
   } finally {
     await prisma.$disconnect();
   }

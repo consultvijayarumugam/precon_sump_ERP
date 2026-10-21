@@ -1,10 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { useAuth } from "@/components/auth-provider";
 import { Card, ErrorText, Stat } from "@/components/ui";
 import { dayKey } from "@/lib/crm";
 import { formatDateOnly, formatINR, Product } from "@/lib/finance";
+import {
+  Allowance,
+  AllowanceSummary,
+  currentMonth,
+  Holiday,
+  LeaveApplication,
+  LeaveBalance,
+  LopSummary,
+  TeamCalendar,
+} from "@/lib/hr";
 import { Installation } from "@/lib/service";
+import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
 
 interface FinanceSummary {
@@ -162,6 +174,91 @@ export function ServiceCard({ title }: { title: string }) {
           </Link>
         </div>
       )}
+    </Card>
+  );
+}
+
+/** The employee's own HR picture (leave.apply): balance, pending, next holiday, allowances. */
+export function MyHrCard() {
+  const { user, can } = useAuth();
+  const month = currentMonth();
+  const balance = useApi<LeaveBalance>("/leave/balance");
+  const mine = useApi<LeaveApplication[]>("/leave/mine");
+  const holidays = useApi<Holiday[]>(can(TAGS.LEAVE_READ) ? "/holidays/upcoming" : null);
+  const allowances = useApi<AllowanceSummary>(can(TAGS.ALLOWANCES_READ) ? `/allowances/summary?month=${month}` : null);
+  const myAllowance = allowances.data?.rows.find((r) => r.employee.id === user.id);
+  const pending = mine.data?.filter((l) => l.status === "PENDING").length ?? 0;
+
+  return (
+    <Card title="My leave & allowances" href="/leave">
+      <ErrorText error={balance.error ?? mine.error} />
+      <div className="grid grid-cols-3 gap-4">
+        {balance.data?.paid.map((p) => (
+          <Stat key={p.type} label={`${p.type === "CASUAL" ? "Casual" : "Sick"} days left`} value={p.remaining} />
+        ))}
+        <Stat label="Leave requests pending" value={pending} />
+      </div>
+      <div className="mt-3 space-y-1 text-sm">
+        {holidays.data?.[0] && (
+          <p>
+            Next holiday: <strong>{holidays.data[0].name}</strong>, {formatDateOnly(holidays.data[0].date)}
+          </p>
+        )}
+        {allowances.data && (
+          <p>
+            <Link href="/allowances" className="underline">
+              Allowances this month
+            </Link>
+            : {formatINR(myAllowance?.approvedTotal ?? 0)} approved
+            {Number(myAllowance?.pendingTotal ?? 0) > 0 && `, ${formatINR(myAllowance!.pendingTotal)} pending`}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** HR to-dos for approvers/managers: pending leave and claims, who is off today, LOP this month. */
+export function HrAdminCard() {
+  const { can } = useAuth();
+  const month = currentMonth();
+  const today = dayKey(new Date());
+  const approver = can(TAGS.LEAVE_APPROVE);
+  const pendingLeave = useApi<LeaveApplication[]>(approver ? "/leave/applications?status=PENDING" : null);
+  const lop = useApi<LopSummary>(approver ? `/lop/summary?month=${month}` : null);
+  const offToday = useApi<TeamCalendar>(can(TAGS.LEAVE_READ) ? `/leave/calendar?from=${today}&to=${today}` : null);
+  const claims = useApi<Allowance[]>(can(TAGS.ALLOWANCES_MANAGE) ? "/allowances?status=PENDING" : null);
+  const off = offToday.data?.leave.filter((l) => l.status === "APPROVED" && l.workingDates.includes(today)) ?? [];
+
+  return (
+    <Card title="HR" href={approver ? "/leave/approvals" : "/allowances"}>
+      <div className="grid grid-cols-3 gap-4">
+        {pendingLeave.data && (
+          <Link href="/leave/approvals">
+            <Stat label="Leave to approve" value={pendingLeave.data.length} tone={pendingLeave.data.length > 0 ? "alert" : undefined} />
+          </Link>
+        )}
+        {claims.data && (
+          <Link href="/allowances">
+            <Stat label="Allowance claims to approve" value={claims.data.length} tone={claims.data.length > 0 ? "alert" : undefined} />
+          </Link>
+        )}
+        {lop.data && (
+          <Link href="/hr/lop">
+            <Stat label={`LOP days this month (${lop.data.totals.employeesWithLop} people)`} value={lop.data.totals.lopDays} />
+          </Link>
+        )}
+      </div>
+      <p className="mt-3 text-sm">
+        Off today:{" "}
+        {offToday.data?.holidays[0] ? (
+          <strong>Company holiday ({offToday.data.holidays[0].name})</strong>
+        ) : off.length === 0 ? (
+          <span className="text-neutral-500">nobody</span>
+        ) : (
+          off.map((l) => l.user.fullName).join(", ")
+        )}
+      </p>
     </Card>
   );
 }

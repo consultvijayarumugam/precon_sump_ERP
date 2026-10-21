@@ -73,35 +73,42 @@ model UserPermission {
 }
 
 model User {
-  id                   String            @id @default(uuid()) @db.Uuid
-  email                String            @unique
-  passwordHash         String            @map("password_hash")
-  fullName             String            @map("full_name")
+  id                   String             @id @default(uuid()) @db.Uuid
+  email                String             @unique
+  passwordHash         String             @map("password_hash")
+  fullName             String             @map("full_name")
   phone                String?
-  isActive             Boolean           @default(true) @map("is_active")
-  roleId               String            @map("role_id") @db.Uuid
-  role                 Role              @relation(fields: [roleId], references: [id])
+  isActive             Boolean            @default(true) @map("is_active")
+  roleId               String             @map("role_id") @db.Uuid
+  role                 Role               @relation(fields: [roleId], references: [id])
   permissionOverrides  UserPermission[]
   revokedTokens        RevokedToken[]
-  assignedLeads        Lead[]            @relation("LeadAssignee")
-  createdLeads         Lead[]            @relation("LeadCreator")
-  createdFollowUps     FollowUp[]        @relation("FollowUpCreator")
-  salesOrders          SalesOrder[]      @relation("OrderSalesperson")
-  createdSalesOrders   SalesOrder[]      @relation("OrderCreator")
-  recordedPayments     Payment[]         @relation("PaymentRecorder")
-  createdPurchases     Purchase[]        @relation("PurchaseCreator")
-  vendorPayments       VendorPayment[]   @relation("VendorPaymentRecorder")
-  stockMovements       StockMovement[]   @relation("StockMovementCreator")
-  installations        Installation[]    @relation("InstallationAssignee")
-  createdInstallations Installation[]    @relation("InstallationCreator")
-  serviceJobs          ServiceJob[]      @relation("ServiceJobAssignee")
-  createdServiceJobs   ServiceJob[]      @relation("ServiceJobCreator")
-  serviceFollowUps     ServiceFollowUp[] @relation("ServiceFollowUpCreator")
-  siteVisits           SiteVisit[]       @relation("SiteVisitPerson")
-  createdSiteVisits    SiteVisit[]       @relation("SiteVisitCreator")
-  lastLoginAt          DateTime?         @map("last_login_at")
-  createdAt            DateTime          @default(now()) @map("created_at")
-  updatedAt            DateTime          @updatedAt @map("updated_at")
+  assignedLeads        Lead[]             @relation("LeadAssignee")
+  createdLeads         Lead[]             @relation("LeadCreator")
+  createdFollowUps     FollowUp[]         @relation("FollowUpCreator")
+  salesOrders          SalesOrder[]       @relation("OrderSalesperson")
+  createdSalesOrders   SalesOrder[]       @relation("OrderCreator")
+  recordedPayments     Payment[]          @relation("PaymentRecorder")
+  createdPurchases     Purchase[]         @relation("PurchaseCreator")
+  vendorPayments       VendorPayment[]    @relation("VendorPaymentRecorder")
+  stockMovements       StockMovement[]    @relation("StockMovementCreator")
+  installations        Installation[]     @relation("InstallationAssignee")
+  createdInstallations Installation[]     @relation("InstallationCreator")
+  serviceJobs          ServiceJob[]       @relation("ServiceJobAssignee")
+  createdServiceJobs   ServiceJob[]       @relation("ServiceJobCreator")
+  serviceFollowUps     ServiceFollowUp[]  @relation("ServiceFollowUpCreator")
+  siteVisits           SiteVisit[]        @relation("SiteVisitPerson")
+  createdSiteVisits    SiteVisit[]        @relation("SiteVisitCreator")
+  leaveApplications    LeaveApplication[] @relation("LeaveApplicant")
+  leaveDecisions       LeaveApplication[] @relation("LeaveDecider")
+  absences             Absence[]          @relation("AbsentEmployee")
+  recordedAbsences     Absence[]          @relation("AbsenceRecorder")
+  allowances           Allowance[]        @relation("AllowanceEmployee")
+  submittedAllowances  Allowance[]        @relation("AllowanceSubmitter")
+  decidedAllowances    Allowance[]        @relation("AllowanceDecider")
+  lastLoginAt          DateTime?          @map("last_login_at")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
 
   @@index([roleId])
   @@map("users")
@@ -412,6 +419,7 @@ model Installation {
   createdBy       User               @relation("InstallationCreator", fields: [createdById], references: [id])
   serviceJobs     ServiceJob[]
   siteVisits      SiteVisit[]
+  allowances      Allowance[]
   createdAt       DateTime           @default(now()) @map("created_at")
   updatedAt       DateTime           @updatedAt @map("updated_at")
 
@@ -519,6 +527,7 @@ model SiteVisit {
   installationId String?        @map("installation_id") @db.Uuid
   installation   Installation?  @relation(fields: [installationId], references: [id])
   tags           SiteVisitTag[]
+  allowances     Allowance[]
   createdById    String         @map("created_by_id") @db.Uuid
   createdBy      User           @relation("SiteVisitCreator", fields: [createdById], references: [id])
   createdAt      DateTime       @default(now()) @map("created_at")
@@ -526,4 +535,113 @@ model SiteVisit {
 
   @@index([visitDate])
   @@map("site_visits")
+}
+
+// ---------------------------------------------------------------------------
+// HR (web): leave (#19), holidays + team calendar (#16), LOP (#19),
+// allowances (#8). Attendance/GPS comes later with the mobile app.
+// Leave day counts are always computed from the dates (working days only:
+// not a weekly off, not a company holiday), never stored, so editing the
+// holiday list keeps every number consistent.
+// ---------------------------------------------------------------------------
+
+enum LeaveType {
+  CASUAL
+  SICK
+  UNPAID // approved, but every day is Loss of Pay
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED // withdrawn by the employee
+}
+
+model LeaveApplication {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @map("user_id") @db.Uuid
+  user         User        @relation("LeaveApplicant", fields: [userId], references: [id])
+  type         LeaveType
+  startDate    DateTime    @map("start_date") @db.Date
+  endDate      DateTime    @map("end_date") @db.Date // inclusive
+  reason       String
+  status       LeaveStatus @default(PENDING)
+  decidedById  String?     @map("decided_by_id") @db.Uuid
+  decidedBy    User?       @relation("LeaveDecider", fields: [decidedById], references: [id])
+  decidedAt    DateTime?   @map("decided_at")
+  decisionNote String?     @map("decision_note")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId, startDate])
+  @@index([status, startDate])
+  @@map("leave_applications")
+}
+
+model Holiday {
+  id        String   @id @default(uuid()) @db.Uuid
+  date      DateTime @unique @db.Date
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("holidays")
+}
+
+// A working day the employee was away without approved leave. Counted as LOP.
+// Recorded by an approver for now; the attendance module will create these later.
+model Absence {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  user         User     @relation("AbsentEmployee", fields: [userId], references: [id])
+  date         DateTime @db.Date
+  note         String?
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  recordedBy   User     @relation("AbsenceRecorder", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, date])
+  @@map("absences")
+}
+
+enum AllowanceType {
+  TRAVEL
+  FOOD
+  SITE
+  OTHER
+}
+
+enum AllowanceStatus {
+  PENDING // claimed by the employee, awaiting approval
+  APPROVED
+  REJECTED
+}
+
+model Allowance {
+  id             String          @id @default(uuid()) @db.Uuid
+  userId         String          @map("user_id") @db.Uuid // who it is paid to
+  user           User            @relation("AllowanceEmployee", fields: [userId], references: [id])
+  type           AllowanceType
+  amount         Decimal         @db.Decimal(10, 2)
+  date           DateTime        @db.Date
+  description    String
+  // Optional link to the work it was for.
+  siteVisitId    String?         @map("site_visit_id") @db.Uuid
+  siteVisit      SiteVisit?      @relation(fields: [siteVisitId], references: [id])
+  installationId String?         @map("installation_id") @db.Uuid
+  installation   Installation?   @relation(fields: [installationId], references: [id])
+  status         AllowanceStatus @default(PENDING)
+  submittedById  String          @map("submitted_by_id") @db.Uuid
+  submittedBy    User            @relation("AllowanceSubmitter", fields: [submittedById], references: [id])
+  decidedById    String?         @map("decided_by_id") @db.Uuid
+  decidedBy      User?           @relation("AllowanceDecider", fields: [decidedById], references: [id])
+  decidedAt      DateTime?       @map("decided_at")
+  decisionNote   String?         @map("decision_note")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  @@index([userId, date])
+  @@index([status])
+  @@map("allowances")
 }

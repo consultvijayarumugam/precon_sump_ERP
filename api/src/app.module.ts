@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { CrmModule } from './crm/crm.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { HealthController } from './health.controller.js';
+import { HrModule } from './hr/hr.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ServiceModule } from './service/service.module.js';
 import { StockModule } from './stock/stock.module.js';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module.js';
     FinanceModule,
     StockModule,
     ServiceModule,
+    HrModule,
   ],
   controllers: [HealthController],
 })

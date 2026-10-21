@@ -34,6 +34,13 @@ export const PERMISSIONS = {
   SITEVISIT_READ: 'sitevisit.read',
   SITEVISIT_WRITE: 'sitevisit.write',
   SITEVISIT_MANAGE_TAGS: 'sitevisit.manage_tags',
+  LEAVE_APPLY: 'leave.apply',
+  LEAVE_READ: 'leave.read',
+  LEAVE_APPROVE: 'leave.approve',
+  HOLIDAYS_MANAGE: 'holidays.manage',
+  ALLOWANCES_READ: 'allowances.read',
+  ALLOWANCES_CLAIM: 'allowances.claim',
+  ALLOWANCES_MANAGE: 'allowances.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -173,6 +180,49 @@ export const PERMISSION_DEFINITIONS: {
     module: 'service',
     description: 'Manage the list of site-visit tags',
   },
+  {
+    key: PERMISSIONS.LEAVE_APPLY,
+    module: 'hr',
+    description: 'Apply for your own leave; see your own leave history, balance and LOP',
+  },
+  {
+    key: PERMISSIONS.LEAVE_READ,
+    module: 'hr',
+    description: 'See the team calendar: company holidays and who is on approved leave',
+  },
+  {
+    key: PERMISSIONS.LEAVE_APPROVE,
+    module: 'hr',
+    description: "Approve/reject anyone's leave, record unapproved absences, see everyone's LOP summary",
+  },
+  {
+    key: PERMISSIONS.HOLIDAYS_MANAGE,
+    module: 'hr',
+    description: 'Add, edit and remove company holidays',
+  },
+  {
+    key: PERMISSIONS.ALLOWANCES_READ,
+    module: 'hr',
+    description: 'See your own allowances and monthly total',
+  },
+  {
+    key: PERMISSIONS.ALLOWANCES_CLAIM,
+    module: 'hr',
+    description: 'Submit your own allowance claims for approval',
+  },
+  {
+    key: PERMISSIONS.ALLOWANCES_MANAGE,
+    module: 'hr',
+    description: "See everyone's allowances, add them for anyone, approve/reject claims",
+  },
+];
+
+/** Tags every employee gets, whatever their role. */
+const EVERY_EMPLOYEE: PermissionKey[] = [
+  PERMISSIONS.LEAVE_APPLY,
+  PERMISSIONS.LEAVE_READ,
+  PERMISSIONS.ALLOWANCES_READ,
+  PERMISSIONS.ALLOWANCES_CLAIM,
 ];
 
 export const ROLES = {
@@ -207,13 +257,14 @@ export const ROLE_DEFINITIONS: {
       PERMISSIONS.SALES_READ,
       PERMISSIONS.SALES_WRITE,
       PERMISSIONS.SERVICE_READ,
+      ...EVERY_EMPLOYEE,
     ],
   },
   {
     key: ROLES.TELECALLER,
     name: 'Telecaller',
     description: 'Calls leads and logs follow-ups',
-    defaultPermissions: [],
+    defaultPermissions: [...EVERY_EMPLOYEE],
   },
   {
     key: ROLES.FACTORY_SUPERVISOR,
@@ -226,6 +277,7 @@ export const ROLE_DEFINITIONS: {
       PERMISSIONS.INSTALLATIONS_WRITE,
       PERMISSIONS.SITEVISIT_READ,
       PERMISSIONS.SITEVISIT_WRITE,
+      ...EVERY_EMPLOYEE,
     ],
   },
 ];

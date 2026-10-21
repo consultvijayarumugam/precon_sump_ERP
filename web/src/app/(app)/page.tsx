@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { FinanceCard, InstallationsCard, SalesCard, ServiceCard, StockCard } from "@/components/dashboard-cards";
+import {
+  FinanceCard,
+  HrAdminCard,
+  InstallationsCard,
+  MyHrCard,
+  SalesCard,
+  ServiceCard,
+  StockCard,
+} from "@/components/dashboard-cards";
 import { FollowUpItem } from "@/components/follow-up-item";
 import { ErrorText, LinkButton, StatusBadge } from "@/components/ui";
 import { queryString } from "@/lib/api";
@@ -72,7 +80,9 @@ export default function DashboardPage() {
         can(TAGS.SALES_READ) ||
         can(TAGS.STOCK_READ) ||
         can(TAGS.INSTALLATIONS_READ) ||
-        can(TAGS.SERVICE_READ)) && (
+        can(TAGS.SERVICE_READ) ||
+        can(TAGS.LEAVE_APPLY) ||
+        can(TAGS.ALLOWANCES_MANAGE)) && (
         <div className="grid gap-4 lg:grid-cols-2">
           {can(TAGS.FINANCE_DASHBOARD) && <FinanceCard />}
           {can(TAGS.SALES_READ) && !can(TAGS.FINANCE_DASHBOARD) && (
@@ -83,6 +93,8 @@ export default function DashboardPage() {
           {can(TAGS.SERVICE_READ) && (
             <ServiceCard title={can(TAGS.SERVICE_READ_ALL) ? "Service" : "Service: my customers and jobs"} />
           )}
+          {(can(TAGS.LEAVE_APPROVE) || can(TAGS.ALLOWANCES_MANAGE)) && <HrAdminCard />}
+          {can(TAGS.LEAVE_APPLY) && <MyHrCard />}
         </div>
       )}
 

@@ -24,4 +24,11 @@ export const TAGS = {
   SITEVISIT_READ: "sitevisit.read",
   SITEVISIT_WRITE: "sitevisit.write",
   SITEVISIT_MANAGE_TAGS: "sitevisit.manage_tags",
+  LEAVE_APPLY: "leave.apply",
+  LEAVE_READ: "leave.read",
+  LEAVE_APPROVE: "leave.approve",
+  HOLIDAYS_MANAGE: "holidays.manage",
+  ALLOWANCES_READ: "allowances.read",
+  ALLOWANCES_CLAIM: "allowances.claim",
+  ALLOWANCES_MANAGE: "allowances.manage",
 } as const;

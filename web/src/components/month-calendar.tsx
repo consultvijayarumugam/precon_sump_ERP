@@ -7,7 +7,7 @@ import { dayKey } from "@/lib/crm";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const monthTitle = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
 
-export type CalendarTone = "default" | "alert" | "done";
+export type CalendarTone = "default" | "alert" | "done" | "holiday";
 
 export interface CalendarEntry {
   id: string;
@@ -21,6 +21,7 @@ const TONE_CLASSES: Record<CalendarTone, string> = {
   default: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
   alert: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
   done: "bg-neutral-100 text-neutral-500 line-through dark:bg-neutral-900",
+  holiday: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
 };
 
 /** Monday-first grid for `month`, padded with days from the months either side. */
@@ -85,10 +86,11 @@ export function MonthCalendar({ month, onMonthChange, selectedDay, onSelectDay, 
           const key = dayKey(date);
           const items = byDay.get(key) ?? [];
           const inMonth = date.getMonth() === month.getMonth();
+          // Phone badge colour: red if anything is overdue, else the shared tone, else default.
           const countTone: CalendarTone = items.some((i) => i.tone === "alert")
             ? "alert"
-            : items.every((i) => i.tone === "done")
-              ? "done"
+            : items.length > 0 && items.every((i) => i.tone === items[0].tone)
+              ? items[0].tone
               : "default";
           return (
             <button

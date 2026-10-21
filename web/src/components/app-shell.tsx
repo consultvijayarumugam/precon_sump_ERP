@@ -35,6 +35,16 @@ const NAV_GROUPS: { items: { href: string; label: string; tag?: string }[] }[] =
       { href: "/site-visits", label: "Site visits", tag: TAGS.SITEVISIT_READ },
     ],
   },
+  {
+    items: [
+      { href: "/leave", label: "My leave", tag: TAGS.LEAVE_APPLY },
+      { href: "/leave/calendar", label: "Team calendar", tag: TAGS.LEAVE_READ },
+      { href: "/holidays", label: "Holidays", tag: TAGS.LEAVE_READ },
+      { href: "/allowances", label: "Allowances", tag: TAGS.ALLOWANCES_READ },
+      { href: "/leave/approvals", label: "Leave approvals", tag: TAGS.LEAVE_APPROVE },
+      { href: "/hr/lop", label: "LOP", tag: TAGS.LEAVE_APPROVE },
+    ],
+  },
 ];
 
 const ALL_HREFS = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href));

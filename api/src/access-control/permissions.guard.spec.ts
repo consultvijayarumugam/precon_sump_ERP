@@ -33,6 +33,13 @@ describe('PermissionsGuard', () => {
     );
   });
 
+  it('any-of policy allows with one matching tag and refuses with none', () => {
+    const ok = contextFor({ type: 'anyPermission', permissions: ['leave.approve', 'allowances.manage'] }, ['allowances.manage']);
+    expect(ok.guard.canActivate(ok.context)).toBe(true);
+    const no = contextFor({ type: 'anyPermission', permissions: ['leave.approve', 'allowances.manage'] }, ['leave.apply']);
+    expect(() => no.guard.canActivate(no.context)).toThrow(ForbiddenException);
+  });
+
   it('does not check tags on authenticated-only routes', () => {
     const { guard, context } = contextFor({ type: 'authenticated' }, []);
     expect(guard.canActivate(context)).toBe(true);

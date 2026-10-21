@@ -474,4 +474,140 @@ describe('Auth and RBAC (e2e)', () => {
       await http().delete(`/api/v1/site-visit-tags/${unused.body.id}`).set(as('admin')).expect(204);
     });
   });
+
+  describe('HR: leave, holidays, LOP, allowances', () => {
+    const tokens: Record<string, string> = {};
+    const ids: Record<string, string> = {};
+    const as = (who: string) => ({ Authorization: `Bearer ${tokens[who]}` });
+    const http = () => request(app.getHttpServer());
+    const today = new Date().toISOString().slice(0, 10);
+    // Far-future dates so nothing collides with seed data. 2027-03-01 is a Monday.
+    const MON = '2027-03-01';
+    const WED = '2027-03-03';
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      for (const [who, email] of Object.entries({
+        admin: 'admin@precon.local', sales: 'sales@precon.local', telecaller: 'telecaller@precon.local', tech: 'tech@precon.local',
+      })) {
+        const res = await login(email);
+        tokens[who] = res.body.accessToken;
+        ids[who] = res.body.user.id;
+      }
+    });
+
+    afterAll(async () => {
+      const db = await prisma();
+      await db.leaveApplication.deleteMany({ where: { reason: { startsWith: 'e2e' } } });
+      await db.absence.deleteMany({ where: { note: 'e2e' } });
+      await db.holiday.deleteMany({ where: { name: 'e2e holiday' } });
+      await db.allowance.deleteMany({ where: { description: { startsWith: 'e2e' } } });
+    });
+
+    it('apply: working days only, no overlaps, paid balance enforced', async () => {
+      const leave = await http().post('/api/v1/leave').set(as('sales'))
+        .send({ type: 'CASUAL', startDate: MON, endDate: WED, reason: 'e2e trip' }).expect(201);
+      expect(leave.body.days).toBe(3);
+      expect(leave.body.status).toBe('PENDING');
+      ids.leave = leave.body.id;
+
+      await http().post('/api/v1/leave').set(as('sales'))
+        .send({ type: 'SICK', startDate: WED, endDate: WED, reason: 'e2e overlap' }).expect(409);
+      await http().post('/api/v1/leave').set(as('sales'))
+        .send({ type: 'CASUAL', startDate: '2027-03-07', endDate: '2027-03-07', reason: 'e2e sunday' }).expect(400);
+      const tooMuch = await http().post('/api/v1/leave').set(as('sales'))
+        .send({ type: 'CASUAL', startDate: '2027-05-03', endDate: '2027-05-18', reason: 'e2e too long' }).expect(400);
+      expect(tooMuch.body.message).toMatch(/unpaid/);
+
+      // Adding a holiday inside the leave shrinks its day count (days are always computed).
+      await http().post('/api/v1/holidays').set(as('sales')).send({ date: '2027-03-02', name: 'e2e holiday' }).expect(403);
+      const h = await http().post('/api/v1/holidays').set(as('admin')).send({ date: '2027-03-02', name: 'e2e holiday' }).expect(201);
+      const mine = await http().get('/api/v1/leave/mine?year=2027').set(as('sales')).expect(200);
+      expect(mine.body.find((l: { id: string }) => l.id === ids.leave).days).toBe(2);
+      await http().delete(`/api/v1/holidays/${h.body.id}`).set(as('admin')).expect(204);
+    });
+
+    it('decide: only approvers, never your own, reject needs a reason; balance updates', async () => {
+      await http().post(`/api/v1/leave/${ids.leave}/approve`).set(as('sales')).send({}).expect(403);
+      await http().post(`/api/v1/leave/${ids.leave}/reject`).set(as('admin')).send({}).expect(400);
+      const ok = await http().post(`/api/v1/leave/${ids.leave}/approve`).set(as('admin')).send({ note: 'Enjoy' }).expect(200);
+      expect(ok.body.status).toBe('APPROVED');
+      await http().post(`/api/v1/leave/${ids.leave}/approve`).set(as('admin')).send({}).expect(400); // not pending
+
+      const bal = await http().get('/api/v1/leave/balance?year=2027').set(as('sales')).expect(200);
+      expect(bal.body.paid.find((p: { type: string }) => p.type === 'CASUAL').taken).toBe(3);
+
+      const own = await http().post('/api/v1/leave').set(as('admin'))
+        .send({ type: 'CASUAL', startDate: MON, endDate: MON, reason: 'e2e admin own' }).expect(201);
+      await http().post(`/api/v1/leave/${own.body.id}/approve`).set(as('admin')).send({}).expect(403);
+
+      // Approved but not started yet: the employee can still withdraw it.
+      const cancelled = await http().post(`/api/v1/leave/${ids.leave}/cancel`).set(as('sales')).expect(200);
+      expect(cancelled.body.status).toBe('CANCELLED');
+    });
+
+    it('LOP: approved unpaid leave and recorded absences count; paid leave does not', async () => {
+      const unpaid = await http().post('/api/v1/leave').set(as('telecaller'))
+        .send({ type: 'UNPAID', startDate: '2027-04-05', endDate: '2027-04-05', reason: 'e2e unpaid' }).expect(201);
+      await http().post(`/api/v1/leave/${unpaid.body.id}/approve`).set(as('admin')).send({}).expect(200);
+      const summary = await http().get(`/api/v1/lop/summary?month=2027-04&userId=${ids.telecaller}`).set(as('admin')).expect(200);
+      expect(summary.body.rows[0].unpaidLeaveDays).toBe(1);
+      expect(summary.body.rows[0].lopDays).toBe(1);
+      expect(summary.body.rows[0].paidDays).toBe(summary.body.workingDays - 1);
+      await http().get('/api/v1/lop/summary?month=2027-04').set(as('telecaller')).expect(403);
+      const mine = await http().get('/api/v1/leave/lop/mine?month=2027-04').set(as('telecaller')).expect(200);
+      expect(mine.body.row.lopDays).toBe(1);
+
+      // Absences: past working days only, not over approved leave, one per day.
+      await http().post('/api/v1/lop/absences').set(as('admin'))
+        .send({ userId: ids.telecaller, date: '2099-01-05', note: 'e2e' }).expect(400); // future
+      const lastSunday = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 7) % 7 || 7)); return d.toISOString().slice(0, 10); })();
+      await http().post('/api/v1/lop/absences').set(as('admin'))
+        .send({ userId: ids.telecaller, date: lastSunday, note: 'e2e' }).expect(400); // weekly off
+      await http().post('/api/v1/lop/absences').set(as('sales'))
+        .send({ userId: ids.telecaller, date: '2026-09-01', note: 'e2e' }).expect(403);
+      const absence = await http().post('/api/v1/lop/absences').set(as('admin'))
+        .send({ userId: ids.telecaller, date: '2026-09-01', note: 'e2e' }).expect(201);
+      await http().post('/api/v1/lop/absences').set(as('admin'))
+        .send({ userId: ids.telecaller, date: '2026-09-01', note: 'e2e' }).expect(409);
+      const sept = await http().get(`/api/v1/lop/summary?month=2026-09&userId=${ids.telecaller}`).set(as('admin')).expect(200);
+      expect(sept.body.rows[0].absentWithoutApproval).toBe(1);
+      await http().delete(`/api/v1/lop/absences/${absence.body.id}`).set(as('admin')).expect(204);
+    });
+
+    it('allowances: claims are pending until approved; scope and links enforced', async () => {
+      const claim = await http().post('/api/v1/allowances').set(as('sales'))
+        .send({ type: 'TRAVEL', amount: 250.5, date: today, description: 'e2e bus fare' }).expect(201);
+      expect(claim.body.status).toBe('PENDING');
+      expect(claim.body.amount).toBe('250.50');
+
+      await http().post('/api/v1/allowances').set(as('sales'))
+        .send({ userId: ids.tech, type: 'FOOD', amount: 10, date: today, description: 'e2e for someone else' }).expect(403);
+      const techVisit = await (await prisma()).siteVisit.findFirst({ where: { personId: ids.tech }, select: { id: true } });
+      await http().post('/api/v1/allowances').set(as('sales'))
+        .send({ type: 'SITE', amount: 10, date: today, description: 'e2e not my visit', siteVisitId: techVisit!.id }).expect(400);
+      await http().post('/api/v1/allowances').set(as('sales'))
+        .send({ type: 'FOOD', amount: 10, date: '2099-01-01', description: 'e2e future' }).expect(400);
+
+      await http().post(`/api/v1/allowances/${claim.body.id}/approve`).set(as('sales')).send({}).expect(403);
+      const approved = await http().post(`/api/v1/allowances/${claim.body.id}/approve`).set(as('admin')).send({}).expect(200);
+      expect(approved.body.status).toBe('APPROVED');
+      await http().delete(`/api/v1/allowances/${claim.body.id}`).set(as('sales')).expect(400); // no longer pending
+
+      const added = await http().post('/api/v1/allowances').set(as('admin'))
+        .send({ userId: ids.tech, type: 'SITE', amount: 300, date: today, description: 'e2e added by admin', siteVisitId: techVisit!.id })
+        .expect(201);
+      expect(added.body.status).toBe('APPROVED');
+      await http().post(`/api/v1/allowances/${added.body.id}/reject`).set(as('admin')).send({ note: 'x' }).expect(400); // not pending
+
+      const month = today.slice(0, 7);
+      const mine = await http().get(`/api/v1/allowances/summary?month=${month}`).set(as('sales')).expect(200);
+      expect(mine.body.rows.every((r: { employee: { id: string } }) => r.employee.id === ids.sales)).toBe(true);
+      await http().get(`/api/v1/allowances?userId=${ids.tech}`).set(as('sales')).expect(403);
+    });
+  });
 });

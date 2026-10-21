@@ -22,12 +22,19 @@ export class PermissionsGuard implements CanActivate {
       ACCESS_POLICY_KEY,
       [context.getHandler(), context.getClass()],
     );
-    if (policy?.type !== 'permissions') return true;
+    if (policy?.type !== 'permissions' && policy?.type !== 'anyPermission') return true;
 
     const user = context.switchToHttp().getRequest<{
       user?: AuthenticatedUser;
     }>().user;
     if (!user) throw new ForbiddenException();
+
+    if (policy.type === 'anyPermission') {
+      if (policy.permissions.some((p) => user.permissions.includes(p))) return true;
+      throw new ForbiddenException(
+        `Needs one of these permission tags: ${policy.permissions.join(', ')}`,
+      );
+    }
 
     const missing = policy.permissions.filter(
       (p) => !user.permissions.includes(p),

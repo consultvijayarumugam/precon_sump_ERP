@@ -16,7 +16,8 @@ export const ACCESS_POLICY_KEY = 'accessPolicy';
 export type AccessPolicy =
   | { type: 'public' }
   | { type: 'authenticated' }
-  | { type: 'permissions'; permissions: PermissionKey[] };
+  | { type: 'permissions'; permissions: PermissionKey[] }
+  | { type: 'anyPermission'; permissions: PermissionKey[] };
 
 /** No login needed (e.g. login itself, health check). */
 export const Public = () =>
@@ -32,6 +33,13 @@ export const AuthenticatedOnly = () =>
 export const RequirePermissions = (...permissions: PermissionKey[]) =>
   SetMetadata(ACCESS_POLICY_KEY, {
     type: 'permissions',
+    permissions,
+  } satisfies AccessPolicy);
+
+/** Logged-in user must hold AT LEAST ONE of the listed permission tags. */
+export const RequireAnyPermission = (...permissions: PermissionKey[]) =>
+  SetMetadata(ACCESS_POLICY_KEY, {
+    type: 'anyPermission',
     permissions,
   } satisfies AccessPolicy);
 

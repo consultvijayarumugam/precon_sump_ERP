@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ReactNode } from "react";
 import { LeadStatus, STATUS_LABELS } from "@/lib/crm";
 import { ORDER_STATUS_LABELS, OrderStatus } from "@/lib/finance";
+import { formatMonth, LEAVE_STATUS_LABELS, LeaveStatus, shiftMonth } from "@/lib/hr";
 import {
   INSTALLATION_STATUS_LABELS,
   InstallationStatus,
@@ -207,5 +208,36 @@ export function TagChip({
     </button>
   ) : (
     <span className={className}>{tag.name}</span>
+  );
+}
+
+const LEAVE_STATUS_STYLES: Record<LeaveStatus, string> = {
+  PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
+  APPROVED: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200",
+  REJECTED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
+  CANCELLED: "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+};
+
+/** Status badge for leave applications and allowance claims (same four words). */
+export function ApprovalBadge({ status }: { status: LeaveStatus }) {
+  return (
+    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${LEAVE_STATUS_STYLES[status]}`}>
+      {LEAVE_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+/** ← Month → picker for "YYYY-MM" values. */
+export function MonthPicker({ month, onChange }: { month: string; onChange: (month: string) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <button className={`${secondaryButtonClass} py-1`} onClick={() => onChange(shiftMonth(month, -1))} aria-label="Previous month">
+        ←
+      </button>
+      <span className="min-w-32 text-center font-medium">{formatMonth(month)}</span>
+      <button className={`${secondaryButtonClass} py-1`} onClick={() => onChange(shiftMonth(month, 1))} aria-label="Next month">
+        →
+      </button>
+    </div>
   );
 }
