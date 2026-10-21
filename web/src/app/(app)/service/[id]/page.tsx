@@ -14,6 +14,7 @@ import {
   NoAccess,
   PriorityBadge,
   secondaryButtonClass,
+  secondaryButtonCompactClass,
 } from "@/components/ui";
 import { apiPatch, apiPost } from "@/lib/api";
 import { formatDate, formatDateTime, toDateTimeLocal } from "@/lib/crm";
@@ -61,7 +62,7 @@ function EditJob({ job, onDone }: { job: ServiceJobDetail; onDone: (movedOut: bo
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Status">
           <select className={inputClass} value={status} onChange={(e) => setStatus(e.target.value as JobStatus)}>
@@ -142,7 +143,7 @@ function AddServiceFollowUp({ jobId, onAdded }: { jobId: string; onAdded: () => 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-2 rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto]">
         <input type="datetime-local" required className={inputClass} value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
         <input className={inputClass} placeholder="e.g. Call to confirm the leak has stopped" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -173,17 +174,17 @@ export default function ServiceJobPage() {
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/service" className="text-sm text-neutral-500 underline">
+        <Link href="/service" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Service jobs
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">
+          <h1 className="text-2xl font-semibold tracking-tight">
             {job.jobNumberLabel} · {job.customer.name}
           </h1>
           <JobStatusBadge status={job.status} />
           <PriorityBadge priority={job.priority} />
           {canWrite && !editing && (
-            <button className={secondaryButtonClass + " py-1"} onClick={() => setEditing(true)}>
+            <button className={secondaryButtonCompactClass} onClick={() => setEditing(true)}>
               Update
             </button>
           )}
@@ -200,7 +201,7 @@ export default function ServiceJobPage() {
           }}
         />
       ) : (
-        <section className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+        <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <div className="sm:col-span-2">
             <span className="text-neutral-500">{JOB_TYPE_LABELS[job.type]}: </span>
             {job.description}
@@ -215,7 +216,7 @@ export default function ServiceJobPage() {
           </div>
           <div>
             <span className="text-neutral-500">Phone: </span>
-            <a href={`tel:${job.customer.phone}`} className="underline">
+            <a href={`tel:${job.customer.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
               {job.customer.phone}
             </a>
           </div>
@@ -230,7 +231,7 @@ export default function ServiceJobPage() {
           <div>
             <span className="text-neutral-500">Installation: </span>
             {can(TAGS.INSTALLATIONS_READ) ? (
-              <Link href={`/installations/${job.installation.id}`} className="underline">
+              <Link href={`/installations/${job.installation.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
                 completed {job.installation.completedAt ? formatDate(job.installation.completedAt) : ""}
               </Link>
             ) : (

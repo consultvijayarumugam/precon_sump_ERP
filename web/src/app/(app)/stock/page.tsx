@@ -4,14 +4,15 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
-  buttonClass,
+  buttonSmClass,
   ErrorText,
   Field,
   inputClass,
   NoAccess,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonSmClass,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -78,13 +79,13 @@ function ProductCard({ product, onChange }: { product: Product; onChange: () => 
 
       {can(TAGS.STOCK_WRITE) && mode === "none" && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className={`${secondaryButtonClass} py-1 text-xs`} onClick={() => setMode("produce")}>
+          <button className={secondaryButtonSmClass} onClick={() => setMode("produce")}>
             + Add production
           </button>
-          <button className={`${secondaryButtonClass} py-1 text-xs`} onClick={() => setMode("adjust")}>
+          <button className={secondaryButtonSmClass} onClick={() => setMode("adjust")}>
             Adjust
           </button>
-          <button className={`${secondaryButtonClass} py-1 text-xs`} onClick={() => setMode("threshold")}>
+          <button className={secondaryButtonSmClass} onClick={() => setMode("threshold")}>
             Set alert level
           </button>
         </div>
@@ -121,7 +122,7 @@ function ProductCard({ product, onChange }: { product: Product; onChange: () => 
           )}
           <ErrorText error={error} />
           <div className="flex gap-2">
-            <button type="submit" className={`${buttonClass} py-1 text-xs`} disabled={busy}>
+            <button type="submit" className={buttonSmClass} disabled={busy}>
               Save
             </button>
             <button type="button" className="text-xs text-neutral-500" onClick={() => setMode("none")}>
@@ -163,7 +164,7 @@ export default function StockPage() {
 
       <section>
         <h2 className="mb-2 font-medium">Recent stock movements</h2>
-        <div className="overflow-x-auto">
+        <div className={tableWrapClass}>
           <table className={tableClass}>
             <thead className={theadClass}>
               <tr>
@@ -186,7 +187,7 @@ export default function StockPage() {
                   <td className={tdClass}>{REASON_LABELS[m.reason]}</td>
                   <td className={tdClass}>
                     {m.salesOrder && can(TAGS.SALES_READ) ? (
-                      <Link href={`/orders/${m.salesOrder.id}`} className="underline">
+                      <Link href={`/orders/${m.salesOrder.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
                         {m.note}
                       </Link>
                     ) : (

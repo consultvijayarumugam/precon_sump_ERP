@@ -68,11 +68,11 @@ export default function SiteVisitsPage() {
       {visits.data?.length === 0 && <p className="text-sm text-neutral-500">No site visits match.</p>}
       <ul className="space-y-2">
         {visits.data?.map((v) => (
-          <li key={v.id} className="rounded border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+          <li key={v.id} className="rounded-lg border border-neutral-200 bg-white shadow-xs p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{formatDateOnly(v.visitDate)}</span>
-                <Link href={`/site-visits/${v.id}`} className="font-medium underline">
+                <Link href={`/site-visits/${v.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                   {v.customerName}
                 </Link>
                 {v.tags.map((t) => (

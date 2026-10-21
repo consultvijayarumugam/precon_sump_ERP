@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { StatusBadge } from "@/components/ui";
+import {
+  overdueRowClass,
+  StatusBadge,
+  tableClass,
+  tableWrapClass,
+  tbodyClass,
+  tdClass,
+  thClass,
+  theadClass,
+} from "@/components/ui";
 import { formatDate, formatDateTime, LeadListItem, PRODUCT_LABELS, SOURCE_LABELS, TAGS } from "@/lib/crm";
 
 /** Lead list used by the Leads and Won pages. `variant="won"` shows the close date. */
@@ -15,46 +24,46 @@ export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; 
   if (leads.length === 0) return <p className="text-sm text-neutral-500">No leads match.</p>;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="border-b border-neutral-200 text-neutral-500 dark:border-neutral-800">
+    <div className={tableWrapClass}>
+      <table className={tableClass}>
+        <thead className={theadClass}>
           <tr>
-            <th className="py-2 pr-3 font-medium">Name</th>
-            <th className="py-2 pr-3 font-medium">Phone</th>
-            <th className="py-2 pr-3 font-medium">Product</th>
-            <th className="py-2 pr-3 font-medium">Source</th>
-            {variant === "all" && <th className="py-2 pr-3 font-medium">Status</th>}
-            {showOwner && <th className="py-2 pr-3 font-medium">Salesperson</th>}
-            <th className="py-2 font-medium">{variant === "won" ? "Won on" : "Next follow-up"}</th>
+            <th className={thClass}>Name</th>
+            <th className={thClass}>Phone</th>
+            <th className={thClass}>Product</th>
+            <th className={thClass}>Source</th>
+            {variant === "all" && <th className={thClass}>Status</th>}
+            {showOwner && <th className={thClass}>Salesperson</th>}
+            <th className={thClass}>{variant === "won" ? "Won on" : "Next follow-up"}</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
+        <tbody className={tbodyClass}>
           {leads.map((lead) => {
             const overdue = lead.nextFollowUpAt && new Date(lead.nextFollowUpAt).getTime() < now;
             return (
-              <tr key={lead.id}>
-                <td className="py-2 pr-3">
-                  <Link href={`/leads/${lead.id}`} className="font-medium underline">
+              <tr key={lead.id} className={overdue ? overdueRowClass : ""}>
+                <td className={tdClass}>
+                  <Link href={`/leads/${lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                     {lead.name}
                   </Link>
                   {lead.city && <div className="text-xs text-neutral-500">{lead.city}</div>}
                 </td>
-                <td className="py-2 pr-3">
+                <td className={tdClass}>
                   <a href={`tel:${lead.phone}`}>{lead.phone}</a>
                 </td>
-                <td className="py-2 pr-3">{PRODUCT_LABELS[lead.productInterest]}</td>
-                <td className="py-2 pr-3">{SOURCE_LABELS[lead.source]}</td>
+                <td className={tdClass}>{PRODUCT_LABELS[lead.productInterest]}</td>
+                <td className={tdClass}>{SOURCE_LABELS[lead.source]}</td>
                 {variant === "all" && (
-                  <td className="py-2 pr-3">
+                  <td className={tdClass}>
                     <StatusBadge status={lead.status} />
                   </td>
                 )}
-                {showOwner && <td className="py-2 pr-3">{lead.assignedTo?.fullName ?? <em>Unassigned</em>}</td>}
-                <td className="py-2">
+                {showOwner && <td className={tdClass}>{lead.assignedTo?.fullName ?? <em>Unassigned</em>}</td>}
+                <td className={tdClass}>
                   {variant === "won" ? (
                     lead.closedAt ? formatDate(lead.closedAt) : "-"
                   ) : lead.nextFollowUpAt ? (
-                    <span className={overdue ? "font-medium text-red-600" : ""}>
+                    <span className={overdue ? "font-semibold text-red-600 dark:text-red-400" : ""}>
                       {formatDateTime(lead.nextFollowUpAt)}
                       {overdue && " (overdue)"}
                     </span>
@@ -84,19 +93,19 @@ export function Pager({
 }) {
   const lastPage = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+    <div className="mt-3 flex items-center justify-between px-1 text-sm text-neutral-500">
       <span>
         {total} lead{total === 1 ? "" : "s"}
       </span>
       {lastPage > 1 && (
         <div className="flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => onPage(page - 1)} className="underline disabled:opacity-40">
+          <button disabled={page <= 1} onClick={() => onPage(page - 1)} className="font-medium text-brand-700 hover:underline dark:text-brand-300 disabled:opacity-40 disabled:no-underline">
             Previous
           </button>
           <span>
             Page {page} of {lastPage}
           </span>
-          <button disabled={page >= lastPage} onClick={() => onPage(page + 1)} className="underline disabled:opacity-40">
+          <button disabled={page >= lastPage} onClick={() => onPage(page + 1)} className="font-medium text-brand-700 hover:underline dark:text-brand-300 disabled:opacity-40 disabled:no-underline">
             Next
           </button>
         </div>

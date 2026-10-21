@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { ErrorText, inputClass, secondaryButtonClass, StatusBadge } from "@/components/ui";
+import {
+  Badge,
+  ErrorText,
+  inputClass,
+  OverdueTag,
+  secondaryButtonSmClass,
+  StatusBadge,
+} from "@/components/ui";
 import { apiPost } from "@/lib/api";
 import {
   FOLLOW_UP_OUTCOMES,
@@ -60,34 +67,32 @@ function FollowUpCard({ followUp, outcomes, outcomeLabels, endpoint, canWrite, c
 
   return (
     <li
-      className={`rounded border p-3 text-sm ${
+      className={`rounded-lg border p-4 text-sm shadow-xs ${
         overdue
-          ? "border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40"
-          : "border-neutral-200 dark:border-neutral-800"
+          ? "border-red-200 border-l-4 border-l-red-500 bg-red-50 dark:border-red-900 dark:bg-red-950/40"
+          : "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{formatDateTime(followUp.scheduledAt)}</span>
-          {overdue && <span className="text-xs font-medium text-red-600">Overdue</span>}
+          {overdue && <OverdueTag />}
           {followUp.completedAt && (
-            <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800 dark:bg-green-950 dark:text-green-200">
-              Done: {followUp.outcome ? outcomeLabels[followUp.outcome] : "-"}
-            </span>
+            <Badge tone="green">Done: {followUp.outcome ? outcomeLabels[followUp.outcome] : "-"}</Badge>
           )}
         </div>
         {canWrite && !recording && (
           <div className="flex gap-2">
             {followUp.completedAt ? (
               <button
-                className="text-xs text-neutral-500 underline"
+                className="text-xs font-medium text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-200"
                 disabled={busy}
                 onClick={() => run(() => apiPost(`${endpoint}/${followUp.id}/reopen`))}
               >
                 Reopen
               </button>
             ) : (
-              <button className={secondaryButtonClass + " py-1 text-xs"} onClick={() => setRecording(true)}>
+              <button className={secondaryButtonSmClass} onClick={() => setRecording(true)}>
                 Record outcome
               </button>
             )}
@@ -117,7 +122,7 @@ function FollowUpCard({ followUp, outcomes, outcomeLabels, endpoint, canWrite, c
           />
           <div className="flex gap-2">
             <button
-              className={secondaryButtonClass + " py-1 text-xs"}
+              className={secondaryButtonSmClass}
               disabled={busy}
               onClick={() => run(() => apiPost(`${endpoint}/${followUp.id}/complete`, { outcome, note: note || undefined }))}
             >
@@ -149,7 +154,7 @@ export function FollowUpItem({ followUp, onChange }: { followUp: FollowUp | Foll
       context={
         lead && (
           <>
-            <Link href={`/leads/${lead.id}`} className="font-medium underline">
+            <Link href={`/leads/${lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
               {lead.name}
             </Link>
             <a href={`tel:${lead.phone}`} className="text-neutral-500">
@@ -187,7 +192,7 @@ export function ServiceFollowUpItem({
       context={
         job && (
           <>
-            <Link href={`/service/${job.id}`} className="font-medium underline">
+            <Link href={`/service/${job.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
               {job.jobNumberLabel} · {job.customerName}
             </Link>
             <a href={`tel:${job.phone}`} className="text-neutral-500">

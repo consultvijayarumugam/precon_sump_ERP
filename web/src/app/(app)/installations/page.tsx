@@ -9,14 +9,15 @@ import { MonthCalendar, monthGridDays } from "@/components/month-calendar";
 import {
   buttonClass,
   ErrorText,
+  inputBaseClass,
   InstallationStatusBadge,
-  inputClass,
   NoAccess,
-  OverdueTag,
   overdueRowClass,
+  OverdueTag,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonCompactClass,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -37,7 +38,7 @@ function InstallationRow({ i }: { i: Installation }) {
         {i.isLate && <OverdueTag />}
       </td>
       <td className={tdClass}>
-        <Link href={`/installations/${i.id}`} className="font-medium underline">
+        <Link href={`/installations/${i.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
           {i.salesOrder.customerName}
         </Link>
         <div className="text-xs text-neutral-500">{i.salesOrder.orderNumberLabel}</div>
@@ -85,7 +86,7 @@ export default function InstallationsPage() {
 
   const selected = (data ?? []).filter((i) => i.scheduledDate === selectedDay);
   const table = (rows: Installation[]) => (
-    <div className="overflow-x-auto">
+    <div className={tableWrapClass}>
       <table className={tableClass}>
         <thead className={theadClass}>
           <tr>
@@ -137,13 +138,13 @@ export default function InstallationsPage() {
           <button
             key={v}
             onClick={() => setView(v)}
-            className={`${secondaryButtonClass} py-1 ${view === v ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
+            className={`${secondaryButtonCompactClass} ${view === v ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
           >
             {v === "calendar" ? "Calendar" : "List"}
           </button>
         ))}
         {view === "list" && (
-          <select className={`${inputClass} w-auto`} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select className={inputBaseClass} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             {INSTALLATION_STATUSES.map((s) => (
               <option key={s} value={s}>

@@ -2,7 +2,16 @@
 
 import { FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { buttonClass, ErrorText, Field, inputClass, NoAccess, PageHeader, secondaryButtonClass } from "@/components/ui";
+import {
+  buttonClass,
+  ErrorText,
+  Field,
+  inputClass,
+  NoAccess,
+  PageHeader,
+  secondaryButtonClass,
+  secondaryButtonCompactClass,
+} from "@/components/ui";
 import { api, apiPatch, apiPost } from "@/lib/api";
 import { dayKey } from "@/lib/crm";
 import { Holiday } from "@/lib/hr";
@@ -67,18 +76,18 @@ export default function HolidaysPage() {
         title="Company holidays"
         action={
           <div className="flex items-center gap-2">
-            <button className={`${secondaryButtonClass} py-1`} onClick={() => setYear(year - 1)} aria-label="Previous year">
+            <button className={secondaryButtonCompactClass} onClick={() => setYear(year - 1)} aria-label="Previous year">
               ←
             </button>
             <span className="font-medium">{year}</span>
-            <button className={`${secondaryButtonClass} py-1`} onClick={() => setYear(year + 1)} aria-label="Next year">
+            <button className={secondaryButtonCompactClass} onClick={() => setYear(year + 1)} aria-label="Next year">
               →
             </button>
           </div>
         }
       />
       {canManage && (
-        <section className="rounded border border-neutral-200 p-4 dark:border-neutral-800">
+        <section className="rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
           <HolidayForm onDone={reload} />
           <p className="mt-2 text-xs text-neutral-500">
             Leave and LOP day counts are worked out from the holiday list, so changes apply to them straight away.
@@ -87,7 +96,7 @@ export default function HolidaysPage() {
       )}
       <ErrorText error={error ?? action.error} />
       {data?.length === 0 && <p className="text-sm text-neutral-500">No holidays listed for {year}.</p>}
-      <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+      <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
         {data?.map((h) => (
           <li key={h.id} className={`py-2 ${h.date < today ? "text-neutral-400" : ""}`}>
             {editingId === h.id ? (
@@ -105,11 +114,11 @@ export default function HolidaysPage() {
                 <span>{h.name}</span>
                 {canManage && (
                   <div className="ml-auto flex gap-3 text-xs">
-                    <button className="underline" onClick={() => setEditingId(h.id)}>
+                    <button className="text-brand-700 hover:underline dark:text-brand-300" onClick={() => setEditingId(h.id)}>
                       Edit
                     </button>
                     <button
-                      className="text-red-600 underline"
+                      className="font-medium text-red-600 hover:underline"
                       onClick={async () => {
                         if (!confirm(`Remove ${h.name}?`)) return;
                         if (await action.run(() => api(`/holidays/${h.id}`, { method: "DELETE" }))) reload();

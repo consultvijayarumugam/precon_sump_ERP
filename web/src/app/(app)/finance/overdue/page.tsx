@@ -6,11 +6,12 @@ import { useAuth } from "@/components/auth-provider";
 import {
   ErrorText,
   NoAccess,
-  OverdueTag,
   overdueRowClass,
+  OverdueTag,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonCompactClass,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -43,7 +44,7 @@ export default function OverduePage() {
       {data && (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-4">
-            <div className="rounded border border-red-300 bg-red-50 px-4 py-2 dark:border-red-900 dark:bg-red-950/40">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 dark:border-red-900 dark:bg-red-950/40">
               <div className="text-lg font-semibold text-red-700 dark:text-red-300">{formatINR(data.totalOverdue)}</div>
               <div className="text-xs text-neutral-500">
                 overdue across {data.count} order{data.count === 1 ? "" : "s"} as of {formatDateOnly(data.asOf)}
@@ -55,7 +56,7 @@ export default function OverduePage() {
                 <button
                   key={s}
                   onClick={() => setSort(s)}
-                  className={`${secondaryButtonClass} py-0.5 ${sort === s ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
+                  className={`${secondaryButtonCompactClass} ${sort === s ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
                 >
                   {s === "oldest" ? "Most days overdue" : "Largest balance"}
                 </button>
@@ -65,7 +66,7 @@ export default function OverduePage() {
           {data.items.length === 0 ? (
             <p className="text-sm text-neutral-500">Nothing overdue. 🎉</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className={tableWrapClass}>
               <table className={tableClass}>
                 <thead className={theadClass}>
                   <tr>
@@ -82,7 +83,7 @@ export default function OverduePage() {
                   {data.items.map((o) => (
                     <tr key={o.id} className={overdueRowClass}>
                       <td className={tdClass}>
-                        <Link href={`/orders/${o.id}`} className="font-medium underline">
+                        <Link href={`/orders/${o.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                           {o.orderNumberLabel}
                         </Link>
                       </td>

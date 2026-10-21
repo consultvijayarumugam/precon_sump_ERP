@@ -1,4 +1,5 @@
-// Small shared UI pieces so pages stay consistent.
+// Shared UI pieces and style tokens, so every page looks the same.
+// Change the look here; pages only compose these.
 import Link from "next/link";
 import { ReactNode } from "react";
 import { LeadStatus, STATUS_LABELS } from "@/lib/crm";
@@ -15,162 +16,116 @@ import {
   TagColor,
 } from "@/lib/service";
 
-export const inputClass =
-  "w-full rounded border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700";
-export const buttonClass =
-  "rounded bg-neutral-900 px-3 py-2 text-sm text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900";
-export const secondaryButtonClass =
-  "rounded border border-neutral-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-neutral-700";
+// --- Form controls and buttons ---------------------------------------------
 
-const STATUS_STYLES: Record<LeadStatus, string> = {
-  NEW: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
-  CONTACTED: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200",
-  QUALIFIED: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
-  QUOTED: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  WON: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200",
-  LOST: "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
-};
+/** Input look without a width, for inline filters. */
+export const inputBaseClass =
+  "rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-xs placeholder:text-neutral-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-neutral-100 disabled:text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:disabled:bg-neutral-800";
+export const inputClass = `w-full ${inputBaseClass}`;
 
-export function StatusBadge({ status }: { status: LeadStatus }) {
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}>
-      {STATUS_LABELS[status]}
-    </span>
-  );
-}
+// Buttons come in three sizes. Pick a size constant rather than appending
+// padding classes (Tailwind wouldn't reliably let an appended py-1 win).
+const buttonBase =
+  "inline-flex items-center justify-center gap-1.5 rounded-md font-medium shadow-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+const primaryLook = "bg-brand-600 text-white hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-400";
+const secondaryLook =
+  "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800";
+const SIZE = { md: "px-3.5 py-2 text-sm", compact: "px-3 py-1.5 text-sm", sm: "px-2.5 py-1 text-xs" };
 
-export function PageHeader({ title, action }: { title: string; action?: ReactNode }) {
-  return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-      <h1 className="text-xl font-semibold">{title}</h1>
-      {action}
-    </div>
-  );
-}
+export const buttonClass = `${buttonBase} ${primaryLook} ${SIZE.md}`;
+export const buttonCompactClass = `${buttonBase} ${primaryLook} ${SIZE.compact}`;
+export const buttonSmClass = `${buttonBase} ${primaryLook} ${SIZE.sm}`;
+export const secondaryButtonClass = `${buttonBase} ${secondaryLook} ${SIZE.md}`;
+export const secondaryButtonCompactClass = `${buttonBase} ${secondaryLook} ${SIZE.compact}`;
+export const secondaryButtonSmClass = `${buttonBase} ${secondaryLook} ${SIZE.sm}`;
 
-export function NoAccess({ tag }: { tag: string }) {
-  return (
-    <p className="rounded border border-neutral-300 p-4 text-sm text-neutral-500 dark:border-neutral-700">
-      You don&apos;t have access to this page. It needs the <code>{tag}</code> tag; ask an admin.
-    </p>
-  );
-}
+// --- Surfaces ----------------------------------------------------------------
 
-export function ErrorText({ error }: { error: string | null }) {
-  return error ? <p className="text-sm text-red-600">{error}</p> : null;
-}
+/** A white card/panel. */
+export const panelClass =
+  "rounded-lg border border-neutral-200 bg-white shadow-xs dark:border-neutral-800 dark:bg-neutral-900";
+/** Red-tinted panel for overdue/alert content. */
+export const alertPanelClass =
+  "rounded-lg border border-red-200 bg-red-50 shadow-xs dark:border-red-900 dark:bg-red-950/40";
 
-export function LinkButton({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <Link href={href} className={buttonClass}>
-      {children}
-    </Link>
-  );
-}
+// --- Tables ------------------------------------------------------------------
 
-export const thClass = "py-2 pr-3 font-medium";
-export const tdClass = "py-2 pr-3";
+export const tableWrapClass = `overflow-x-auto ${panelClass}`;
 export const tableClass = "w-full min-w-[640px] text-left text-sm";
-export const theadClass = "border-b border-neutral-200 text-neutral-500 dark:border-neutral-800";
-export const tbodyClass = "divide-y divide-neutral-200 dark:divide-neutral-800";
+export const theadClass =
+  "border-b border-neutral-200 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900/60";
+export const thClass = "px-4 py-2.5 font-medium";
+export const tdClass = "px-4 py-3 align-top";
+export const tbodyClass = "divide-y divide-neutral-100 dark:divide-neutral-800";
 /** Row tint for anything overdue, matching overdue follow-ups. */
-export const overdueRowClass = "bg-red-50 dark:bg-red-950/40";
+export const overdueRowClass = "bg-red-50/70 dark:bg-red-950/30";
 
-const ORDER_STATUS_STYLES: Record<OrderStatus, string> = {
-  CONFIRMED: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  DELIVERED: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200",
-  CANCELLED: "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
+// --- Badges ------------------------------------------------------------------
+
+type Tone = "neutral" | "blue" | "indigo" | "violet" | "amber" | "green" | "red" | "solidRed";
+
+const TONES: Record<Tone, string> = {
+  neutral: "bg-neutral-100 text-neutral-700 ring-neutral-500/20 dark:bg-neutral-800 dark:text-neutral-300",
+  blue: "bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-950 dark:text-sky-300",
+  indigo: "bg-indigo-50 text-indigo-700 ring-indigo-600/20 dark:bg-indigo-950 dark:text-indigo-300",
+  violet: "bg-violet-50 text-violet-700 ring-violet-600/20 dark:bg-violet-950 dark:text-violet-300",
+  amber: "bg-amber-50 text-amber-800 ring-amber-600/25 dark:bg-amber-950 dark:text-amber-300",
+  green: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950 dark:text-emerald-300",
+  red: "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-950 dark:text-red-300",
+  solidRed: "bg-red-600 text-white ring-red-700",
 };
 
-export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${ORDER_STATUS_STYLES[status]}`}>
-      {ORDER_STATUS_LABELS[status]}
+    <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${TONES[tone]}`}>
+      {children}
     </span>
   );
+}
+
+const LEAD_TONES: Record<LeadStatus, Tone> = {
+  NEW: "blue",
+  CONTACTED: "indigo",
+  QUALIFIED: "violet",
+  QUOTED: "amber",
+  WON: "green",
+  LOST: "neutral",
+};
+export function StatusBadge({ status }: { status: LeadStatus }) {
+  return <Badge tone={LEAD_TONES[status]}>{STATUS_LABELS[status]}</Badge>;
+}
+
+const ORDER_TONES: Record<OrderStatus, Tone> = { CONFIRMED: "amber", DELIVERED: "green", CANCELLED: "neutral" };
+export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  return <Badge tone={ORDER_TONES[status]}>{ORDER_STATUS_LABELS[status]}</Badge>;
+}
+
+const INSTALLATION_TONES: Record<InstallationStatus, Tone> = { SCHEDULED: "blue", IN_PROGRESS: "amber", COMPLETED: "green" };
+export function InstallationStatusBadge({ status }: { status: InstallationStatus }) {
+  return <Badge tone={INSTALLATION_TONES[status]}>{INSTALLATION_STATUS_LABELS[status]}</Badge>;
+}
+
+const JOB_TONES: Record<JobStatus, Tone> = { OPEN: "blue", IN_PROGRESS: "amber", RESOLVED: "green" };
+export function JobStatusBadge({ status }: { status: JobStatus }) {
+  return <Badge tone={JOB_TONES[status]}>{JOB_STATUS_LABELS[status]}</Badge>;
+}
+
+const PRIORITY_TONES: Record<JobPriority, Tone> = { URGENT: "solidRed", HIGH: "red", MEDIUM: "neutral", LOW: "neutral" };
+export function PriorityBadge({ priority }: { priority: JobPriority }) {
+  return <Badge tone={PRIORITY_TONES[priority]}>{JOB_PRIORITY_LABELS[priority]}</Badge>;
+}
+
+const APPROVAL_TONES: Record<LeaveStatus, Tone> = { PENDING: "amber", APPROVED: "green", REJECTED: "red", CANCELLED: "neutral" };
+/** Status badge for leave applications and allowance claims (same four words). */
+export function ApprovalBadge({ status }: { status: LeaveStatus }) {
+  return <Badge tone={APPROVAL_TONES[status]}>{LEAVE_STATUS_LABELS[status]}</Badge>;
 }
 
 export function OverdueTag({ days }: { days?: number }) {
   return (
-    <span className="text-xs font-medium text-red-600">
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
+      <span className="size-1.5 rounded-full bg-red-600 dark:bg-red-400" aria-hidden />
       Overdue{days !== undefined ? ` ${days}d` : ""}
-    </span>
-  );
-}
-
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-neutral-600 dark:text-neutral-400">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-export function Card({ title, href, children }: { title: string; href?: string; children: ReactNode }) {
-  return (
-    <section className="rounded border border-neutral-200 p-4 dark:border-neutral-800">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-medium">{title}</h2>
-        {href && (
-          <Link href={href} className="text-sm underline">
-            Open
-          </Link>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "alert" }) {
-  return (
-    <div>
-      <div className={`text-lg font-semibold ${tone === "alert" ? "text-red-600" : ""}`}>{value}</div>
-      <div className="text-xs text-neutral-500">{label}</div>
-    </div>
-  );
-}
-
-const INSTALLATION_STATUS_STYLES: Record<InstallationStatus, string> = {
-  SCHEDULED: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
-  IN_PROGRESS: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  COMPLETED: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200",
-};
-
-export function InstallationStatusBadge({ status }: { status: InstallationStatus }) {
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${INSTALLATION_STATUS_STYLES[status]}`}>
-      {INSTALLATION_STATUS_LABELS[status]}
-    </span>
-  );
-}
-
-const JOB_STATUS_STYLES: Record<JobStatus, string> = {
-  OPEN: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
-  IN_PROGRESS: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  RESOLVED: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200",
-};
-
-export function JobStatusBadge({ status }: { status: JobStatus }) {
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${JOB_STATUS_STYLES[status]}`}>
-      {JOB_STATUS_LABELS[status]}
-    </span>
-  );
-}
-
-const PRIORITY_STYLES: Record<JobPriority, string> = {
-  URGENT: "bg-red-600 text-white",
-  HIGH: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
-  MEDIUM: "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
-  LOW: "bg-neutral-100 text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400",
-};
-
-export function PriorityBadge({ priority }: { priority: JobPriority }) {
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[priority]}`}>
-      {JOB_PRIORITY_LABELS[priority]}
     </span>
   );
 }
@@ -198,8 +153,8 @@ export function TagChip({
   onClick?: () => void;
 }) {
   const style = TAG_STYLES[tag.color] ?? TAG_STYLES.slate;
-  const className = `inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${style} ${
-    onClick && !selected ? "opacity-50" : ""
+  const className = `inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${style} ${
+    onClick && !selected ? "opacity-50 hover:opacity-80" : ""
   } ${tag.isActive ? "" : "line-through"}`;
   return onClick ? (
     <button type="button" className={className} onClick={onClick} aria-pressed={selected}>
@@ -211,19 +166,81 @@ export function TagChip({
   );
 }
 
-const LEAVE_STATUS_STYLES: Record<LeaveStatus, string> = {
-  PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  APPROVED: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200",
-  REJECTED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
-  CANCELLED: "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-};
+// --- Page structure ----------------------------------------------------------
 
-/** Status badge for leave applications and allowance claims (same four words). */
-export function ApprovalBadge({ status }: { status: LeaveStatus }) {
+export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${LEAVE_STATUS_STYLES[status]}`}>
-      {LEAVE_STATUS_LABELS[status]}
-    </span>
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export function NoAccess({ tag }: { tag: string }) {
+  return (
+    <div className={`${panelClass} p-6 text-sm text-neutral-600 dark:text-neutral-400`}>
+      <p className="font-medium text-neutral-900 dark:text-neutral-100">You don&apos;t have access to this page.</p>
+      <p className="mt-1">
+        It needs the <code className="rounded bg-neutral-100 px-1 py-0.5 dark:bg-neutral-800">{tag}</code> tag; ask an admin.
+      </p>
+    </div>
+  );
+}
+
+export function ErrorText({ error }: { error: string | null }) {
+  return error ? <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p> : null;
+}
+
+export function LinkButton({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} className={buttonClass}>
+      {children}
+    </Link>
+  );
+}
+
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1.5 block font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** Dashboard-style card with a title and an optional "View all" link. */
+export function Card({ title, href, children }: { title: string; href?: string; children: ReactNode }) {
+  return (
+    <section className={`${panelClass} flex flex-col p-5`}>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
+        {href && (
+          <Link href={href} className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300">
+            View all →
+          </Link>
+        )}
+      </div>
+      <div className="flex-1">{children}</div>
+    </section>
+  );
+}
+
+export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "alert" }) {
+  return (
+    <div>
+      <div
+        className={`text-xl font-semibold tracking-tight ${
+          tone === "alert" ? "text-red-600 dark:text-red-400" : "text-neutral-900 dark:text-neutral-50"
+        }`}
+      >
+        {value}
+      </div>
+      <div className="mt-0.5 text-xs text-neutral-500">{label}</div>
+    </div>
   );
 }
 
@@ -231,11 +248,11 @@ export function ApprovalBadge({ status }: { status: LeaveStatus }) {
 export function MonthPicker({ month, onChange }: { month: string; onChange: (month: string) => void }) {
   return (
     <div className="flex items-center gap-2">
-      <button className={`${secondaryButtonClass} py-1`} onClick={() => onChange(shiftMonth(month, -1))} aria-label="Previous month">
+      <button className={secondaryButtonCompactClass} onClick={() => onChange(shiftMonth(month, -1))} aria-label="Previous month">
         ←
       </button>
-      <span className="min-w-32 text-center font-medium">{formatMonth(month)}</span>
-      <button className={`${secondaryButtonClass} py-1`} onClick={() => onChange(shiftMonth(month, 1))} aria-label="Next month">
+      <span className="min-w-36 text-center text-sm font-semibold">{formatMonth(month)}</span>
+      <button className={secondaryButtonCompactClass} onClick={() => onChange(shiftMonth(month, 1))} aria-label="Next month">
         →
       </button>
     </div>

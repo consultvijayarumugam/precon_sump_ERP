@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { buttonClass, ErrorText, Field, inputClass, panelClass } from "@/components/ui";
 import { login } from "@/lib/api";
 
 export default function LoginPage() {
@@ -26,50 +27,54 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-neutral-300 p-6 dark:border-neutral-700"
-      >
-        <div>
-          <h1 className="text-xl font-semibold">Precon ERP</h1>
-          <p className="text-sm text-neutral-500">Sign in to continue</p>
+    <main className="flex min-h-screen flex-1 items-center justify-center bg-gradient-to-b from-brand-950 to-brand-800 p-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex items-center justify-center gap-3 text-white">
+          <span className="grid size-10 place-items-center rounded-lg bg-brand-500 shadow-md">
+            <svg viewBox="0 0 20 20" className="size-6" aria-hidden>
+              <rect x="3" y="3" width="14" height="4" rx="1" fill="white" />
+              <rect x="3" y="8.5" width="9" height="4" rx="1" fill="white" opacity="0.85" />
+              <rect x="13.5" y="8.5" width="3.5" height="4" rx="1" fill="white" opacity="0.85" />
+              <rect x="3" y="14" width="14" height="3" rx="1" fill="white" opacity="0.7" />
+            </svg>
+          </span>
+          <span className="text-2xl tracking-tight">
+            <span className="font-semibold">Precon</span> <span className="font-light text-brand-200">ERP</span>
+          </span>
         </div>
 
-        <label className="block text-sm">
-          Email
-          <input
-            type="email"
-            required
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded border border-neutral-300 bg-transparent px-3 py-2 dark:border-neutral-700"
-          />
-        </label>
-
-        <label className="block text-sm">
-          Password
-          <input
-            type="password"
-            required
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded border border-neutral-300 bg-transparent px-3 py-2 dark:border-neutral-700"
-          />
-        </label>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-neutral-900 px-3 py-2 text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} className={`${panelClass} space-y-5 p-6 shadow-xl`}>
+          <div>
+            <h1 className="text-lg font-semibold">Sign in</h1>
+            <p className="text-sm text-neutral-500">Use your work email and password.</p>
+          </div>
+          <Field label="Email">
+            <input
+              type="email"
+              required
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          <ErrorText error={error} />
+          <button type="submit" disabled={submitting} className={`${buttonClass} w-full`}>
+            {submitting ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+        <p className="mt-6 text-center text-xs text-brand-200/70">UG sumps · bio-septic tanks · microbes · precast</p>
+      </div>
     </main>
   );
 }

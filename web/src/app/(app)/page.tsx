@@ -1,7 +1,8 @@
 "use client";
 
+import { CalendarClock, Contact, type LucideIcon, TriangleAlert, Trophy } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
   FinanceCard,
@@ -13,7 +14,7 @@ import {
   StockCard,
 } from "@/components/dashboard-cards";
 import { FollowUpItem } from "@/components/follow-up-item";
-import { ErrorText, LinkButton, StatusBadge } from "@/components/ui";
+import { ErrorText, LinkButton, panelClass, StatusBadge } from "@/components/ui";
 import { queryString } from "@/lib/api";
 import {
   CrmSummary,
@@ -23,26 +24,49 @@ import {
   LeadListItem,
   Paginated,
   PRODUCT_LABELS,
-  STATUS_LABELS,
 } from "@/lib/crm";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
 
-function Tile({ label, value, href, tone }: { label: string; value: number; href: string; tone?: "alert" }) {
+function Tile({
+  label,
+  value,
+  href,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  href: string;
+  icon: LucideIcon;
+  tone?: "alert";
+}) {
+  const alert = tone === "alert" && value > 0;
   return (
     <Link
       href={href}
-      className={`rounded border p-3 ${
-        tone === "alert" && value > 0
-          ? "border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40"
-          : "border-neutral-200 dark:border-neutral-800"
+      className={`group flex items-center gap-4 rounded-lg border p-4 shadow-xs transition-colors ${
+        alert
+          ? "border-red-200 bg-red-50 hover:border-red-300 dark:border-red-900 dark:bg-red-950/40"
+          : "border-neutral-200 bg-white hover:border-brand-300 dark:border-neutral-800 dark:bg-neutral-900"
       }`}
     >
-      <div className="text-2xl font-semibold">{value}</div>
-      <div className="text-sm text-neutral-500">{label}</div>
+      <span
+        className={`grid size-10 shrink-0 place-items-center rounded-lg ${
+          alert ? "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300" : "bg-brand-50 text-brand-600 dark:bg-brand-900/50 dark:text-brand-200"
+        }`}
+      >
+        <Icon className="size-5" aria-hidden />
+      </span>
+      <span>
+        <span className={`block text-2xl font-semibold tracking-tight ${alert ? "text-red-700 dark:text-red-300" : ""}`}>{value}</span>
+        <span className="block text-sm text-neutral-500">{label}</span>
+      </span>
     </Link>
   );
 }
+
+const longDate = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
 export default function DashboardPage() {
   const { user, can } = useAuth();
@@ -59,16 +83,45 @@ export default function DashboardPage() {
   const summary = useApi<CrmSummary>(canSeeLeads ? "/leads/summary" : null);
   const dueToday = useApi<FollowUpWithLead[]>(canSeeLeads ? dueTodayPath : null);
   const recent = useApi<Paginated<LeadListItem>>(canSeeLeads ? "/leads?pageSize=5" : null);
+  const [now] = useState(() => new Date());
+  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="space-y-8">
       <section>
-        <h1 className="text-xl font-semibold">Welcome, {user.fullName}</h1>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-neutral-500">{longDate.format(now)}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+          {greeting}, {user.fullName.split(" ")[0]}
+        </h1>
+        <p className="mt-1 text-sm text-neutral-500">
           {user.role.name} ·{" "}
           {can(TAGS.LEADS_READ_ALL) ? "You can see all leads" : canSeeLeads ? "Showing leads assigned to you" : `Modules: ${user.modules.join(", ") || "none"}`}
         </p>
       </section>
+
+      {canSeeLeads && summary.data && (
+        <section className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Tile label="Open leads" value={summary.data.openLeads} href="/leads" icon={Contact} />
+            <Tile label="Won" value={summary.data.leadsByStatus.WON} href="/leads/won" icon={Trophy} />
+            <Tile label="Overdue follow-ups" value={summary.data.overdueFollowUps} href="/follow-ups" icon={TriangleAlert} tone="alert" />
+            <Tile label="Upcoming follow-ups" value={summary.data.upcomingFollowUps} href="/follow-ups" icon={CalendarClock} />
+          </div>
+          <div className={`${panelClass} flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-sm`}>
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Pipeline</span>
+            {LEAD_STATUSES.map((st) => (
+              <Link
+                key={st}
+                href={st === "WON" ? "/leads/won" : `/leads?status=${st}`}
+                className="flex items-center gap-2 hover:text-brand-700 dark:hover:text-brand-300"
+              >
+                <StatusBadge status={st} />
+                <span className="font-semibold tabular-nums">{summary.data!.leadsByStatus[st]}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {!hasAnyModule && (
         <p className="text-sm text-neutral-500">
@@ -83,7 +136,7 @@ export default function DashboardPage() {
         can(TAGS.SERVICE_READ) ||
         can(TAGS.LEAVE_APPLY) ||
         can(TAGS.ALLOWANCES_MANAGE)) && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-h-full">
           {can(TAGS.FINANCE_DASHBOARD) && <FinanceCard />}
           {can(TAGS.SALES_READ) && !can(TAGS.FINANCE_DASHBOARD) && (
             <SalesCard title={can(TAGS.SALES_READ_ALL) ? "Sales this month" : "My sales this month"} />
@@ -102,36 +155,17 @@ export default function DashboardPage() {
         <>
           <ErrorText error={summary.error ?? dueToday.error ?? recent.error} />
 
-          {summary.data && (
-            <section className="space-y-3">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Tile label="Open leads" value={summary.data.openLeads} href="/leads" />
-                <Tile label="Won" value={summary.data.leadsByStatus.WON} href="/leads/won" />
-                <Tile label="Overdue follow-ups" value={summary.data.overdueFollowUps} href="/follow-ups" tone="alert" />
-                <Tile label="Upcoming follow-ups" value={summary.data.upcomingFollowUps} href="/follow-ups" />
-              </div>
-              <div className="flex flex-wrap gap-2 text-sm">
-                {LEAD_STATUSES.map((s) => (
-                  <Link
-                    key={s}
-                    href={s === "WON" ? "/leads/won" : `/leads?status=${s}`}
-                    className="rounded border border-neutral-200 px-2 py-1 dark:border-neutral-800"
-                  >
-                    {STATUS_LABELS[s]}: <strong>{summary.data!.leadsByStatus[s]}</strong>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="font-medium">Due today and overdue</h2>
-              <Link href="/calendar" className="text-sm underline">
+          <div className="grid gap-6 xl:grid-cols-5">
+          <section className="xl:col-span-3">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">Follow-ups due today &amp; overdue</h2>
+              <Link href="/calendar" className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-300">
                 Calendar
               </Link>
             </div>
-            {dueToday.data?.length === 0 && <p className="text-sm text-neutral-500">Nothing due. 🎉</p>}
+            {dueToday.data?.length === 0 && (
+              <p className={`${panelClass} px-4 py-6 text-center text-sm text-neutral-500`}>Nothing due today. 🎉</p>
+            )}
             <ul className="space-y-2">
               {dueToday.data?.map((f) => (
                 <FollowUpItem
@@ -146,37 +180,42 @@ export default function DashboardPage() {
             </ul>
           </section>
 
-          <section>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="font-medium">Recent leads</h2>
+          <section className="xl:col-span-2">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">Recent leads</h2>
               {can(TAGS.LEADS_WRITE) && <LinkButton href="/leads/new">New lead</LinkButton>}
             </div>
-            <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+            <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
               {recent.data?.items.map((lead) => (
-                <li key={lead.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <Link href={`/leads/${lead.id}`} className="font-medium underline">
-                    {lead.name}
-                  </Link>
-                  <span className="text-neutral-500">
-                    {PRODUCT_LABELS[lead.productInterest]} · {formatDate(lead.createdAt)}
-                  </span>
+                <li key={lead.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <Link href={`/leads/${lead.id}`} className="block truncate font-medium text-brand-700 hover:underline dark:text-brand-300">
+                      {lead.name}
+                    </Link>
+                    <span className="text-xs text-neutral-500">
+                      {PRODUCT_LABELS[lead.productInterest]} · {formatDate(lead.createdAt)}
+                    </span>
+                  </div>
                   <StatusBadge status={lead.status} />
                 </li>
               ))}
             </ul>
           </section>
+          </div>
         </>
       )}
 
-      <details className="text-sm text-neutral-500">
-        <summary className="cursor-pointer">Your permission tags ({user.permissions.length})</summary>
-        <ul className="mt-2 list-inside list-disc">
+      <details className="text-xs text-neutral-500">
+        <summary className="cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300">
+          Your permission tags ({user.permissions.length})
+        </summary>
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {user.permissions.map((p) => (
-            <li key={p}>
-              <code>{p}</code>
-            </li>
+            <code key={p} className="rounded bg-neutral-200/60 px-1.5 py-0.5 dark:bg-neutral-800">
+              {p}
+            </code>
           ))}
-        </ul>
+        </div>
       </details>
     </div>
   );

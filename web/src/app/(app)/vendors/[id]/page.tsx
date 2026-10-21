@@ -10,10 +10,11 @@ import {
   Field,
   inputClass,
   NoAccess,
-  OverdueTag,
   overdueRowClass,
+  OverdueTag,
   Stat,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -62,7 +63,7 @@ function AddPurchase({ vendorId, onDone }: { vendorId: string; onDone: () => voi
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
       <h3 className="text-sm font-medium">Record a purchase (bill)</h3>
       <div className="grid gap-3 sm:grid-cols-5">
         <div className="sm:col-span-2">
@@ -110,7 +111,7 @@ function AddVendorPayment({ vendor, onDone }: { vendor: VendorDetail; onDone: ()
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
       <h3 className="text-sm font-medium">Record a payment to this vendor</h3>
       <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Amount (₹)">
@@ -160,17 +161,17 @@ export default function VendorDetailPage() {
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/vendors" className="text-sm text-neutral-500 underline">
+        <Link href="/vendors" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Vendors
         </Link>
-        <h1 className="mt-2 text-xl font-semibold">{vendor.name}</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{vendor.name}</h1>
         <p className="text-sm text-neutral-500">
           {VENDOR_CATEGORY_LABELS[vendor.category]}
           {vendor.contactPerson && ` · ${vendor.contactPerson}`}
           {vendor.phone && (
             <>
               {" · "}
-              <a href={`tel:${vendor.phone}`} className="underline">
+              <a href={`tel:${vendor.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
                 {vendor.phone}
               </a>
             </>
@@ -190,7 +191,7 @@ export default function VendorDetailPage() {
         {vendor.purchases.length === 0 ? (
           <p className="text-sm text-neutral-500">No purchases yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className={tableWrapClass}>
             <table className={tableClass}>
               <thead className={theadClass}>
                 <tr>
@@ -235,7 +236,7 @@ export default function VendorDetailPage() {
         {vendor.payments.length === 0 ? (
           <p className="text-sm text-neutral-500">No payments yet.</p>
         ) : (
-          <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+          <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
             {vendor.payments.map((p) => (
               <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="font-medium">{formatINR(p.amount)}</span>
@@ -245,7 +246,7 @@ export default function VendorDetailPage() {
                 </span>
                 <span className="text-neutral-500">by {p.recordedBy.fullName}</span>
                 {canWrite && (
-                  <button className="text-xs text-neutral-500 underline" onClick={() => removePayment(p.id)}>
+                  <button className="text-xs font-medium text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-200" onClick={() => removePayment(p.id)}>
                     Remove
                   </button>
                 )}

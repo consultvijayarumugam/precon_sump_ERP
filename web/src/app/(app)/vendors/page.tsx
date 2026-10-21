@@ -10,12 +10,13 @@ import {
   Field,
   inputClass,
   NoAccess,
-  OverdueTag,
   overdueRowClass,
+  OverdueTag,
   PageHeader,
   secondaryButtonClass,
   Stat,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -64,7 +65,7 @@ function AddVendor({ onCancel }: { onCancel: () => void }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <h2 className="font-medium">New vendor</h2>
       <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Name *">
@@ -127,7 +128,7 @@ export default function VendorsPage() {
             <Stat label="We owe in total" value={formatINR(data.totalOutstanding)} />
             <Stat label="Past due" value={formatINR(data.totalOverdue)} tone={Number(data.totalOverdue) > 0 ? "alert" : undefined} />
           </div>
-          <div className="overflow-x-auto">
+          <div className={tableWrapClass}>
             <table className={tableClass}>
               <thead className={theadClass}>
                 <tr>
@@ -144,7 +145,7 @@ export default function VendorsPage() {
                 {data.items.map((v) => (
                   <tr key={v.id} className={v.isOverdue ? overdueRowClass : ""}>
                     <td className={tdClass}>
-                      <Link href={`/vendors/${v.id}`} className="font-medium underline">
+                      <Link href={`/vendors/${v.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                         {v.name}
                       </Link>
                       {v.contactPerson && <div className="text-xs text-neutral-500">{v.contactPerson}</div>}

@@ -10,14 +10,15 @@ import {
   buttonClass,
   ErrorText,
   Field,
-  InstallationStatusBadge,
   inputClass,
+  InstallationStatusBadge,
   JobStatusBadge,
   NoAccess,
   OrderStatusBadge,
   OverdueTag,
   PriorityBadge,
   secondaryButtonClass,
+  secondaryButtonCompactClass,
 } from "@/components/ui";
 import { apiPatch, apiPost } from "@/lib/api";
 import { formatDateTime } from "@/lib/crm";
@@ -37,7 +38,7 @@ function CompleteForm({ inst, onDone, onCancel }: { inst: InstallationDetail; on
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-green-300 p-4 dark:border-green-900">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-green-200 p-4 dark:border-green-900">
       <h2 className="font-medium">Complete installation</h2>
       {delivers && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -88,11 +89,11 @@ export default function InstallationDetailPage() {
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/installations" className="text-sm text-neutral-500 underline">
+        <Link href="/installations" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Installations
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">Installation · {inst.salesOrder.customerName}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Installation · {inst.salesOrder.customerName}</h1>
           <InstallationStatusBadge status={inst.status} />
           {inst.isLate && <OverdueTag />}
         </div>
@@ -109,7 +110,7 @@ export default function InstallationDetailPage() {
           }}
         />
       ) : (
-        <section className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+        <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <div>
             <span className="text-neutral-500">Date: </span>
             {formatDateOnly(inst.scheduledDate)}
@@ -126,7 +127,7 @@ export default function InstallationDetailPage() {
           <div>
             <span className="text-neutral-500">Order: </span>
             {can(TAGS.SALES_READ) ? (
-              <Link href={`/orders/${inst.salesOrder.id}`} className="underline">
+              <Link href={`/orders/${inst.salesOrder.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
                 {inst.salesOrder.orderNumberLabel}
               </Link>
             ) : (
@@ -140,7 +141,7 @@ export default function InstallationDetailPage() {
           </div>
           <div>
             <span className="text-neutral-500">Customer phone: </span>
-            <a href={`tel:${inst.salesOrder.lead.phone}`} className="underline">
+            <a href={`tel:${inst.salesOrder.lead.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
               {inst.salesOrder.lead.phone}
             </a>
           </div>
@@ -203,7 +204,7 @@ export default function InstallationDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-medium">Service jobs</h2>
           {completed && can(TAGS.SERVICE_WRITE) && mode !== "raise" && (
-            <button className={secondaryButtonClass + " py-1"} onClick={() => setMode("raise")}>
+            <button className={secondaryButtonCompactClass} onClick={() => setMode("raise")}>
               Raise service job
             </button>
           )}
@@ -213,11 +214,11 @@ export default function InstallationDetailPage() {
         )}
         {mode === "raise" && <ServiceJobForm installationId={inst.id} onCancel={() => setMode("view")} />}
         {inst.serviceJobs.length > 0 && (
-          <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+          <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
             {inst.serviceJobs.map((j) => (
               <li key={j.id} className="flex flex-wrap items-center gap-3 py-2">
                 {can(TAGS.SERVICE_READ) ? (
-                  <Link href={`/service/${j.id}`} className="font-medium underline">
+                  <Link href={`/service/${j.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                     {j.jobNumberLabel}
                   </Link>
                 ) : (

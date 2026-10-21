@@ -3,7 +3,14 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { buttonClass, ErrorText, Field, inputClass, secondaryButtonClass } from "@/components/ui";
+import {
+  buttonClass,
+  buttonCompactClass,
+  ErrorText,
+  Field,
+  inputClass,
+  secondaryButtonClass,
+} from "@/components/ui";
 import { apiPost } from "@/lib/api";
 import { dayKey, Lead, PRODUCT_INTERESTS, PRODUCT_LABELS, ProductInterest } from "@/lib/crm";
 import { addDaysToDate, SalesOrder } from "@/lib/finance";
@@ -34,9 +41,9 @@ export function ConvertToOrder({ lead }: { lead: Lead }) {
 
   if (!open) {
     return (
-      <div className="rounded border border-green-300 bg-green-50 p-3 text-sm dark:border-green-900 dark:bg-green-950/40">
+      <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm dark:border-green-900 dark:bg-green-950/40">
         This lead is won.{" "}
-        <button className={`${buttonClass} ml-2 py-1`} onClick={() => setOpen(true)}>
+        <button className={`${buttonCompactClass} ml-2`} onClick={() => setOpen(true)}>
           Convert to sales order
         </button>
       </div>
@@ -62,7 +69,7 @@ export function ConvertToOrder({ lead }: { lead: Lead }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-green-300 p-4 dark:border-green-900">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-green-200 p-4 dark:border-green-900">
       <h2 className="font-medium">Convert to sales order</h2>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Product">

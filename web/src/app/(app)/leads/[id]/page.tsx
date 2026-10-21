@@ -7,7 +7,14 @@ import { useAuth } from "@/components/auth-provider";
 import { FollowUpItem } from "@/components/follow-up-item";
 import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
-import { buttonClass, ErrorText, inputClass, NoAccess, secondaryButtonClass, StatusBadge } from "@/components/ui";
+import {
+  buttonClass,
+  ErrorText,
+  inputClass,
+  NoAccess,
+  secondaryButtonCompactClass,
+  StatusBadge,
+} from "@/components/ui";
 import { apiPatch, apiPost } from "@/lib/api";
 import {
   formatDate,
@@ -54,7 +61,7 @@ function AddFollowUp({ leadId, onAdded }: { leadId: string; onAdded: () => void 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-2 rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto]">
         <input
           type="datetime-local"
@@ -103,14 +110,14 @@ export default function LeadDetailPage() {
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/leads" className="text-sm text-neutral-500 underline">
+        <Link href="/leads" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Leads
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">{lead.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{lead.name}</h1>
           <StatusBadge status={lead.status} />
           {canWrite && !editing && (
-            <button className={secondaryButtonClass + " py-1"} onClick={() => setEditing(true)}>
+            <button className={secondaryButtonCompactClass} onClick={() => setEditing(true)}>
               Edit
             </button>
           )}
@@ -133,9 +140,9 @@ export default function LeadDetailPage() {
           }}
         />
       ) : (
-        <section className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+        <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <Detail label="Phone">
-            <a href={`tel:${lead.phone}`} className="underline">
+            <a href={`tel:${lead.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
               {lead.phone}
             </a>
           </Detail>
@@ -159,9 +166,9 @@ export default function LeadDetailPage() {
       )}
 
       {lead.salesOrder && can(TAGS.SALES_READ) && (
-        <p className="rounded border border-green-300 bg-green-50 p-3 text-sm dark:border-green-900 dark:bg-green-950/40">
+        <p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm dark:border-green-900 dark:bg-green-950/40">
           Converted to sales order{" "}
-          <Link href={`/orders/${lead.salesOrder.id}`} className="font-medium underline">
+          <Link href={`/orders/${lead.salesOrder.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
             SO-{String(lead.salesOrder.orderNumber).padStart(4, "0")}
           </Link>
           {lead.salesOrder.status === "CANCELLED" ? " (cancelled)." : "."}
@@ -181,7 +188,7 @@ export default function LeadDetailPage() {
                 key={s}
                 disabled={s === lead.status}
                 onClick={() => changeStatus(s)}
-                className={`${secondaryButtonClass} py-1 ${s === lead.status ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
+                className={`${secondaryButtonCompactClass} ${s === lead.status ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
               >
                 {STATUS_LABELS[s]}
               </button>

@@ -129,7 +129,7 @@ export function InstallationsCard() {
       <ul className="space-y-1 text-sm">
         {upcoming.data?.slice(0, 3).map((i) => (
           <li key={i.id} className="flex justify-between gap-2">
-            <Link href={`/installations/${i.id}`} className="underline">
+            <Link href={`/installations/${i.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
               {i.salesOrder.customerName}
             </Link>
             <span className="text-neutral-500">
@@ -206,7 +206,7 @@ export function MyHrCard() {
         )}
         {allowances.data && (
           <p>
-            <Link href="/allowances" className="underline">
+            <Link href="/allowances" className="text-brand-700 hover:underline dark:text-brand-300">
               Allowances this month
             </Link>
             : {formatINR(myAllowance?.approvedTotal ?? 0)} approved

@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { FollowUpItem } from "@/components/follow-up-item";
-import { ErrorText, NoAccess, PageHeader, secondaryButtonClass } from "@/components/ui";
+import {
+  ErrorText,
+  NoAccess,
+  PageHeader,
+  secondaryButtonCompactClass,
+} from "@/components/ui";
 import { queryString } from "@/lib/api";
 import { dayKey, FollowUpWithLead, formatTime, isOverdue, TAGS } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
@@ -75,11 +80,11 @@ export default function CalendarPage() {
       />
 
       <div className="mb-3 flex items-center gap-2">
-        <button className={secondaryButtonClass + " py-1"} onClick={() => shiftMonth(-1)} aria-label="Previous month">
+        <button className={secondaryButtonCompactClass} onClick={() => shiftMonth(-1)} aria-label="Previous month">
           ←
         </button>
         <button
-          className={secondaryButtonClass + " py-1"}
+          className={secondaryButtonCompactClass}
           onClick={() => {
             setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
             setSelectedDay(todayKey);
@@ -87,7 +92,7 @@ export default function CalendarPage() {
         >
           Today
         </button>
-        <button className={secondaryButtonClass + " py-1"} onClick={() => shiftMonth(1)} aria-label="Next month">
+        <button className={secondaryButtonCompactClass} onClick={() => shiftMonth(1)} aria-label="Next month">
           →
         </button>
         <h2 className="ml-2 font-medium">{monthTitle.format(month)}</h2>
@@ -95,7 +100,7 @@ export default function CalendarPage() {
 
       <ErrorText error={error} />
 
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-800 dark:bg-neutral-800">
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border shadow-xs border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-800 dark:bg-neutral-800">
         {WEEKDAYS.map((d) => (
           <div key={d} className="bg-neutral-50 py-1 text-center font-medium text-neutral-500 dark:bg-neutral-900">
             {d}

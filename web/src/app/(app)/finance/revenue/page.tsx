@@ -8,8 +8,9 @@ import {
   inputClass,
   NoAccess,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonCompactClass,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -70,7 +71,7 @@ export default function RevenuePage() {
           <button
             key={label}
             onClick={() => setRange(r)}
-            className={`${secondaryButtonClass} py-1 ${
+            className={`${secondaryButtonCompactClass} ${
               range.from === r.from && range.to === r.to ? "bg-neutral-200 dark:bg-neutral-800" : ""
             }`}
           >
@@ -93,7 +94,7 @@ export default function RevenuePage() {
       <ErrorText error={error} />
       {data && data.rows.length === 0 && <p className="text-sm text-neutral-500">No orders in this period.</p>}
       {data && data.rows.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className={tableWrapClass}>
           <table className={tableClass}>
             <thead className={theadClass}>
               <tr>

@@ -37,8 +37,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.replace("/login");
   }, [router]);
 
-  if (error) return <main className="p-4 text-red-600">{error}</main>;
-  if (!user) return <main className="p-4 text-neutral-500">Loading…</main>;
+  if (error) return <main className="grid min-h-screen place-items-center p-4 text-sm font-medium text-red-600">{error}</main>;
+  if (!user) {
+    return (
+      <main className="grid min-h-screen place-items-center p-4">
+        <div className="flex items-center gap-3 text-sm text-neutral-500">
+          <span className="size-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" aria-hidden />
+          Loading Precon ERP…
+        </div>
+      </main>
+    );
+  }
 
   const can = (tag: string) => user.permissions.includes(tag);
   return <AuthContext.Provider value={{ user, can, logout }}>{children}</AuthContext.Provider>;

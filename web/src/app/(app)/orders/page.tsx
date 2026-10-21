@@ -9,10 +9,11 @@ import {
   inputClass,
   NoAccess,
   OrderStatusBadge,
-  OverdueTag,
   overdueRowClass,
+  OverdueTag,
   PageHeader,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -64,7 +65,7 @@ export default function OrdersPage() {
       {data && data.items.length === 0 && <p className="text-sm text-neutral-500">No orders yet.</p>}
       {data && data.items.length > 0 && (
         <>
-          <div className="overflow-x-auto">
+          <div className={tableWrapClass}>
             <table className={tableClass}>
               <thead className={theadClass}>
                 <tr>
@@ -83,7 +84,7 @@ export default function OrdersPage() {
                 {data.items.map((o) => (
                   <tr key={o.id} className={o.isOverdue ? overdueRowClass : ""}>
                     <td className={tdClass}>
-                      <Link href={`/orders/${o.id}`} className="font-medium underline">
+                      <Link href={`/orders/${o.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                         {o.orderNumberLabel}
                       </Link>
                     </td>

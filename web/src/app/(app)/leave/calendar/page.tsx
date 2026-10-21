@@ -48,7 +48,7 @@ export default function TeamCalendarPage() {
         <section className="mt-6">
           <h2 className="mb-2 font-medium">{formatDateOnly(selectedDay)}</h2>
           {holiday && (
-            <p className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+            <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm dark:border-amber-900 dark:bg-amber-950/40">
               Company holiday: <strong>{holiday.name}</strong>
             </p>
           )}

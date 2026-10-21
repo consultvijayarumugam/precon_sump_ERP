@@ -1,6 +1,9 @@
 // Permission tags the web UI checks to show/hide things. Mirrors
 // api/src/access-control/permission-catalog.ts. The API always enforces these too.
 export const TAGS = {
+  USERS_READ: "users.read",
+  PERMISSIONS_READ: "permissions.read",
+  PERMISSIONS_ASSIGN: "permissions.assign",
   LEADS_READ: "leads.read",
   LEADS_READ_ALL: "leads.read_all",
   LEADS_WRITE: "leads.write",

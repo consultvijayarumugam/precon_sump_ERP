@@ -5,7 +5,12 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { SiteVisitForm } from "@/components/site-visit-form";
-import { ErrorText, NoAccess, secondaryButtonClass, TagChip } from "@/components/ui";
+import {
+  ErrorText,
+  NoAccess,
+  secondaryButtonCompactClass,
+  TagChip,
+} from "@/components/ui";
 import { apiPatch } from "@/lib/api";
 import { formatDate } from "@/lib/crm";
 import { formatDateOnly } from "@/lib/finance";
@@ -26,16 +31,16 @@ export default function SiteVisitPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/site-visits" className="text-sm text-neutral-500 underline">
+        <Link href="/site-visits" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Site visits
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">{visit.customerName}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{visit.customerName}</h1>
           {visit.tags.map((t) => (
             <TagChip key={t.id} tag={t} />
           ))}
           {can(TAGS.SITEVISIT_WRITE) && !editing && (
-            <button className={secondaryButtonClass + " py-1"} onClick={() => setEditing(true)}>
+            <button className={secondaryButtonCompactClass} onClick={() => setEditing(true)}>
               Edit
             </button>
           )}
@@ -54,7 +59,7 @@ export default function SiteVisitPage() {
           }}
         />
       ) : (
-        <section className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+        <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <div>
             <span className="text-neutral-500">Date: </span>
             {formatDateOnly(visit.visitDate)}
@@ -81,7 +86,7 @@ export default function SiteVisitPage() {
             <div>
               <span className="text-neutral-500">Installation: </span>
               {can(TAGS.INSTALLATIONS_READ) ? (
-                <Link href={`/installations/${visit.installation.id}`} className="underline">
+                <Link href={`/installations/${visit.installation.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
                   {visit.installation.orderNumberLabel}
                 </Link>
               ) : (

@@ -14,6 +14,7 @@ import {
   PageHeader,
   PriorityBadge,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -101,7 +102,7 @@ export default function ServiceJobsPage() {
       <ErrorText error={error} />
       {data && data.length === 0 && <p className="text-sm text-neutral-500">No service jobs.</p>}
       {data && data.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className={tableWrapClass}>
           <table className={tableClass}>
             <thead className={theadClass}>
               <tr>
@@ -120,7 +121,7 @@ export default function ServiceJobsPage() {
                 return (
                   <tr key={j.id} className={overdue ? overdueRowClass : ""}>
                     <td className={tdClass}>
-                      <Link href={`/service/${j.id}`} className="font-medium underline">
+                      <Link href={`/service/${j.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
                         {j.jobNumberLabel}
                       </Link>
                     </td>

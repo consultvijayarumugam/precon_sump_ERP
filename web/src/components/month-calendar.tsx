@@ -1,7 +1,9 @@
 "use client";
 
 import { ReactNode } from "react";
-import { secondaryButtonClass } from "@/components/ui";
+import {
+  secondaryButtonCompactClass,
+} from "@/components/ui";
 import { dayKey } from "@/lib/crm";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -58,11 +60,11 @@ export function MonthCalendar({ month, onMonthChange, selectedDay, onSelectDay, 
   return (
     <>
       <div className="mb-3 flex items-center gap-2">
-        <button className={secondaryButtonClass + " py-1"} onClick={() => shift(-1)} aria-label="Previous month">
+        <button className={secondaryButtonCompactClass} onClick={() => shift(-1)} aria-label="Previous month">
           ←
         </button>
         <button
-          className={secondaryButtonClass + " py-1"}
+          className={secondaryButtonCompactClass}
           onClick={() => {
             onMonthChange(new Date(today.getFullYear(), today.getMonth(), 1));
             onSelectDay(todayKey);
@@ -70,13 +72,13 @@ export function MonthCalendar({ month, onMonthChange, selectedDay, onSelectDay, 
         >
           Today
         </button>
-        <button className={secondaryButtonClass + " py-1"} onClick={() => shift(1)} aria-label="Next month">
+        <button className={secondaryButtonCompactClass} onClick={() => shift(1)} aria-label="Next month">
           →
         </button>
         <h2 className="ml-2 font-medium">{monthTitle.format(month)}</h2>
       </div>
 
-      <div className="grid grid-cols-7 gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-800 dark:bg-neutral-800">
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border shadow-xs border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-800 dark:bg-neutral-800">
         {WEEKDAYS.map((d) => (
           <div key={d} className="bg-neutral-50 py-1 text-center font-medium text-neutral-500 dark:bg-neutral-900">
             {d}

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
   ApprovalBadge,
-  buttonClass,
+  buttonCompactClass,
   ErrorText,
   inputClass,
   NoAccess,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonCompactClass,
 } from "@/components/ui";
 import { apiPost, queryString } from "@/lib/api";
 import { formatDateOnly } from "@/lib/finance";
@@ -33,10 +33,10 @@ function Decide({ leave, onDone }: { leave: LeaveApplication; onDone: () => void
         value={note}
         onChange={(e) => setNote(e.target.value)}
       />
-      <button className={`${buttonClass} py-1`} disabled={busy} onClick={() => decide("approve")}>
+      <button className={buttonCompactClass} disabled={busy} onClick={() => decide("approve")}>
         Approve
       </button>
-      <button className={`${secondaryButtonClass} py-1`} disabled={busy} onClick={() => decide("reject")}>
+      <button className={secondaryButtonCompactClass} disabled={busy} onClick={() => decide("reject")}>
         Reject
       </button>
       <ErrorText error={error} />
@@ -70,7 +70,7 @@ export default function LeaveApprovalsPage() {
       {data?.length === 0 && <p className="text-sm text-neutral-500">Nothing here.</p>}
       <ul className="space-y-2">
         {data?.map((l) => (
-          <li key={l.id} className="rounded border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+          <li key={l.id} className="rounded-lg border border-neutral-200 bg-white shadow-xs p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{l.user.fullName}</span>
               <span className="text-xs text-neutral-500">{l.user.role.name}</span>

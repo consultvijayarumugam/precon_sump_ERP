@@ -10,7 +10,7 @@ import {
   inputClass,
   NoAccess,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonSmClass,
   Stat,
 } from "@/components/ui";
 import { apiPost } from "@/lib/api";
@@ -46,7 +46,7 @@ function ApplyForm({ balance, onDone }: { balance: LeaveBalance | null; onDone: 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <h2 className="font-medium">Apply for leave</h2>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Type">
@@ -127,14 +127,14 @@ export default function MyLeavePage() {
       {balance.data && (
         <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {balance.data.paid.map((p) => (
-            <div key={p.type} className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+            <div key={p.type} className="rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
               <Stat label={`${LEAVE_TYPE_LABELS[p.type]} left of ${p.entitlement}`} value={p.remaining} />
               <div className="mt-1 text-xs text-neutral-500">
                 {p.taken} taken{p.pending > 0 && ` · ${p.pending} pending`}
               </div>
             </div>
           ))}
-          <div className="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+          <div className="rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
             <Stat label={`Unpaid days in ${balance.data.year}`} value={balance.data.unpaid.taken} />
           </div>
           {lop.data?.row && (
@@ -169,7 +169,7 @@ export default function MyLeavePage() {
       <section>
         <h2 className="mb-2 font-medium">My applications this year</h2>
         {mine.data?.length === 0 && <p className="text-sm text-neutral-500">No leave applied yet.</p>}
-        <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+        <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
           {mine.data?.map((l) => {
             const cancellable = l.status === "PENDING" || (l.status === "APPROVED" && l.startDate > today);
             return (
@@ -186,7 +186,7 @@ export default function MyLeavePage() {
                 {l.decisionNote && <span className="text-xs text-neutral-500">“{l.decisionNote}” ({l.decidedBy?.fullName})</span>}
                 {cancellable && (
                   <button
-                    className={`${secondaryButtonClass} ml-auto py-0.5 text-xs`}
+                    className={`${secondaryButtonSmClass} ml-auto`}
                     disabled={action.busy}
                     onClick={async () => {
                       if (!confirm("Withdraw this leave application?")) return;

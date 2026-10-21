@@ -52,7 +52,7 @@ function RecordPayment({ order, onDone }: { order: SalesOrderDetail; onDone: () 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
       <h3 className="text-sm font-medium">Record a payment</h3>
       <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Amount (₹)">
@@ -104,7 +104,7 @@ function EditOrder({ order, onDone }: { order: SalesOrderDetail; onDone: () => v
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-3 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-3 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label={`Quantity (${order.product.unit})`}>
           <input className={inputClass} type="number" min="1" required disabled={delivered} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
@@ -164,11 +164,11 @@ export default function OrderDetailPage() {
   return (
     <div className="space-y-8">
       <div>
-        <button onClick={() => router.back()} className="text-sm text-neutral-500 underline">
+        <button onClick={() => router.back()} className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Back
         </button>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">
+          <h1 className="text-2xl font-semibold tracking-tight">
             {order.orderNumberLabel} · {order.customerName}
           </h1>
           <OrderStatusBadge status={order.status} />
@@ -194,7 +194,7 @@ export default function OrderDetailPage() {
           }}
         />
       ) : (
-        <section className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+        <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <div>
             <span className="text-neutral-500">Product: </span>
             {order.product.name} × {order.quantity} {order.product.unit}
@@ -209,7 +209,7 @@ export default function OrderDetailPage() {
           </div>
           <div>
             <span className="text-neutral-500">Lead: </span>
-            <Link href={`/leads/${order.lead.id}`} className="underline">
+            <Link href={`/leads/${order.lead.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
               {order.customerName}
             </Link>{" "}
             · {order.lead.phone}
@@ -256,7 +256,7 @@ export default function OrderDetailPage() {
           {order.payments!.length === 0 ? (
             <p className="text-sm text-neutral-500">No payments yet.</p>
           ) : (
-            <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+            <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
               {order.payments!.map((p) => (
                 <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span className="font-medium">{formatINR(p.amount)}</span>
@@ -266,7 +266,7 @@ export default function OrderDetailPage() {
                   </span>
                   <span className="text-neutral-500">by {p.recordedBy.fullName}</span>
                   {can(TAGS.PAYMENTS_WRITE) && (
-                    <button className="text-xs text-neutral-500 underline" onClick={() => removePayment(p.id)}>
+                    <button className="text-xs font-medium text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-200" onClick={() => removePayment(p.id)}>
                       Remove
                     </button>
                   )}

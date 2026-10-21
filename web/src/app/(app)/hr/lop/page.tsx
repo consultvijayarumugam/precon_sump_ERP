@@ -12,6 +12,7 @@ import {
   overdueRowClass,
   PageHeader,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -40,7 +41,7 @@ function RecordAbsence({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-2 rounded border border-neutral-200 p-4 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-2 rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <h2 className="font-medium">Record an absence without approval</h2>
       <p className="text-xs text-neutral-500">
         For a working day someone was away without approved leave. It counts as LOP. When attendance arrives with the
@@ -119,7 +120,7 @@ export default function LopPage() {
               <span className="text-amber-700 dark:text-amber-300"> {data.totals.pendingLeaveDays} day(s) of leave still pending a decision.</span>
             )}
           </p>
-          <div className="overflow-x-auto">
+          <div className={tableWrapClass}>
             <table className={tableClass}>
               <thead className={theadClass}>
                 <tr>
@@ -148,7 +149,7 @@ export default function LopPage() {
                       <td className={`${tdClass} text-right`}>{r.absentWithoutApproval}</td>
                       <td className={`${tdClass} text-right font-semibold ${r.lopDays > 0 ? "text-red-600" : ""}`}>
                         {r.lopDays > 0 ? (
-                          <button className="underline" onClick={() => setExpanded(expanded === r.employee.id ? null : r.employee.id)}>
+                          <button className="text-brand-700 hover:underline dark:text-brand-300" onClick={() => setExpanded(expanded === r.employee.id ? null : r.employee.id)}>
                             {r.lopDays}
                           </button>
                         ) : (
@@ -172,7 +173,7 @@ export default function LopPage() {
                                 {d.note && <span className="text-neutral-500">· {d.note}</span>}
                                 {d.absenceId && (
                                   <button
-                                    className="text-red-600 underline"
+                                    className="font-medium text-red-600 hover:underline"
                                     onClick={async () => {
                                       if (!confirm("Remove this absence? It will no longer count as LOP.")) return;
                                       if (await action.run(() => api(`/lop/absences/${d.absenceId}`, { method: "DELETE" }))) reload();

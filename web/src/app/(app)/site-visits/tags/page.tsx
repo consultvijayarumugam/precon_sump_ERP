@@ -4,13 +4,13 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
-  buttonClass,
+  buttonCompactClass,
   ErrorText,
   Field,
   inputClass,
   NoAccess,
   PageHeader,
-  secondaryButtonClass,
+  secondaryButtonSmClass,
   TagChip,
 } from "@/components/ui";
 import { api, apiPatch, apiPost } from "@/lib/api";
@@ -66,7 +66,7 @@ function TagEditor({
       </div>
       <div className="flex items-center gap-2">
         <TagChip tag={{ name: name || "preview", color, isActive: true }} />
-        <button type="submit" className={`${buttonClass} py-1`} disabled={busy}>
+        <button type="submit" className={buttonCompactClass} disabled={busy}>
           {tag ? "Save" : "Add tag"}
         </button>
         {onCancel && (
@@ -92,7 +92,7 @@ export default function SiteVisitTagsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/site-visits" className="text-sm text-neutral-500 underline">
+        <Link href="/site-visits" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
           ← Site visits
         </Link>
         <PageHeader title="Site-visit tags" />
@@ -102,13 +102,13 @@ export default function SiteVisitTagsPage() {
         </p>
       </div>
 
-      <section className="rounded border border-neutral-200 p-4 dark:border-neutral-800">
+      <section className="rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
         <h2 className="mb-2 font-medium">Add a tag</h2>
         <TagEditor onSaved={reload} />
       </section>
 
       <ErrorText error={error ?? action.error} />
-      <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+      <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-4 text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
         {data?.map((t) => (
           <li key={t.id} className="py-3">
             {editingId === t.id ? (
@@ -129,11 +129,11 @@ export default function SiteVisitTagsPage() {
                   {!t.isActive && " · retired"}
                 </span>
                 <div className="ml-auto flex gap-2">
-                  <button className={`${secondaryButtonClass} py-0.5 text-xs`} onClick={() => setEditingId(t.id)}>
+                  <button className={secondaryButtonSmClass} onClick={() => setEditingId(t.id)}>
                     Edit
                   </button>
                   <button
-                    className={`${secondaryButtonClass} py-0.5 text-xs`}
+                    className={secondaryButtonSmClass}
                     disabled={action.busy}
                     onClick={async () => {
                       if (await action.run(() => apiPatch(`/site-visit-tags/${t.id}`, { isActive: !t.isActive }))) reload();
@@ -143,7 +143,7 @@ export default function SiteVisitTagsPage() {
                   </button>
                   {t.visitCount === 0 && (
                     <button
-                      className="text-xs text-red-600 underline"
+                      className="text-xs font-medium text-red-600 hover:underline"
                       onClick={async () => {
                         if (!confirm(`Delete tag "${t.name}"?`)) return;
                         if (await action.run(() => api(`/site-visit-tags/${t.id}`, { method: "DELETE" }))) reload();

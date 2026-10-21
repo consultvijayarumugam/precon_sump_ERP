@@ -67,7 +67,7 @@ export function InstallationForm({ initial, submitLabel, onSubmit, onCancel }: P
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="grid gap-3 sm:grid-cols-2">
         {!initial && (
           <div className="sm:col-span-2">

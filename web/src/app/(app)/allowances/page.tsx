@@ -5,15 +5,19 @@ import { useAuth } from "@/components/auth-provider";
 import {
   ApprovalBadge,
   buttonClass,
+  buttonSmClass,
   ErrorText,
   Field,
+  inputBaseClass,
   inputClass,
   MonthPicker,
   NoAccess,
   PageHeader,
   secondaryButtonClass,
+  secondaryButtonSmClass,
   Stat,
   tableClass,
+  tableWrapClass,
   tbodyClass,
   tdClass,
   thClass,
@@ -72,7 +76,7 @@ function AllowanceForm({ onDone, onCancel }: { onDone: () => void; onCancel: () 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 bg-white shadow-xs p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <h2 className="font-medium">{manage ? "Add an allowance" : "Claim an allowance"}</h2>
       <div className="grid gap-3 sm:grid-cols-4">
         {manage && (
@@ -158,11 +162,11 @@ function DecideClaim({ allowance, onDone }: { allowance: Allowance; onDone: () =
   };
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <input className={`${inputClass} w-44 py-1`} placeholder="Note (to reject)" value={note} onChange={(e) => setNote(e.target.value)} />
-      <button className={`${buttonClass} py-1 text-xs`} disabled={busy} onClick={() => decide("approve")}>
+      <input className={`${inputBaseClass} w-44`} placeholder="Note (to reject)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <button className={buttonSmClass} disabled={busy} onClick={() => decide("approve")}>
         Approve
       </button>
-      <button className={`${secondaryButtonClass} py-1 text-xs`} disabled={busy} onClick={() => decide("reject")}>
+      <button className={secondaryButtonSmClass} disabled={busy} onClick={() => decide("reject")}>
         Reject
       </button>
       <ErrorText error={error} />
@@ -202,7 +206,7 @@ export default function AllowancesPage() {
             {summary.data.rows.length === 0 ? (
               <p className="text-sm text-neutral-500">No allowances this month.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className={tableWrapClass}>
                 <table className={tableClass}>
                   <thead className={theadClass}>
                     <tr>
@@ -250,7 +254,7 @@ export default function AllowancesPage() {
         ))}
 
       <div className="flex flex-wrap items-center gap-2">
-        <select className={`${inputClass} w-auto`} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select className={inputBaseClass} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {ALLOWANCE_STATUSES.map((s) => (
             <option key={s} value={s}>
@@ -277,7 +281,7 @@ export default function AllowancesPage() {
       {list.data?.length === 0 && <p className="text-sm text-neutral-500">No entries.</p>}
       <ul className="space-y-2">
         {list.data?.map((a) => (
-          <li key={a.id} className="rounded border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+          <li key={a.id} className="rounded-lg border border-neutral-200 bg-white shadow-xs p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold">{formatINR(a.amount)}</span>
               <span>{ALLOWANCE_TYPE_LABELS[a.type]}</span>
@@ -286,7 +290,7 @@ export default function AllowancesPage() {
               {manage && <span className="font-medium">{a.user.fullName}</span>}
               {a.status === "PENDING" && a.user.id === user.id && !manage && (
                 <button
-                  className="ml-auto text-xs text-neutral-500 underline"
+                  className="ml-auto text-xs font-medium text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-200"
                   onClick={async () => {
                     if (!confirm("Withdraw this claim?")) return;
                     if (await action.run(() => api(`/allowances/${a.id}`, { method: "DELETE" }))) reload();
