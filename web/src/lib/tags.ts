@@ -1,0 +1,27 @@
+// Permission tags the web UI checks to show/hide things. Mirrors
+// api/src/access-control/permission-catalog.ts. The API always enforces these too.
+export const TAGS = {
+  LEADS_READ: "leads.read",
+  LEADS_READ_ALL: "leads.read_all",
+  LEADS_WRITE: "leads.write",
+  LEADS_ASSIGN: "leads.assign",
+  FOLLOWUPS_WRITE: "followups.write",
+  SALES_READ: "sales.read",
+  SALES_READ_ALL: "sales.read_all",
+  SALES_WRITE: "sales.write",
+  PAYMENTS_READ: "payments.read",
+  PAYMENTS_WRITE: "payments.write",
+  VENDORS_READ: "vendors.read",
+  VENDORS_WRITE: "vendors.write",
+  STOCK_READ: "stock.read",
+  STOCK_WRITE: "stock.write",
+  FINANCE_DASHBOARD: "finance.dashboard",
+  INSTALLATIONS_READ: "installations.read",
+  INSTALLATIONS_WRITE: "installations.write",
+  SERVICE_READ: "service.read",
+  SERVICE_READ_ALL: "service.read_all",
+  SERVICE_WRITE: "service.write",
+  SITEVISIT_READ: "sitevisit.read",
+  SITEVISIT_WRITE: "sitevisit.write",
+  SITEVISIT_MANAGE_TAGS: "sitevisit.manage_tags",
+} as const;

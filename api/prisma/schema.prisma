@@ -1,0 +1,529 @@
+// Precon ERP - Phase 1 schema: users, roles, and the permission-tag system.
+//
+// How access works:
+//   - Every user has exactly one Role (admin, sales, telecaller, factory_supervisor).
+//   - A Role carries a default set of Permission tags (RolePermission).
+//   - Admin can fine-tune any single user with UserPermission overrides:
+//       GRANT  = give this user a tag their role does not have
+//       REVOKE = take away a tag their role normally has
+//   - Effective tags = role tags + granted tags - revoked tags.
+//   - API endpoints declare the tags they need; the RBAC guard checks them.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique // e.g. "admin", "sales"
+  name        String
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique // e.g. "users.read"
+  module      String // module this tag belongs to, e.g. "admin", "crm"
+  description String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  roles       RolePermission[]
+  users       UserPermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+enum PermissionEffect {
+  GRANT
+  REVOKE
+}
+
+model UserPermission {
+  userId       String           @map("user_id") @db.Uuid
+  permissionId String           @map("permission_id") @db.Uuid
+  effect       PermissionEffect
+  createdAt    DateTime         @default(now()) @map("created_at")
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+  @@map("user_permissions")
+}
+
+model User {
+  id                   String            @id @default(uuid()) @db.Uuid
+  email                String            @unique
+  passwordHash         String            @map("password_hash")
+  fullName             String            @map("full_name")
+  phone                String?
+  isActive             Boolean           @default(true) @map("is_active")
+  roleId               String            @map("role_id") @db.Uuid
+  role                 Role              @relation(fields: [roleId], references: [id])
+  permissionOverrides  UserPermission[]
+  revokedTokens        RevokedToken[]
+  assignedLeads        Lead[]            @relation("LeadAssignee")
+  createdLeads         Lead[]            @relation("LeadCreator")
+  createdFollowUps     FollowUp[]        @relation("FollowUpCreator")
+  salesOrders          SalesOrder[]      @relation("OrderSalesperson")
+  createdSalesOrders   SalesOrder[]      @relation("OrderCreator")
+  recordedPayments     Payment[]         @relation("PaymentRecorder")
+  createdPurchases     Purchase[]        @relation("PurchaseCreator")
+  vendorPayments       VendorPayment[]   @relation("VendorPaymentRecorder")
+  stockMovements       StockMovement[]   @relation("StockMovementCreator")
+  installations        Installation[]    @relation("InstallationAssignee")
+  createdInstallations Installation[]    @relation("InstallationCreator")
+  serviceJobs          ServiceJob[]      @relation("ServiceJobAssignee")
+  createdServiceJobs   ServiceJob[]      @relation("ServiceJobCreator")
+  serviceFollowUps     ServiceFollowUp[] @relation("ServiceFollowUpCreator")
+  siteVisits           SiteVisit[]       @relation("SiteVisitPerson")
+  createdSiteVisits    SiteVisit[]       @relation("SiteVisitCreator")
+  lastLoginAt          DateTime?         @map("last_login_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  @@index([roleId])
+  @@map("users")
+}
+
+// Logged-out JWTs. A token's "jti" lands here on logout and is rejected
+// until it would have expired anyway; expired rows can be purged safely.
+model RevokedToken {
+  jti       String   @id
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime @default(now()) @map("revoked_at")
+
+  @@index([expiresAt])
+  @@map("revoked_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 - CRM core: leads (#1), follow-ups (#2), won leads (#3), calendar (#17)
+// ---------------------------------------------------------------------------
+
+enum LeadSource {
+  META
+  MANUAL
+  WEBSITE
+  REFERRAL
+  OTHER
+}
+
+enum ProductInterest {
+  UG_SUMP
+  BIO_SEPTIC_TANK
+  MICROBES
+  PRECAST
+}
+
+// Pipeline: NEW -> CONTACTED -> QUALIFIED -> QUOTED -> WON, or LOST at any point.
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  QUOTED
+  WON
+  LOST
+}
+
+enum FollowUpOutcome {
+  CONNECTED
+  NO_ANSWER
+  CALL_BACK
+  INTERESTED
+  NOT_INTERESTED
+  QUOTE_SENT
+  OTHER
+}
+
+model Lead {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String
+  phone           String
+  email           String?
+  city            String?
+  source          LeadSource
+  productInterest ProductInterest @map("product_interest")
+  status          LeadStatus      @default(NEW)
+  notes           String?
+  // Null = unassigned; only users with leads.read_all can see those.
+  assignedToId    String?         @map("assigned_to_id") @db.Uuid
+  assignedTo      User?           @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  createdById     String          @map("created_by_id") @db.Uuid
+  createdBy       User            @relation("LeadCreator", fields: [createdById], references: [id])
+  // Set when the lead enters WON / LOST, cleared if it is reopened.
+  closedAt        DateTime?       @map("closed_at")
+  followUps       FollowUp[]
+  salesOrder      SalesOrder?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  @@index([assignedToId, status])
+  @@index([status, closedAt])
+  @@index([phone])
+  @@map("leads")
+}
+
+// A planned contact with a lead. Pending until an outcome is recorded.
+model FollowUp {
+  id          String           @id @default(uuid()) @db.Uuid
+  leadId      String           @map("lead_id") @db.Uuid
+  lead        Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  scheduledAt DateTime         @map("scheduled_at")
+  note        String?
+  outcome     FollowUpOutcome?
+  completedAt DateTime?        @map("completed_at")
+  createdById String           @map("created_by_id") @db.Uuid
+  createdBy   User             @relation("FollowUpCreator", fields: [createdById], references: [id])
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([leadId])
+  @@index([completedAt, scheduledAt])
+  @@map("follow_ups")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 - Finance and stock: sales orders + revenue (#7), customer payments +
+// overdue balances (#13), vendors + purchases + payables (#14), stock (#6).
+// Money is Decimal(12,2) in rupees; business dates (order/due/paid) are DATE.
+// ---------------------------------------------------------------------------
+
+enum SalesOrderStatus {
+  CONFIRMED // won and booked, not yet delivered
+  DELIVERED // goods left the factory; stock was reduced
+  CANCELLED
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+  CARD
+  OTHER
+}
+
+// Finished goods we sell. One row per product line; `code` ties it to a lead's
+// product interest.
+model Product {
+  id                String          @id @default(uuid()) @db.Uuid
+  code              ProductInterest @unique
+  name              String
+  unit              String // e.g. "nos", "packs", "panels"
+  quantityOnHand    Int             @default(0) @map("quantity_on_hand")
+  lowStockThreshold Int             @default(0) @map("low_stock_threshold")
+  salesOrders       SalesOrder[]
+  movements         StockMovement[]
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  @@map("products")
+}
+
+enum StockMovementReason {
+  OPENING // starting balance
+  PRODUCTION // finished goods added from the factory
+  DELIVERY // a sales order was delivered
+  ADJUSTMENT // manual correction (damage, count fix)
+}
+
+// Every change to quantityOnHand, for an audit trail.
+model StockMovement {
+  id           String              @id @default(uuid()) @db.Uuid
+  productId    String              @map("product_id") @db.Uuid
+  product      Product             @relation(fields: [productId], references: [id])
+  change       Int // + adds stock, - removes it
+  reason       StockMovementReason
+  note         String?
+  salesOrderId String?             @map("sales_order_id") @db.Uuid
+  salesOrder   SalesOrder?         @relation(fields: [salesOrderId], references: [id])
+  createdById  String              @map("created_by_id") @db.Uuid
+  createdBy    User                @relation("StockMovementCreator", fields: [createdById], references: [id])
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  @@index([productId, createdAt])
+  @@map("stock_movements")
+}
+
+model SalesOrder {
+  id            String           @id @default(uuid()) @db.Uuid
+  orderNumber   Int              @unique @default(autoincrement()) @map("order_number") // shown as SO-0001
+  // One order per won lead.
+  leadId        String           @unique @map("lead_id") @db.Uuid
+  lead          Lead             @relation(fields: [leadId], references: [id])
+  customerName  String           @map("customer_name")
+  productId     String           @map("product_id") @db.Uuid
+  product       Product          @relation(fields: [productId], references: [id])
+  quantity      Int
+  totalAmount   Decimal          @map("total_amount") @db.Decimal(12, 2)
+  orderDate     DateTime         @map("order_date") @db.Date
+  dueDate       DateTime         @map("due_date") @db.Date // payment due by
+  status        SalesOrderStatus @default(CONFIRMED)
+  deliveredAt   DateTime?        @map("delivered_at")
+  notes         String?
+  // Revenue is credited to this person (#7).
+  salespersonId String           @map("salesperson_id") @db.Uuid
+  salesperson   User             @relation("OrderSalesperson", fields: [salespersonId], references: [id])
+  createdById   String           @map("created_by_id") @db.Uuid
+  createdBy     User             @relation("OrderCreator", fields: [createdById], references: [id])
+  payments      Payment[]
+  movements     StockMovement[]
+  installation  Installation?
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  @@index([salespersonId, orderDate])
+  @@index([status, dueDate])
+  @@map("sales_orders")
+}
+
+// Money received from a customer against a sales order.
+model Payment {
+  id           String      @id @default(uuid()) @db.Uuid
+  salesOrderId String      @map("sales_order_id") @db.Uuid
+  salesOrder   SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  amount       Decimal     @db.Decimal(12, 2)
+  paidOn       DateTime    @map("paid_on") @db.Date
+  mode         PaymentMode
+  reference    String? // UTR / cheque no.
+  note         String?
+  recordedById String      @map("recorded_by_id") @db.Uuid
+  recordedBy   User        @relation("PaymentRecorder", fields: [recordedById], references: [id])
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@index([salesOrderId])
+  @@map("payments")
+}
+
+enum VendorCategory {
+  RAW_MATERIAL
+  TRANSPORT
+  EQUIPMENT
+  SERVICES
+  OTHER
+}
+
+model Vendor {
+  id            String          @id @default(uuid()) @db.Uuid
+  name          String
+  contactPerson String?         @map("contact_person")
+  phone         String?
+  email         String?
+  category      VendorCategory
+  notes         String?
+  purchases     Purchase[]
+  payments      VendorPayment[]
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@map("vendors")
+}
+
+// A bill from a vendor: what we owe them.
+model Purchase {
+  id            String   @id @default(uuid()) @db.Uuid
+  vendorId      String   @map("vendor_id") @db.Uuid
+  vendor        Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  item          String
+  invoiceNumber String?  @map("invoice_number")
+  amount        Decimal  @db.Decimal(12, 2)
+  purchaseDate  DateTime @map("purchase_date") @db.Date
+  dueDate       DateTime @map("due_date") @db.Date
+  notes         String?
+  createdById   String   @map("created_by_id") @db.Uuid
+  createdBy     User     @relation("PurchaseCreator", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([vendorId, dueDate])
+  @@map("purchases")
+}
+
+// Money we paid a vendor. Applied to their oldest bills first when working out
+// what is overdue.
+model VendorPayment {
+  id           String      @id @default(uuid()) @db.Uuid
+  vendorId     String      @map("vendor_id") @db.Uuid
+  vendor       Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  amount       Decimal     @db.Decimal(12, 2)
+  paidOn       DateTime    @map("paid_on") @db.Date
+  mode         PaymentMode
+  reference    String?
+  note         String?
+  recordedById String      @map("recorded_by_id") @db.Uuid
+  recordedBy   User        @relation("VendorPaymentRecorder", fields: [recordedById], references: [id])
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@index([vendorId])
+  @@map("vendor_payments")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 (web) - Installation scheduling (#12), service jobs (#4), service
+// follow-ups (#5), site visits with admin-defined tags (#18).
+// ---------------------------------------------------------------------------
+
+enum InstallationStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED // makes the order eligible for after-sales service
+}
+
+// One installation per sales order.
+model Installation {
+  id              String             @id @default(uuid()) @db.Uuid
+  salesOrderId    String             @unique @map("sales_order_id") @db.Uuid
+  salesOrder      SalesOrder         @relation(fields: [salesOrderId], references: [id])
+  scheduledDate   DateTime           @map("scheduled_date") @db.Date
+  // Who does it: a person, a crew name, or both.
+  assignedToId    String?            @map("assigned_to_id") @db.Uuid
+  assignedTo      User?              @relation("InstallationAssignee", fields: [assignedToId], references: [id])
+  teamName        String?            @map("team_name")
+  siteAddress     String             @map("site_address")
+  notes           String?
+  status          InstallationStatus @default(SCHEDULED)
+  startedAt       DateTime?          @map("started_at")
+  completedAt     DateTime?          @map("completed_at")
+  completionNotes String?            @map("completion_notes")
+  createdById     String             @map("created_by_id") @db.Uuid
+  createdBy       User               @relation("InstallationCreator", fields: [createdById], references: [id])
+  serviceJobs     ServiceJob[]
+  siteVisits      SiteVisit[]
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([status, scheduledDate])
+  @@map("installations")
+}
+
+enum ServiceJobType {
+  COMPLAINT
+  MAINTENANCE
+  WARRANTY
+}
+
+enum ServiceJobPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ServiceJobStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+// After-sales work on an installed order (#4).
+model ServiceJob {
+  id              String             @id @default(uuid()) @db.Uuid
+  jobNumber       Int                @unique @default(autoincrement()) @map("job_number") // shown as SJ-0001
+  installationId  String             @map("installation_id") @db.Uuid
+  installation    Installation       @relation(fields: [installationId], references: [id])
+  type            ServiceJobType
+  priority        ServiceJobPriority @default(MEDIUM)
+  status          ServiceJobStatus   @default(OPEN)
+  description     String
+  assignedToId    String?            @map("assigned_to_id") @db.Uuid
+  assignedTo      User?              @relation("ServiceJobAssignee", fields: [assignedToId], references: [id])
+  resolvedAt      DateTime?          @map("resolved_at")
+  resolutionNotes String?            @map("resolution_notes")
+  createdById     String             @map("created_by_id") @db.Uuid
+  createdBy       User               @relation("ServiceJobCreator", fields: [createdById], references: [id])
+  followUps       ServiceFollowUp[]
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([status, priority])
+  @@index([assignedToId])
+  @@map("service_jobs")
+}
+
+enum ServiceFollowUpOutcome {
+  CONNECTED
+  NO_ANSWER
+  SITE_VISITED
+  PARTS_PENDING
+  FIXED
+  CUSTOMER_SATISFIED
+  OTHER
+}
+
+// Like sales follow-ups (Phase 2), but on a service job (#5).
+model ServiceFollowUp {
+  id           String                  @id @default(uuid()) @db.Uuid
+  serviceJobId String                  @map("service_job_id") @db.Uuid
+  serviceJob   ServiceJob              @relation(fields: [serviceJobId], references: [id], onDelete: Cascade)
+  scheduledAt  DateTime                @map("scheduled_at")
+  note         String?
+  outcome      ServiceFollowUpOutcome?
+  completedAt  DateTime?               @map("completed_at")
+  createdById  String                  @map("created_by_id") @db.Uuid
+  createdBy    User                    @relation("ServiceFollowUpCreator", fields: [createdById], references: [id])
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  @@index([serviceJobId])
+  @@index([completedAt, scheduledAt])
+  @@map("service_follow_ups")
+}
+
+// Labels for site visits, managed by admin (e.g. survey, measurement) (#18).
+model SiteVisitTag {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String      @unique // e.g. "survey"
+  description String?
+  color       String      @default("slate") // UI colour name
+  isActive    Boolean     @default(true) @map("is_active") // retired tags stay on old visits
+  visits      SiteVisit[]
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  @@map("site_visit_tags")
+}
+
+model SiteVisit {
+  id             String         @id @default(uuid()) @db.Uuid
+  visitDate      DateTime       @map("visit_date") @db.Date
+  personId       String         @map("person_id") @db.Uuid // who visited
+  person         User           @relation("SiteVisitPerson", fields: [personId], references: [id])
+  customerName   String         @map("customer_name")
+  siteAddress    String         @map("site_address")
+  purpose        String
+  notes          String?
+  // Optional link when the visit is about an installed/installing order.
+  installationId String?        @map("installation_id") @db.Uuid
+  installation   Installation?  @relation(fields: [installationId], references: [id])
+  tags           SiteVisitTag[]
+  createdById    String         @map("created_by_id") @db.Uuid
+  createdBy      User           @relation("SiteVisitCreator", fields: [createdById], references: [id])
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@index([visitDate])
+  @@map("site_visits")
+}
