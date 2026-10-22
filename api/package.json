@@ -25,7 +25,8 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force && prisma db seed",
     "db:generate": "prisma generate",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:reset-demo": "tsx prisma/reset-demo-data.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

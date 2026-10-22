@@ -9,10 +9,12 @@ import {
   LEAD_STATUSES,
   LeadSource,
   LeadStatus,
+  formatLitres,
   PRODUCT_INTERESTS,
   PRODUCT_LABELS,
   ProductInterest,
   SOURCE_LABELS,
+  SUMP_SIZES_LITRES,
   STATUS_LABELS,
   TAGS,
 } from "@/lib/crm";
@@ -25,13 +27,18 @@ export interface LeadFormValues {
   city: string;
   source: LeadSource;
   productInterest: ProductInterest;
+  /** "" = not decided yet (sumps only). */
+  sumpSizeLitres: string;
   status: LeadStatus;
   notes: string;
   assignedToId: string;
 }
 
 /** What the form submits: assignedToId is null for "unassigned", absent if the user can't assign. */
-export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId"> & { assignedToId?: string | null };
+export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId" | "sumpSizeLitres"> & {
+  assignedToId?: string | null;
+  sumpSizeLitres: number | null;
+};
 
 interface Props {
   initial?: Lead;
@@ -67,7 +74,8 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     email: initial?.email ?? "",
     city: initial?.city ?? "",
     source: initial?.source ?? "MANUAL",
-    productInterest: initial?.productInterest ?? "UG_SUMP",
+    productInterest: initial?.productInterest ?? "SUMP",
+    sumpSizeLitres: initial?.sumpSizeLitres ? String(initial.sumpSizeLitres) : "",
     status: initial?.status ?? "NEW",
     notes: initial?.notes ?? "",
     assignedToId: initial?.assignedTo?.id ?? "",
@@ -83,9 +91,11 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const { assignedToId, ...rest } = values;
+      const { assignedToId, sumpSizeLitres, ...rest } = values;
       await onSubmit({
         ...rest,
+        // A size only applies to sumps; "" = not decided yet.
+        sumpSizeLitres: values.productInterest === "SUMP" && sumpSizeLitres ? Number(sumpSizeLitres) : null,
         // Only send assignment if the user may assign; "" means unassigned.
         ...(canAssign ? { assignedToId: assignedToId || null } : {}),
       });
@@ -140,6 +150,18 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
             ))}
           </select>
         </Field>
+        {values.productInterest === "SUMP" && (
+          <Field label="Sump size">
+            <select className={inputClass} value={values.sumpSizeLitres} onChange={(e) => set("sumpSizeLitres", e.target.value)}>
+              <option value="">Not decided yet</option>
+              {SUMP_SIZES_LITRES.map((size) => (
+                <option key={size} value={size}>
+                  {formatLitres(size)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Status">
           <select className={inputClass} value={values.status} onChange={(e) => set("status", e.target.value as LeadStatus)}>
             {LEAD_STATUSES.map((s) => (

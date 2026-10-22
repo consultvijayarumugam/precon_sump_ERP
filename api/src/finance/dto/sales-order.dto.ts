@@ -16,6 +16,7 @@ import {
   ProductInterest,
   SalesOrderStatus,
 } from '../../generated/prisma/client.js';
+import { SUMP_SIZES_LITRES } from '../../stock/product-catalog.js';
 import { AmountProperty, DateProperty, IsAmount, IsDateOnly } from './common.dto.js';
 
 export class CreateSalesOrderDto {
@@ -27,6 +28,15 @@ export class CreateSalesOrderDto {
   @IsOptional()
   @IsEnum(ProductInterest)
   product?: ProductInterest;
+
+  @ApiPropertyOptional({
+    enum: SUMP_SIZES_LITRES,
+    description: "Sump size in litres (required for a sump; defaults to the lead's size). Not used for microbes.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn(SUMP_SIZES_LITRES as unknown as number[])
+  sizeLitres?: number;
 
   @ApiProperty({ example: 2 })
   @Type(() => Number)
@@ -68,6 +78,15 @@ export class UpdateSalesOrderDto {
   @IsOptional()
   @IsEnum(ProductInterest)
   product?: ProductInterest;
+
+  @ApiPropertyOptional({
+    enum: SUMP_SIZES_LITRES,
+    description: "Sump size in litres (only before delivery). Not used for microbes.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn(SUMP_SIZES_LITRES as unknown as number[])
+  sizeLitres?: number;
 
   @ApiPropertyOptional({ description: 'Only before delivery' })
   @IsOptional()

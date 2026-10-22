@@ -4,7 +4,7 @@ import { CalendarClock, Contact, PhoneCall, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import { ErrorText, panelClass, StatusBadge } from "@/components/ui";
-import { LeadListItem, Paginated, PRODUCT_LABELS } from "@/lib/crm";
+import { LeadListItem, Paginated, productInterestLabel } from "@/lib/crm";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
 import {
@@ -90,7 +90,7 @@ export function TelecallerDashboard() {
                       <a href={`tel:${lead.phone}`} className="font-medium text-neutral-700 hover:underline dark:text-neutral-300">
                         {lead.phone}
                       </a>{" "}
-                      · {PRODUCT_LABELS[lead.productInterest]}
+                      · {productInterestLabel(lead)}
                     </span>
                   </div>
                   <StatusBadge status={lead.status} />

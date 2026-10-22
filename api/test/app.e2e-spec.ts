@@ -99,7 +99,7 @@ describe('Auth and RBAC (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/v1/leads')
         .set(as(telecaller))
-        .send({ name: 'E2E nope', phone: '9000099999', source: 'MANUAL', productInterest: 'UG_SUMP' })
+        .send({ name: 'E2E nope', phone: '9000099999', source: 'MANUAL', productInterest: 'SUMP' })
         .expect(403);
       await request(app.getHttpServer()).get('/api/v1/sales-orders').set(as(telecaller)).expect(403);
       await request(app.getHttpServer()).get('/api/v1/stock').set(as(telecaller)).expect(403);
@@ -109,7 +109,7 @@ describe('Auth and RBAC (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/api/v1/leads')
         .set(as(sales))
-        .send({ name: 'E2E Lead', phone: '98765 11111', source: 'MANUAL', productInterest: 'UG_SUMP' })
+        .send({ name: 'E2E Lead', phone: '98765 11111', source: 'MANUAL', productInterest: 'SUMP', sumpSizeLitres: 10000 })
         .expect(201);
       createdLeadIds.push(created.body.id);
       expect(created.body.phone).toBe('9876511111');
@@ -173,7 +173,7 @@ describe('Auth and RBAC (e2e)', () => {
       request(app.getHttpServer())
         .post('/api/v1/leads')
         .set(as(sales))
-        .send({ name: 'X', phone: '12', source: 'TV', productInterest: 'PRECAST' })
+        .send({ name: 'X', phone: '12', source: 'TV', productInterest: 'SUMP' })
         .expect(400));
   });
 
@@ -195,11 +195,11 @@ describe('Auth and RBAC (e2e)', () => {
     }
 
     /** A fresh WON lead owned by Suresh (sales). */
-    async function wonLead(name: string, productInterest = 'MICROBES') {
+    async function wonLead(name: string, productInterest = 'MICROBES', sumpSizeLitres?: number) {
       const res = await http()
         .post('/api/v1/leads')
         .set(as(sales))
-        .send({ name, phone: '9000011111', source: 'MANUAL', productInterest, status: 'WON' })
+        .send({ name, phone: '9000011111', source: 'MANUAL', productInterest, sumpSizeLitres, status: 'WON' })
         .expect(201);
       created.leadIds.push(res.body.id);
       return res.body.id as string;
@@ -241,7 +241,7 @@ describe('Auth and RBAC (e2e)', () => {
         .send({ leadId, quantity: 1, totalAmount: 1 }).expect(409);
 
       const openLead = await http().post('/api/v1/leads').set(as(sales))
-        .send({ name: 'E2E Open Lead', phone: '9000022222', source: 'MANUAL', productInterest: 'PRECAST' })
+        .send({ name: 'E2E Open Lead', phone: '9000022222', source: 'MANUAL', productInterest: 'SUMP' })
         .expect(201);
       created.leadIds.push(openLead.body.id);
       await http().post('/api/v1/sales-orders').set(as(sales))
@@ -250,6 +250,41 @@ describe('Auth and RBAC (e2e)', () => {
       // Another salesperson can't see it; the lead can't leave WON while it has an order.
       await http().get(`/api/v1/sales-orders/${order.body.id}`).set(as(sales2)).expect(404);
       await http().patch(`/api/v1/leads/${leadId}`).set(as(sales)).send({ status: 'QUOTED' }).expect(400);
+    });
+
+    it('sump orders: size comes from the lead or the order, must be valid, and picks that size\'s stock item', async () => {
+      // Lead knows the size: the order inherits it.
+      const sized = await wonLead('E2E Sump 6000', 'SUMP', 6000);
+      const fromLead = await http().post('/api/v1/sales-orders').set(as(sales))
+        .send({ leadId: sized, quantity: 1, totalAmount: 50000 }).expect(201);
+      created.orderIds.push(fromLead.body.id);
+      expect(fromLead.body.product.sku).toBe('SUMP-6000');
+      expect(fromLead.body.product.name).toBe('Sump 6,000 L');
+
+      // Lead without a size: the order must name one, and only a listed size.
+      const unsized = await wonLead('E2E Sump no size', 'SUMP');
+      const noSize = await http().post('/api/v1/sales-orders').set(as(sales))
+        .send({ leadId: unsized, quantity: 1, totalAmount: 1 }).expect(400);
+      expect(noSize.body.message).toMatch(/sump size/i);
+      await http().post('/api/v1/sales-orders').set(as(sales))
+        .send({ leadId: unsized, quantity: 1, totalAmount: 1, sizeLitres: 7000 }).expect(400);
+      const picked = await http().post('/api/v1/sales-orders').set(as(sales))
+        .send({ leadId: unsized, quantity: 1, totalAmount: 1, sizeLitres: 12000 }).expect(201);
+      created.orderIds.push(picked.body.id);
+      expect(picked.body.product.sku).toBe('SUMP-12000');
+
+      // Microbes take no size.
+      const microbes = await wonLead('E2E Microbes sized');
+      await http().post('/api/v1/sales-orders').set(as(sales))
+        .send({ leadId: microbes, quantity: 1, totalAmount: 1, sizeLitres: 3000 }).expect(400);
+
+      // Leads: invalid sizes refused; switching to microbes clears the size.
+      await http().post('/api/v1/leads').set(as(sales))
+        .send({ name: 'E2E bad size', phone: '9000044444', source: 'MANUAL', productInterest: 'SUMP', sumpSizeLitres: 7000 })
+        .expect(400);
+      const switched = await http().patch(`/api/v1/leads/${sized}`).set(as(sales))
+        .send({ productInterest: 'MICROBES' }).expect(200);
+      expect(switched.body.sumpSizeLitres).toBeNull();
     });
 
     it('payments: sales cannot record; admin can; over-payment refused; balance tracked', async () => {
@@ -289,7 +324,7 @@ describe('Auth and RBAC (e2e)', () => {
     it('delivering reduces stock once; needs stock.write; refuses when stock is short', async () => {
       const id = created.orderIds[0];
       const db = await prisma();
-      const product = await db.product.findUniqueOrThrow({ where: { code: 'MICROBES' } });
+      const product = await db.product.findUniqueOrThrow({ where: { sku: 'MICROBES' } });
 
       await http().post(`/api/v1/sales-orders/${id}/deliver`).set(as(sales)).expect(403);
       const res = await http().post(`/api/v1/sales-orders/${id}/deliver`).set(as(admin)).expect(200);
@@ -309,7 +344,7 @@ describe('Auth and RBAC (e2e)', () => {
 
     it('stock: supervisor adds production; sales cannot; stock never goes negative', async () => {
       const list = await http().get('/api/v1/stock').set(as(supervisor)).expect(200);
-      const bio = list.body.items.find((p: { code: string }) => p.code === 'BIO_SEPTIC_TANK');
+      const bio = list.body.items.find((p: { sku: string }) => p.sku === 'SUMP-5000');
       await http().get('/api/v1/stock').set(as(sales)).expect(403);
 
       const added = await http().post(`/api/v1/stock/${bio.id}/movements`).set(as(supervisor))
@@ -402,7 +437,7 @@ describe('Auth and RBAC (e2e)', () => {
 
       await http().post(`/api/v1/installations/${inst.body.id}/start`).set(as('supervisor')).expect(200);
       const db = await prisma();
-      const microbes = await db.product.findUniqueOrThrow({ where: { code: 'MICROBES' } });
+      const microbes = await db.product.findUniqueOrThrow({ where: { sku: 'MICROBES' } });
       const done = await http().post(`/api/v1/installations/${inst.body.id}/complete`).set(as('supervisor'))
         .send({ completionNotes: 'e2e' }).expect(200);
       expect(done.body.status).toBe('COMPLETED');

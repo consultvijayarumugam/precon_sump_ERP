@@ -13,7 +13,7 @@ import {
   thClass,
   theadClass,
 } from "@/components/ui";
-import { formatDate, formatDateTime, LeadListItem, PRODUCT_LABELS, SOURCE_LABELS, TAGS } from "@/lib/crm";
+import { formatDate, formatDateTime, LeadListItem, productInterestLabel, SOURCE_LABELS, TAGS } from "@/lib/crm";
 
 /** Lead list used by the Leads and Won pages. `variant="won"` shows the close date. */
 export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; variant?: "all" | "won" }) {
@@ -51,7 +51,7 @@ export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; 
                 <td className={tdClass}>
                   <a href={`tel:${lead.phone}`}>{lead.phone}</a>
                 </td>
-                <td className={tdClass}>{PRODUCT_LABELS[lead.productInterest]}</td>
+                <td className={tdClass}>{productInterestLabel(lead)}</td>
                 <td className={tdClass}>{SOURCE_LABELS[lead.source]}</td>
                 {variant === "all" && (
                   <td className={tdClass}>

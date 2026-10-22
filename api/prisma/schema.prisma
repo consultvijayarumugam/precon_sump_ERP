@@ -139,11 +139,10 @@ enum LeadSource {
   OTHER
 }
 
+// The two product types the business makes (see CLAUDE.md "Products").
 enum ProductInterest {
-  UG_SUMP
-  BIO_SEPTIC_TANK
+  SUMP // precon sump, sold in litre sizes
   MICROBES
-  PRECAST
 }
 
 // Pipeline: NEW -> CONTACTED -> QUALIFIED -> QUOTED -> WON, or LOST at any point.
@@ -174,6 +173,8 @@ model Lead {
   city            String?
   source          LeadSource
   productInterest ProductInterest @map("product_interest")
+  // Sump size the customer is interested in, if known (litres). Null for microbes.
+  sumpSizeLitres  Int?            @map("sump_size_litres")
   status          LeadStatus      @default(NEW)
   notes           String?
   // Null = unassigned; only users with leads.read_all can see those.
@@ -234,13 +235,16 @@ enum PaymentMode {
   OTHER
 }
 
-// Finished goods we sell. One row per product line; `code` ties it to a lead's
-// product interest.
+// A stock item: one row per thing we keep a count of. Every sump SIZE is its
+// own row (SUMP-3000 ... SUMP-20000) with its own quantity and alert level;
+// microbes is a single row (MICROBES). Sales orders point at one of these.
 model Product {
   id                String          @id @default(uuid()) @db.Uuid
-  code              ProductInterest @unique
-  name              String
-  unit              String // e.g. "nos", "packs", "panels"
+  sku               String          @unique // "SUMP-5000", "MICROBES"
+  code              ProductInterest
+  sizeLitres        Int?            @map("size_litres") // sumps only
+  name              String // e.g. "Sump 5,000 L"
+  unit              String // "nos", "packs"
   quantityOnHand    Int             @default(0) @map("quantity_on_hand")
   lowStockThreshold Int             @default(0) @map("low_stock_threshold")
   salesOrders       SalesOrder[]
@@ -248,6 +252,7 @@ model Product {
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @updatedAt @map("updated_at")
 
+  @@index([code, sizeLitres])
   @@map("products")
 }
 

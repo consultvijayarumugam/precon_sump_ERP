@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEmail,
+  IsIn,
   IsEnum,
   IsInt,
   IsOptional,
@@ -18,6 +19,7 @@ import {
   LeadStatus,
   ProductInterest,
 } from '../../generated/prisma/client.js';
+import { SUMP_SIZES_LITRES } from '../../stock/product-catalog.js';
 
 /** "98765 43210" / "+91-98765-43210" -> "9876543210" / "+919876543210" */
 const normalizePhone = ({ value }: { value: unknown }) =>
@@ -63,6 +65,16 @@ export class CreateLeadDto {
   @ApiProperty({ enum: ProductInterest })
   @IsEnum(ProductInterest)
   productInterest: ProductInterest;
+
+  @ApiPropertyOptional({
+    enum: SUMP_SIZES_LITRES,
+    description: 'Sump size in litres the customer is interested in, if known. Ignored for microbes.',
+  })
+  @IsOptional()
+  @Transform(emptyToNull)
+  @Type(() => Number)
+  @IsIn(SUMP_SIZES_LITRES as unknown as number[])
+  sumpSizeLitres?: number | null;
 
   @ApiPropertyOptional({ enum: LeadStatus, default: LeadStatus.NEW })
   @IsOptional()

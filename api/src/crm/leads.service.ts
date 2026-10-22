@@ -117,6 +117,8 @@ export class LeadsService {
         city: dto.city || null,
         source: dto.source,
         productInterest: dto.productInterest,
+        // A size only makes sense for a sump.
+        sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
         status,
         notes: dto.notes || null,
         closedAt: CLOSED_STATUSES.includes(status) ? new Date() : null,
@@ -154,6 +156,9 @@ export class LeadsService {
       productInterest: dto.productInterest,
       notes: dto.notes === undefined ? undefined : dto.notes || null,
     };
+    // Sump size: switching to microbes clears it; otherwise set it when given.
+    if (dto.productInterest === 'MICROBES') data.sumpSizeLitres = null;
+    else if (dto.sumpSizeLitres !== undefined) data.sumpSizeLitres = dto.sumpSizeLitres;
 
     if (dto.assignedToId !== undefined && dto.assignedToId !== existing.assignedToId) {
       this.requireAssignPermission(user);

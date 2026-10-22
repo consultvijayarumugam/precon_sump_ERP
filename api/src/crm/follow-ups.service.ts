@@ -19,6 +19,7 @@ const FOLLOW_UP_WITH_LEAD_SELECT = {
       phone: true,
       status: true,
       productInterest: true,
+      sumpSizeLitres: true,
       assignedTo: { select: { id: true, fullName: true } },
     },
   },

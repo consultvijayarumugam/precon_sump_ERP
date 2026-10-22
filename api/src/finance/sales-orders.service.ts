@@ -159,6 +159,7 @@ export class SalesOrdersService {
         name: true,
         status: true,
         productInterest: true,
+        sumpSizeLitres: true,
         assignedToId: true,
         salesOrder: { select: { id: true } },
       },
@@ -179,7 +180,11 @@ export class SalesOrdersService {
     if (dueDate < orderDate) throw new BadRequestException('dueDate cannot be before orderDate');
 
     const order = await this.prisma.$transaction(async (tx) => {
-      const productId = await this.stock.productIdForCode(tx, dto.product ?? lead.productInterest);
+      // Product defaults to what the lead wanted; a sump also needs a size.
+      const code = dto.product ?? lead.productInterest;
+      // A size sent with microbes is refused (resolveSku), not silently dropped.
+      const size = code === 'SUMP' ? (dto.sizeLitres ?? lead.sumpSizeLitres) : (dto.sizeLitres ?? null);
+      const productId = await this.stock.productIdFor(tx, code, size);
       return tx.salesOrder.create({
         data: {
           leadId: lead.id,
@@ -205,8 +210,8 @@ export class SalesOrdersService {
       throw new BadRequestException('Cancelled orders cannot be edited');
     }
     const delivered = existing.status === SalesOrderStatus.DELIVERED;
-    if (delivered && (dto.product !== undefined || dto.quantity !== undefined)) {
-      throw new BadRequestException('Product and quantity are fixed once an order is delivered');
+    if (delivered && (dto.product !== undefined || dto.sizeLitres !== undefined || dto.quantity !== undefined)) {
+      throw new BadRequestException('Product, size and quantity are fixed once an order is delivered');
     }
 
     const data: Prisma.SalesOrderUncheckedUpdateInput = {
@@ -234,7 +239,11 @@ export class SalesOrdersService {
         }
         data.totalAmount = total;
       }
-      if (dto.product) data.productId = await this.stock.productIdForCode(tx, dto.product);
+      if (dto.product !== undefined || dto.sizeLitres !== undefined) {
+        const code = dto.product ?? existing.product.code;
+        const size = code === 'SUMP' ? (dto.sizeLitres ?? existing.product.sizeLitres) : (dto.sizeLitres ?? null);
+        data.productId = await this.stock.productIdFor(tx, code, size);
+      }
       await tx.salesOrder.update({ where: { id }, data });
     });
 
@@ -347,6 +356,7 @@ export class SalesOrdersService {
         orderDate: true,
         dueDate: true,
         salespersonId: true,
+        product: { select: { code: true, sizeLitres: true } },
       },
     });
     if (!order) throw new NotFoundException('Sales order not found');

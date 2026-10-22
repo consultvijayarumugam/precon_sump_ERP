@@ -2,7 +2,10 @@
 
 export const LEAD_STATUSES = ["NEW", "CONTACTED", "QUALIFIED", "QUOTED", "WON", "LOST"] as const;
 export const LEAD_SOURCES = ["META", "MANUAL", "WEBSITE", "REFERRAL", "OTHER"] as const;
-export const PRODUCT_INTERESTS = ["UG_SUMP", "BIO_SEPTIC_TANK", "MICROBES", "PRECAST"] as const;
+/** The two product types (see CLAUDE.md "Products"). */
+export const PRODUCT_INTERESTS = ["SUMP", "MICROBES"] as const;
+/** Valid sump sizes in litres; each size is its own stock item. */
+export const SUMP_SIZES_LITRES = [3000, 4000, 5000, 6000, 8000, 10000, 12000, 15000, 20000] as const;
 export const FOLLOW_UP_OUTCOMES = [
   "CONNECTED",
   "NO_ANSWER",
@@ -36,11 +39,19 @@ export const SOURCE_LABELS: Record<LeadSource, string> = {
 };
 
 export const PRODUCT_LABELS: Record<ProductInterest, string> = {
-  UG_SUMP: "UG sump",
-  BIO_SEPTIC_TANK: "Bio-septic tank",
+  SUMP: "Sump",
   MICROBES: "Microbes",
-  PRECAST: "Precast",
 };
+
+const litres = new Intl.NumberFormat("en-IN");
+/** 10000 -> "10,000 L" */
+export const formatLitres = (sizeLitres: number) => `${litres.format(sizeLitres)} L`;
+
+/** "Sump · 10,000 L", "Sump (size not decided)" or "Microbes". */
+export function productInterestLabel(p: { productInterest: ProductInterest; sumpSizeLitres?: number | null }) {
+  if (p.productInterest !== "SUMP") return PRODUCT_LABELS[p.productInterest];
+  return p.sumpSizeLitres ? `Sump · ${formatLitres(p.sumpSizeLitres)}` : "Sump (size not decided)";
+}
 
 export const OUTCOME_LABELS: Record<FollowUpOutcome, string> = {
   CONNECTED: "Connected",
@@ -65,6 +76,7 @@ export interface Lead {
   city: string | null;
   source: LeadSource;
   productInterest: ProductInterest;
+  sumpSizeLitres: number | null;
   status: LeadStatus;
   notes: string | null;
   closedAt: string | null;
@@ -96,6 +108,7 @@ export interface FollowUpWithLead extends FollowUp {
     phone: string;
     status: LeadStatus;
     productInterest: ProductInterest;
+    sumpSizeLitres: number | null;
     assignedTo: UserRef | null;
   };
 }

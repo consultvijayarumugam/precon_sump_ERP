@@ -106,7 +106,7 @@ export function SiteVisitForm({ initial, submitLabel, onSubmit, onCancel }: Prop
           className={inputClass}
           required
           minLength={3}
-          placeholder="e.g. Measure pit for a 5-user bio-septic tank"
+          placeholder="e.g. Measure pit for a 10,000 L sump"
           value={purpose}
           onChange={(e) => setPurpose(e.target.value)}
         />

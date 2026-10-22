@@ -31,7 +31,7 @@ export const ORDER_SELECT = {
   notes: true,
   createdAt: true,
   lead: { select: { id: true, phone: true, city: true } },
-  product: { select: { id: true, code: true, name: true, unit: true } },
+  product: { select: { id: true, sku: true, code: true, sizeLitres: true, name: true, unit: true } },
   salesperson: { select: { id: true, fullName: true } },
   createdBy: { select: { id: true, fullName: true } },
 } satisfies Prisma.SalesOrderSelect;

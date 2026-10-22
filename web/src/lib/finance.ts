@@ -47,7 +47,7 @@ export interface SalesOrder {
   notes: string | null;
   createdAt: string;
   lead: { id: string; phone: string; city: string | null };
-  product: { id: string; code: ProductInterest; name: string; unit: string };
+  product: { id: string; sku: string; code: ProductInterest; sizeLitres: number | null; name: string; unit: string };
   salesperson: UserRef;
   createdBy: UserRef;
   // Present only for users with payments.read:
@@ -76,7 +76,9 @@ export interface OverdueOrder extends SalesOrder {
 
 export interface Product {
   id: string;
+  sku: string;
   code: ProductInterest;
+  sizeLitres: number | null;
   name: string;
   unit: string;
   quantityOnHand: number;
@@ -91,7 +93,7 @@ export interface StockMovement {
   reason: "OPENING" | "PRODUCTION" | "DELIVERY" | "ADJUSTMENT";
   note: string | null;
   createdAt: string;
-  product: { code: ProductInterest; name: string; unit: string };
+  product: { code: ProductInterest; sizeLitres: number | null; name: string; unit: string };
   salesOrder: { id: string; orderNumber: number } | null;
   createdBy: UserRef;
 }

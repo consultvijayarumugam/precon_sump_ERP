@@ -4,7 +4,8 @@
  * tables are empty, so re-seeding never duplicates or clobbers real data.
  *
  * What you get:
- *  - Stock for all 4 products; bio-septic tanks are below their threshold.
+ *  - Stock for every sump size (3,000-20,000 L) and microbes; Sump 5,000 L
+ *    and 12,000 L are at or below their alert level.
  *  - 4 sales orders from won leads, with partial payments: 2 overdue balances,
  *    1 balance not yet due, 1 fully paid. 3 are delivered (stock reduced).
  *  - 2 won leads with no order yet, to try "Convert to sales order".
@@ -19,6 +20,7 @@ import type {
   VendorCategory,
 } from '../src/generated/prisma/client.js';
 import { Prisma } from '../src/generated/prisma/client.js';
+import { PRODUCT_UNITS, productNameFor, skuFor } from '../src/stock/product-catalog.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -33,23 +35,29 @@ const rupees = (n: number) => new Prisma.Decimal(n);
 const deliveredAt = (o: { orderDaysAgo: number }) =>
   new Date(day(-o.orderDaysAgo + 3).getTime() + 5.5 * 60 * 60 * 1000);
 
-const PRODUCTS: {
-  code: ProductInterest;
-  name: string;
-  unit: string;
-  opening: number;
-  lowStockThreshold: number;
-}[] = [
-  { code: 'UG_SUMP', name: 'UG sump (precast, 10,000 L)', unit: 'nos', opening: 14, lowStockThreshold: 5 },
-  { code: 'BIO_SEPTIC_TANK', name: 'Bio-septic tank (FRP, 5-user)', unit: 'nos', opening: 3, lowStockThreshold: 5 },
-  { code: 'MICROBES', name: 'Bio-septic microbes (1 kg pack)', unit: 'packs', opening: 60, lowStockThreshold: 25 },
-  { code: 'PRECAST', name: 'Precast compound wall panel', unit: 'panels', opening: 210, lowStockThreshold: 50 },
+/**
+ * Starting stock per item. `onHand` is what you'll see after seeding; opening
+ * stock is that plus whatever the sample deliveries below take out.
+ * Sump 5,000 L and 12,000 L are at/below their alert level on purpose.
+ */
+const STOCK_PLAN: { code: ProductInterest; size: number | null; onHand: number; lowStockThreshold: number }[] = [
+  { code: 'SUMP', size: 3000, onHand: 6, lowStockThreshold: 3 },
+  { code: 'SUMP', size: 4000, onHand: 5, lowStockThreshold: 3 },
+  { code: 'SUMP', size: 5000, onHand: 2, lowStockThreshold: 3 }, // low
+  { code: 'SUMP', size: 6000, onHand: 4, lowStockThreshold: 2 },
+  { code: 'SUMP', size: 8000, onHand: 3, lowStockThreshold: 2 },
+  { code: 'SUMP', size: 10000, onHand: 7, lowStockThreshold: 3 },
+  { code: 'SUMP', size: 12000, onHand: 2, lowStockThreshold: 2 }, // low (at the alert level)
+  { code: 'SUMP', size: 15000, onHand: 3, lowStockThreshold: 1 },
+  { code: 'SUMP', size: 20000, onHand: 2, lowStockThreshold: 1 },
+  { code: 'MICROBES', size: null, onHand: 40, lowStockThreshold: 25 },
 ];
 
 interface SampleOrder {
   leadName: string; // existing won lead, or created below
   newLead?: { phone: string; city: string; source: LeadSource; owner: 'sales' | 'sales2'; closedDaysAgo: number };
   product: ProductInterest;
+  size: number | null; // litres, sumps only
   quantity: number;
   total: number;
   orderDaysAgo: number;
@@ -60,26 +68,26 @@ interface SampleOrder {
 
 const ORDERS: SampleOrder[] = [
   {
-    leadName: 'Senthil Farms', product: 'MICROBES', quantity: 20, total: 18000,
+    leadName: 'Senthil Farms', product: 'MICROBES', size: null, quantity: 20, total: 18000,
     orderDaysAgo: 18, dueInDays: -3, delivered: true,
     payments: [{ amount: 10000, daysAgo: 17, mode: 'UPI', reference: 'UPI 4417 2210 9931' }],
   },
   {
-    leadName: 'Divya Hospital', product: 'UG_SUMP', quantity: 2, total: 420000,
+    leadName: 'Divya Hospital', product: 'SUMP', size: 20000, quantity: 2, total: 420000,
     orderDaysAgo: 25, dueInDays: -10, delivered: true,
     payments: [{ amount: 200000, daysAgo: 24, mode: 'BANK_TRANSFER', reference: 'NEFT HDFC0012' }],
   },
   {
     leadName: 'Sri Murugan Residency',
     newLead: { phone: '9442233445', city: 'Tiruppur', source: 'WEBSITE', owner: 'sales', closedDaysAgo: 5 },
-    product: 'BIO_SEPTIC_TANK', quantity: 1, total: 65000,
+    product: 'SUMP', size: 5000, quantity: 1, total: 65000,
     orderDaysAgo: 5, dueInDays: 10, delivered: false,
     payments: [{ amount: 20000, daysAgo: 5, mode: 'CASH' }],
   },
   {
     leadName: 'Kongu Engineering College',
     newLead: { phone: '9865544332', city: 'Perundurai', source: 'REFERRAL', owner: 'sales2', closedDaysAgo: 40 },
-    product: 'PRECAST', quantity: 60, total: 150000,
+    product: 'SUMP', size: 15000, quantity: 1, total: 150000,
     orderDaysAgo: 40, dueInDays: -25, delivered: true,
     payments: [
       { amount: 75000, daysAgo: 39, mode: 'CHEQUE', reference: 'Chq 004512' },
@@ -90,8 +98,8 @@ const ORDERS: SampleOrder[] = [
 
 /** Won but not converted yet, so you can try the conversion yourself. */
 const UNCONVERTED_WON_LEADS = [
-  { name: 'Sakthi Hardware Stores', phone: '9789012345', city: 'Erode', source: 'MANUAL' as LeadSource, product: 'MICROBES' as ProductInterest, owner: 'sales' as const },
-  { name: 'Palani Hill Resorts', phone: '9500123456', city: 'Kodaikanal', source: 'META' as LeadSource, product: 'UG_SUMP' as ProductInterest, owner: 'sales2' as const },
+  { name: 'Sakthi Hardware Stores', phone: '9789012345', city: 'Erode', source: 'MANUAL' as LeadSource, product: 'MICROBES' as ProductInterest, size: null, owner: 'sales' as const },
+  { name: 'Palani Hill Resorts', phone: '9500123456', city: 'Kodaikanal', source: 'META' as LeadSource, product: 'SUMP' as ProductInterest, size: 10000, owner: 'sales2' as const },
 ];
 
 const VENDORS: {
@@ -128,20 +136,25 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
   const adminId = await userId('admin@precon.local');
   const owners = { sales: await userId('sales@precon.local'), sales2: await userId('sales2@precon.local') };
 
-  // 1. Products + opening stock (only products that don't exist yet)
-  for (const p of PRODUCTS) {
-    const exists = await prisma.product.findUnique({ where: { code: p.code } });
-    if (exists) continue;
+  // 1. Stock items + opening stock (only items that don't exist yet)
+  const deliveredQty = (sku: string) =>
+    ORDERS.filter((o) => o.delivered && skuFor(o.product, o.size) === sku).reduce((n, o) => n + o.quantity, 0);
+  for (const p of STOCK_PLAN) {
+    const sku = skuFor(p.code, p.size);
+    if (await prisma.product.findUnique({ where: { sku } })) continue;
+    const opening = p.onHand + deliveredQty(sku);
     await prisma.product.create({
       data: {
+        sku,
         code: p.code,
-        name: p.name,
-        unit: p.unit,
-        quantityOnHand: p.opening,
+        sizeLitres: p.size,
+        name: productNameFor(p.code, p.size),
+        unit: PRODUCT_UNITS[p.code],
+        quantityOnHand: opening,
         lowStockThreshold: p.lowStockThreshold,
         movements: {
           create: {
-            change: p.opening,
+            change: opening,
             reason: 'OPENING' as StockMovementReason,
             note: 'Opening stock',
             createdById: adminId,
@@ -151,9 +164,11 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
       },
     });
   }
-  const productId = new Map(
-    (await prisma.product.findMany({ select: { id: true, code: true } })).map((p) => [p.code, p.id]),
+  const productIdBySku = new Map(
+    (await prisma.product.findMany({ select: { id: true, sku: true } })).map((p) => [p.sku, p.id]),
   );
+  const productIdFor = (o: { product: ProductInterest; size: number | null }) =>
+    productIdBySku.get(skuFor(o.product, o.size))!;
 
   // 2. Sales orders with payments
   if ((await prisma.salesOrder.count()) === 0) {
@@ -170,6 +185,7 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
             city: o.newLead.city,
             source: o.newLead.source,
             productInterest: o.product,
+            sumpSizeLitres: o.size,
             status: 'WON',
             assignedToId: owners[o.newLead.owner],
             createdById: adminId,
@@ -188,7 +204,7 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
         data: {
           leadId: lead.id,
           customerName: lead.name,
-          productId: productId.get(o.product)!,
+          productId: productIdFor(o),
           quantity: o.quantity,
           totalAmount: rupees(o.total),
           orderDate: day(-o.orderDaysAgo),
@@ -212,12 +228,12 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
 
       if (o.delivered) {
         await prisma.product.update({
-          where: { id: productId.get(o.product)! },
+          where: { id: productIdFor(o) },
           data: { quantityOnHand: { decrement: o.quantity } },
         });
         await prisma.stockMovement.create({
           data: {
-            productId: productId.get(o.product)!,
+            productId: productIdFor(o),
             change: -o.quantity,
             reason: 'DELIVERY',
             note: `Delivered SO-${String(order.orderNumber).padStart(4, '0')} to ${lead.name}`,
@@ -238,6 +254,7 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
           city: l.city,
           source: l.source,
           productInterest: l.product,
+          sumpSizeLitres: l.size,
           status: 'WON',
           notes: 'Won; ready to convert into a sales order.',
           assignedToId: owners[l.owner],

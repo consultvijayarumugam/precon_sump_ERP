@@ -1,9 +1,21 @@
 # Precon ERP
 
-An all-in-one ERP for a manufacturer of underground (UG) sumps, bio-septic
-tanks, microbes, and precast concrete products. It covers the full lifecycle
+An all-in-one ERP for a manufacturer of precon (precast concrete) sumps and
+microbes. It covers the full lifecycle
 from marketing lead to sales to closed deal to production to installation to
 after-sales service, plus HR, finance, and admin.
+
+## Products (decided)
+
+The business makes exactly TWO product types:
+- Sump: precon sump, sold in litre sizes. Valid sizes: 3000, 4000, 5000, 6000,
+  8000, 10000, 12000, 15000, 20000 litres. Each size is its own stock item with
+  its own quantity on hand and low-stock threshold. Wherever a product is chosen
+  (orders, installations via their order), pick Sump and then a size. A lead's
+  size interest is optional (the customer may not know yet).
+- Microbes: no sizes, counted in simple units (packs), one stock count and one
+  low-stock threshold.
+There are no other product lines (no bio-septic tanks, no precast panels).
 
 ## Architecture (decided)
 

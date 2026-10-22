@@ -77,7 +77,7 @@ export interface Installation {
     customerName: string;
     status: OrderStatus;
     quantity: number;
-    product: { code: ProductInterest; name: string; unit: string };
+    product: { code: ProductInterest; sizeLitres: number | null; name: string; unit: string };
     lead: { phone: string; city: string | null };
     salesperson: UserRef;
   };

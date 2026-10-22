@@ -9,12 +9,15 @@ import {
   StockMovementReason,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { resolveSku } from './product-catalog.js';
 
 type Tx = Prisma.TransactionClient;
 
 const PRODUCT_SELECT = {
   id: true,
+  sku: true,
   code: true,
+  sizeLitres: true,
   name: true,
   unit: true,
   quantityOnHand: true,
@@ -34,8 +37,9 @@ export class StockService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list() {
+    // Sumps first, smallest to largest, then microbes.
     const products = await this.prisma.product.findMany({
-      orderBy: { code: 'asc' },
+      orderBy: [{ code: 'asc' }, { sizeLitres: 'asc' }],
       select: PRODUCT_SELECT,
     });
     const items = products.map(withLowFlag);
@@ -53,7 +57,7 @@ export class StockService {
         reason: true,
         note: true,
         createdAt: true,
-        product: { select: { code: true, name: true, unit: true } },
+        product: { select: { code: true, sizeLitres: true, name: true, unit: true } },
         salesOrder: { select: { id: true, orderNumber: true } },
         createdBy: { select: { id: true, fullName: true } },
       },
@@ -141,11 +145,14 @@ export class StockService {
     });
   }
 
-  async productIdForCode(tx: Tx, code: ProductInterest): Promise<string> {
-    const product = await tx.product.findUnique({ where: { code }, select: { id: true } });
-    if (!product) throw new BadRequestException(`No product set up for ${code}`);
+  /** The stock item for a product choice: Sump + size, or Microbes. */
+  async productIdFor(tx: Tx, code: ProductInterest, sizeLitres?: number | null): Promise<string> {
+    const sku = resolveSku(code, sizeLitres);
+    const product = await tx.product.findUnique({ where: { sku }, select: { id: true } });
+    if (!product) throw new BadRequestException(`No stock item set up for ${sku}`);
     return product.id;
   }
+
 
   private async ensureProduct(id: string) {
     const found = await this.prisma.product.count({ where: { id } });

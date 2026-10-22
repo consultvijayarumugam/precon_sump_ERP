@@ -43,12 +43,12 @@ const INSTALLATIONS = [
   {
     customer: 'Divya Hospital', scheduledIn: -19, completedDaysAgo: 18, assignee: 'supervisor', team: 'Crew A',
     site: 'Divya Hospital, Omalur Main Road, Salem 636011',
-    completionNotes: 'Two sumps placed and backfilled; water-tightness test passed.',
+    completionNotes: 'Two 20,000 L sumps placed and backfilled; water-tightness test passed.',
   },
   {
     customer: 'Kongu Engineering College', scheduledIn: -35, completedDaysAgo: 33, assignee: 'supervisor', team: 'Crew B',
     site: 'Kongu Engineering College, Perundurai, Erode 638060',
-    completionNotes: '60 panels erected along the east boundary.',
+    completionNotes: '15,000 L sump placed near the hostel block and backfilled.',
   },
   {
     customer: 'Senthil Farms', scheduledIn: -15, completedDaysAgo: 14, assignee: 'tech', team: null,
@@ -91,18 +91,18 @@ const JOBS: SampleJob[] = [
   },
   {
     customer: 'Kongu Engineering College', type: 'WARRANTY', priority: 'LOW', status: 'RESOLVED', assignee: 'tech',
-    description: 'Two wall panels developed hairline cracks.', createdDaysAgo: 14,
-    resolvedDaysAgo: 10, resolutionNotes: 'Replaced both panels under warranty.',
+    description: 'Hairline crack on the sump inspection cover.', createdDaysAgo: 14,
+    resolvedDaysAgo: 10, resolutionNotes: 'Replaced the inspection cover under warranty.',
     followUps: [{ offset: -9, hour: 15, note: 'Checked with estate office after replacement.', outcome: 'CUSTOMER_SATISFIED' }],
   },
   {
     customer: 'Kongu Engineering College', type: 'MAINTENANCE', priority: 'MEDIUM', status: 'OPEN', assignee: 'tech',
-    description: 'Annual alignment check of the compound wall.', createdDaysAgo: 5,
+    description: 'Annual inspection and cleaning of the 15,000 L sump.', createdDaysAgo: 5,
     followUps: [{ offset: -3, hour: 12, note: 'Fix a date for the check with the estate office.' }], // overdue
   },
   {
     customer: 'Senthil Farms', type: 'MAINTENANCE', priority: 'LOW', status: 'OPEN', assignee: 'tech',
-    description: 'Quarterly check that microbe dosing is keeping the tank healthy.', createdDaysAgo: 3,
+    description: 'Quarterly check that microbe dosing is keeping the sump and septic system healthy.', createdDaysAgo: 3,
     followUps: [{ offset: 5, hour: 10, note: 'Call farm manager about dosing schedule.' }],
   },
 ];
@@ -110,13 +110,13 @@ const JOBS: SampleJob[] = [
 const VISITS = [
   {
     daysAgo: 6, person: 'supervisor', customer: 'Sri Murugan Residency', installationOf: 'Sri Murugan Residency',
-    site: '12 Gandhi Nagar, Tiruppur 641603', purpose: 'Site survey and pit measurement for the 5-user tank',
+    site: '12 Gandhi Nagar, Tiruppur 641603', purpose: 'Site survey and pit measurement for the 5,000 L sump',
     notes: 'Pit 2.4 m × 1.8 m; truck access from the north gate.', tags: ['survey', 'measurement'],
   },
   {
     daysAgo: 5, person: 'tech', customer: 'Divya Hospital', installationOf: 'Divya Hospital',
     site: 'Omalur Main Road, Salem 636011', purpose: 'Inspect seepage complaint at sump 2',
-    notes: 'Seepage at inlet joint only; tank walls fine.', tags: ['complaint-visit'],
+    notes: 'Seepage at inlet joint only; sump walls fine.', tags: ['complaint-visit'],
   },
   {
     daysAgo: 2, person: 'supervisor', customer: 'Palani Hill Resorts', installationOf: null,
@@ -126,7 +126,7 @@ const VISITS = [
   {
     daysAgo: 32, person: 'supervisor', customer: 'Kongu Engineering College', installationOf: 'Kongu Engineering College',
     site: 'Perundurai, Erode 638060', purpose: 'Post-installation alignment check',
-    notes: 'All panels plumb.', tags: ['installation-check'],
+    notes: 'Sump level and cover seated correctly.', tags: ['installation-check'],
   },
 ] as const;
 

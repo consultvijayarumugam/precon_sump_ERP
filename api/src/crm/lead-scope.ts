@@ -27,6 +27,7 @@ export const LEAD_SELECT = {
   city: true,
   source: true,
   productInterest: true,
+  sumpSizeLitres: true,
   status: true,
   notes: true,
   closedAt: true,

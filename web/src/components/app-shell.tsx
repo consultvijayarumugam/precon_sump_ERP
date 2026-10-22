@@ -124,7 +124,7 @@ function activeHref(pathname: string): string | undefined {
 
 const COLLAPSE_KEY = "precon.sidebarCollapsed";
 
-/** "Precon ERP" wordmark: three stacked precast blocks + the name. */
+/** "Precon ERP" wordmark: three stacked concrete blocks + the name. */
 function Logo({ compact }: { compact?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="Precon ERP home">

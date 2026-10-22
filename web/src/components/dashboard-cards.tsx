@@ -4,7 +4,7 @@ import { BadgeIndianRupee, Boxes, ClipboardList, HardHat, Receipt, Umbrella, Wre
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import { Card, ErrorText, Stat } from "@/components/ui";
-import { dayKey } from "@/lib/crm";
+import { dayKey, formatLitres } from "@/lib/crm";
 import { formatDateOnly, formatINR, Product } from "@/lib/finance";
 import {
   Allowance,
@@ -83,25 +83,54 @@ export function SalesCard({ title }: { title: string }) {
   );
 }
 
-/** Finished-goods stock with low items flagged (stock.read). */
+/** Finished-goods stock: sump sizes summarised (low sizes called out) and microbes. */
 export function StockCard() {
   const { data, error } = useApi<{ lowCount: number; items: Product[] }>("/stock");
+  const sumps = data?.items.filter((p) => p.code === "SUMP") ?? [];
+  const lowSumps = sumps.filter((p) => p.isLow);
+  const microbes = data?.items.find((p) => p.code === "MICROBES");
   return (
     <Card title={data && data.lowCount > 0 ? `Stock · ${data.lowCount} low` : "Stock"} href="/stock" module="operations" icon={Boxes}>
       <ErrorText error={error} />
-      <ul className="space-y-1 text-sm">
-        {data?.items.map((p) => (
-          <li key={p.id} className="flex items-center justify-between gap-2">
-            <span className={p.isLow ? "font-medium text-red-700 dark:text-red-300" : ""}>{p.name}</span>
-            <span className="flex items-center gap-2">
-              <span className={p.isLow ? "font-semibold text-red-700 dark:text-red-300" : "font-medium"}>
-                {p.quantityOnHand} {p.unit}
+      {data && (
+        <div className="space-y-3 text-sm">
+          <div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-medium">Sump</span>
+              <span className="text-neutral-500">
+                {sumps.length} sizes · <span className="font-semibold text-neutral-900 dark:text-neutral-100">{sumps.reduce((n, p) => n + p.quantityOnHand, 0)} nos</span>
               </span>
-              {p.isLow && <span className="rounded bg-red-600 px-1.5 py-0.5 text-xs text-white">Low</span>}
-            </span>
-          </li>
-        ))}
-      </ul>
+            </div>
+            {lowSumps.length === 0 ? (
+              <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">All sizes above their alert levels</p>
+            ) : (
+              <ul className="mt-1.5 space-y-1">
+                {lowSumps.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-red-700 dark:text-red-300">{p.sizeLitres ? formatLitres(p.sizeLitres) : p.name}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-semibold text-red-700 tabular-nums dark:text-red-300">{p.quantityOnHand} nos</span>
+                      <span className="text-xs text-neutral-500">alert at {p.lowStockThreshold}</span>
+                      <span className="rounded bg-red-600 px-1.5 py-0.5 text-xs text-white">Low</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {microbes && (
+            <div className="flex items-center justify-between gap-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+              <span className={microbes.isLow ? "font-medium text-red-700 dark:text-red-300" : "font-medium"}>Microbes</span>
+              <span className="flex items-center gap-2">
+                <span className={`font-semibold tabular-nums ${microbes.isLow ? "text-red-700 dark:text-red-300" : ""}`}>
+                  {microbes.quantityOnHand} {microbes.unit}
+                </span>
+                {microbes.isLow && <span className="rounded bg-red-600 px-1.5 py-0.5 text-xs text-white">Low</span>}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

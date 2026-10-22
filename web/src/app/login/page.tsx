@@ -73,7 +73,7 @@ export default function LoginPage() {
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <p className="mt-6 text-center text-xs text-brand-200/70">UG sumps · bio-septic tanks · microbes · precast</p>
+        <p className="mt-6 text-center text-xs text-brand-200/70">Precon sumps (3,000–20,000 L) · microbes</p>
       </div>
     </main>
   );

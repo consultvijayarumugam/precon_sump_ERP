@@ -22,7 +22,7 @@ import {
   LEAD_STATUSES,
   LeadDetail,
   LeadStatus,
-  PRODUCT_LABELS,
+  productInterestLabel,
   SOURCE_LABELS,
   STATUS_LABELS,
   TAGS,
@@ -148,7 +148,7 @@ export default function LeadDetailPage() {
           </Detail>
           <Detail label="Email">{lead.email ?? "-"}</Detail>
           <Detail label="City">{lead.city ?? "-"}</Detail>
-          <Detail label="Product interest">{PRODUCT_LABELS[lead.productInterest]}</Detail>
+          <Detail label="Product interest">{productInterestLabel(lead)}</Detail>
           <Detail label="Source">{SOURCE_LABELS[lead.source]}</Detail>
           <Detail label="Salesperson">{lead.assignedTo?.fullName ?? "Unassigned"}</Detail>
           <Detail label="Created">

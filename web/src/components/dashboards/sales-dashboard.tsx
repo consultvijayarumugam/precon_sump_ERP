@@ -4,7 +4,7 @@ import { CalendarClock, Contact, IndianRupee, TriangleAlert, Trophy } from "luci
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import { ErrorText, LinkButton, panelClass, StatusBadge } from "@/components/ui";
-import { formatDate, LeadListItem, Paginated, PRODUCT_LABELS } from "@/lib/crm";
+import { formatDate, LeadListItem, Paginated, productInterestLabel } from "@/lib/crm";
 import { formatINR } from "@/lib/finance";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
@@ -103,7 +103,7 @@ export function SalesDashboard() {
                       {lead.name}
                     </Link>
                     <span className="text-xs text-neutral-500">
-                      {PRODUCT_LABELS[lead.productInterest]} · {formatDate(lead.createdAt)}
+                      {productInterestLabel(lead)} · {formatDate(lead.createdAt)}
                     </span>
                   </div>
                   <StatusBadge status={lead.status} />

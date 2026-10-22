@@ -12,7 +12,7 @@ import {
   secondaryButtonClass,
 } from "@/components/ui";
 import { apiPost } from "@/lib/api";
-import { dayKey, Lead, PRODUCT_INTERESTS, PRODUCT_LABELS, ProductInterest } from "@/lib/crm";
+import { dayKey, formatLitres, Lead, PRODUCT_INTERESTS, PRODUCT_LABELS, ProductInterest, SUMP_SIZES_LITRES } from "@/lib/crm";
 import { addDaysToDate, SalesOrder } from "@/lib/finance";
 import { TAGS } from "@/lib/tags";
 import { useAction, useApi } from "@/lib/use-api";
@@ -31,6 +31,8 @@ export function ConvertToOrder({ lead }: { lead: Lead }) {
 
   const [open, setOpen] = useState(false);
   const [product, setProduct] = useState<ProductInterest>(lead.productInterest);
+  // Sump size defaults to what the lead asked for; required for a sump.
+  const [sizeLitres, setSizeLitres] = useState(lead.sumpSizeLitres ? String(lead.sumpSizeLitres) : "");
   const [quantity, setQuantity] = useState("1");
   const [totalAmount, setTotalAmount] = useState("");
   const [orderDate, setOrderDate] = useState(() => dayKey(new Date()));
@@ -57,6 +59,7 @@ export function ConvertToOrder({ lead }: { lead: Lead }) {
       created = await apiPost<SalesOrder>("/sales-orders", {
         leadId: lead.id,
         product,
+        ...(product === "SUMP" ? { sizeLitres: Number(sizeLitres) } : {}),
         quantity: Number(quantity),
         totalAmount: Number(totalAmount),
         orderDate,
@@ -81,6 +84,18 @@ export function ConvertToOrder({ lead }: { lead: Lead }) {
             ))}
           </select>
         </Field>
+        {product === "SUMP" && (
+          <Field label="Sump size *">
+            <select className={inputClass} required value={sizeLitres} onChange={(e) => setSizeLitres(e.target.value)}>
+              <option value="">Choose a size…</option>
+              {SUMP_SIZES_LITRES.map((size) => (
+                <option key={size} value={size}>
+                  {formatLitres(size)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Quantity">
           <input className={inputClass} type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </Field>

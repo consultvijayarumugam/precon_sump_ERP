@@ -1,6 +1,12 @@
 # Precon ERP
 
-ERP for a UG sump / bio-septic tank / precast concrete manufacturer. See `CLAUDE.md` for the full scope and build phases.
+ERP for a manufacturer of precon (precast concrete) sumps and microbes. See `CLAUDE.md` for the full scope and build phases.
+
+**Products:** the business makes two product types:
+- **Sump**, in litre sizes 3,000 / 4,000 / 5,000 / 6,000 / 8,000 / 10,000 / 12,000 / 15,000 / 20,000. **Each size is its own stock item**, with its own quantity and low-stock alert level.
+- **Microbes**, a single stock count in packs.
+
+Wherever a product is chosen, it's either **Sump + size** or **Microbes**. A lead's sump size is optional; an order's is required.
 
 **Current status: Phases 1–3, the web part of Phase 5, and the web HR pieces are done.** The Phase 4 mobile app (GPS attendance, location check-in, dialer) is not started.
 
@@ -96,16 +102,22 @@ The seed also adds 10 sample leads. Suresh has 5, Priya has 4, and 1 is unassign
 The finance and stock seed adds the following. Dates are relative to the day you seed.
 
 - **Stock:**
-  - UG sump: 12 nos
-  - Bio-septic tank: 3 nos, which is **below its alert level of 5**
-  - Microbes: 40 packs
-  - Precast panels: 150
+  - Sump 3,000 L: 6 (alert at 3)
+  - Sump 4,000 L: 5 (alert at 3)
+  - **Sump 5,000 L: 2 (alert at 3), low**
+  - Sump 6,000 L: 4 (alert at 2)
+  - Sump 8,000 L: 3 (alert at 2)
+  - Sump 10,000 L: 7 (alert at 3)
+  - **Sump 12,000 L: 2 (alert at 2), low**
+  - Sump 15,000 L: 3 (alert at 1)
+  - Sump 20,000 L: 2 (alert at 1)
+  - Microbes: 40 packs (alert at 25)
 - **4 sales orders from won leads:**
-  - SO-0001 Senthil Farms (Suresh): ₹8,000 of ₹18,000 **overdue**
-  - SO-0002 Divya Hospital (Priya): ₹2,20,000 of ₹4,20,000 **overdue**
-  - SO-0003 Sri Murugan Residency (Suresh): ₹45,000 due in 10 days, not yet delivered
-  - SO-0004 Kongu Engineering College (Priya): fully paid
-- **2 won leads with no order yet**, for trying the conversion: Sakthi Hardware Stores (Suresh) and Palani Hill Resorts (Priya).
+  - SO-0001 Senthil Farms (Suresh): 20 packs of microbes. ₹8,000 of ₹18,000 **overdue**
+  - SO-0002 Divya Hospital (Priya): 2 × Sump 20,000 L. ₹2,20,000 of ₹4,20,000 **overdue**
+  - SO-0003 Sri Murugan Residency (Suresh): 1 × Sump 5,000 L. ₹45,000 due in 10 days, not yet delivered
+  - SO-0004 Kongu Engineering College (Priya): 1 × Sump 15,000 L, fully paid
+- **2 won leads with no order yet**, for trying the conversion: Sakthi Hardware Stores (Suresh, microbes) and Palani Hill Resorts (Priya, Sump 10,000 L).
 - **3 vendors:**
   - Ramco Cement: ₹1,30,000 owed, ₹50,000 of it **overdue**
   - Sri Balaji Steels: ₹1,40,000 owed, not yet due
@@ -265,6 +277,12 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 
 ## Finance and stock rules
 
+- **Stock items:** every sump size is a separate stock item (SKU `SUMP-3000` … `SUMP-20000`), and microbes is `MICROBES`. The valid sizes are defined in `api/src/stock/product-catalog.ts`. An order points at exactly one stock item, so delivering it reduces that size's count. The Stock screen groups all sump sizes under **Sump**, and Microbes is shown separately.
+- **Choosing a product:**
+  - When converting a won lead, pick **Sump + size** or **Microbes**.
+  - The size defaults to the lead's size. A sump order without a valid size is refused, and so is a size on a microbes order.
+  - On a lead, the sump size is optional ("Not decided yet"), and switching a lead to microbes clears it.
+
 - **Money:** stored as Decimal(12,2) rupees and sent over the API as strings ("125000.00"). Business dates (order, due, paid on) are plain dates in `YYYY-MM-DD`. "Today" uses `BUSINESS_TIMEZONE` (default `Asia/Kolkata`).
 - **Sales orders:**
   - Only a `WON` lead can be converted, with one order per lead.
@@ -308,7 +326,7 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 | GET    | `/leads/summary`         | `leads.read`           | Dashboard counts: leads by status, open leads, overdue and upcoming follow-ups |
 | GET    | `/leads/assignees`       | `leads.assign`         | Active users who hold `leads.read` (assign dropdown) |
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
-| POST   | `/leads`                 | `leads.write`          | Create: `{name, phone, source, productInterest, email?, city?, status?, notes?, assignedToId?}`. `assignedToId` for someone else needs `leads.assign` |
+| POST   | `/leads`                 | `leads.write`          | Create: `{name, phone, source, productInterest (SUMP|MICROBES), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. `assignedToId` for someone else needs `leads.assign` |
 | PATCH  | `/leads/:id`             | `leads.write`          | Edit any field or move it in the pipeline. Changing `assignedToId` needs `leads.assign` |
 | GET    | `/follow-ups`            | `leads.read`           | Follow-ups in your scope. `state=pending\|overdue\|upcoming\|completed`, `from`/`to` (ISO, for the calendar), `assignedTo=me` |
 | POST   | `/leads/:leadId/follow-ups` | `followups.write`   | Schedule: `{scheduledAt, note?}` |
@@ -318,8 +336,8 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 | GET    | `/sales-orders`          | `sales.read`           | Orders in your scope. Filters: `status`, `from`/`to` (order date), `salespersonId`, `page`, `pageSize`. Includes `amountPaid`/`balanceDue`/`isOverdue` only with `payments.read` |
 | GET    | `/sales-orders/summary`  | `sales.read`           | Your orders and value this month, and orders awaiting delivery |
 | GET    | `/sales-orders/:id`      | `sales.read`           | One order; its payments are included with `payments.read` |
-| POST   | `/sales-orders`          | `sales.write` + `leads.read` | Convert a WON lead: `{leadId, quantity, totalAmount, product?, orderDate?, dueDate?, notes?, salespersonId?}` |
-| PATCH  | `/sales-orders/:id`      | `sales.write`          | Edit total, dates, notes, salesperson. Product and quantity only before delivery |
+| POST   | `/sales-orders`          | `sales.write` + `leads.read` | Convert a WON lead: `{leadId, quantity, totalAmount, product? (SUMP|MICROBES), sizeLitres? (required for a sump unless the lead has one), orderDate?, dueDate?, notes?, salespersonId?}` |
+| PATCH  | `/sales-orders/:id`      | `sales.write`          | Edit total, dates, notes, salesperson. Product, `sizeLitres` and quantity only before delivery |
 | POST   | `/sales-orders/:id/deliver` | `sales.read` + `stock.write` | Mark delivered and reduce stock |
 | POST   | `/sales-orders/:id/cancel` | `sales.write`        | Cancel an undelivered order with no payments |
 | POST   | `/sales-orders/:id/payments` | `sales.read` + `payments.write` | Record a payment: `{amount, paidOn, mode, reference?, note?}` |
@@ -334,7 +352,7 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 | POST   | `/vendors/:id/purchases` | `vendors.write`        | `{item, amount, purchaseDate, dueDate, invoiceNumber?, notes?}` |
 | POST   | `/vendors/:id/payments`  | `vendors.write`        | `{amount, paidOn, mode, reference?, note?}` |
 | DELETE | `/vendor-payments/:id`   | `vendors.write`        | Remove a vendor payment recorded by mistake |
-| GET    | `/stock`                 | `stock.read`           | Products with quantity on hand, alert level, `isLow` |
+| GET    | `/stock`                 | `stock.read`           | Stock items (`sku`, `code`, `sizeLitres`, name, quantity on hand, alert level, `isLow`): sumps smallest to largest, then microbes |
 | GET    | `/stock/movements`       | `stock.read`           | Latest 50 movements (`productId` optional) |
 | POST   | `/stock/:productId/movements` | `stock.write`     | `{change, reason: PRODUCTION\|ADJUSTMENT, note?}`. Refused if it would go below 0 |
 | PATCH  | `/stock/:productId`      | `stock.write`          | `{lowStockThreshold?, name?, unit?}` |
@@ -449,6 +467,7 @@ The landing page (`/`) is designed around the user's **role** (`web/src/componen
 - `npm run db:migrate`: create and apply a new migration after editing `prisma/schema.prisma`
 - `npm run db:seed`: re-sync roles and tags and create missing demo users (safe to re-run)
 - `npm run db:reset`: **erases the local database**, then re-migrates and re-seeds. Development only.
+- `CONFIRM_DEMO_RESET=yes npm run db:reset-demo`, then `npm run db:seed`: empties only the **demo business data** and restarts order and job numbering, then rebuilds it. User accounts, roles and permissions are kept. It refuses to run in production or against a non-local database.
 - `npm test`: unit tests
 - `npm run test:e2e`: end-to-end auth/RBAC tests against the local DB
 

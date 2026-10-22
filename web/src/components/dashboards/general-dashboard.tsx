@@ -23,7 +23,7 @@ import {
   LEAD_STATUSES,
   LeadListItem,
   Paginated,
-  PRODUCT_LABELS,
+  productInterestLabel,
 } from "@/lib/crm";
 import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
@@ -209,7 +209,7 @@ export function GeneralDashboard() {
                       {lead.name}
                     </Link>
                     <span className="text-xs text-neutral-500">
-                      {PRODUCT_LABELS[lead.productInterest]} · {formatDate(lead.createdAt)}
+                      {productInterestLabel(lead)} · {formatDate(lead.createdAt)}
                     </span>
                   </div>
                   <StatusBadge status={lead.status} />

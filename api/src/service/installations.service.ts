@@ -39,7 +39,7 @@ export const INSTALLATION_SELECT = {
       customerName: true,
       status: true,
       quantity: true,
-      product: { select: { code: true, name: true, unit: true } },
+      product: { select: { code: true, sizeLitres: true, name: true, unit: true } },
       lead: { select: { phone: true, city: true } },
       salesperson: { select: { id: true, fullName: true } },
     },
@@ -134,7 +134,7 @@ export class InstallationsService {
         customerName: true,
         status: true,
         quantity: true,
-        product: { select: { name: true, unit: true } },
+        product: { select: { code: true, sizeLitres: true, name: true, unit: true } },
         lead: { select: { city: true, phone: true } },
       },
     });
