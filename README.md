@@ -432,15 +432,17 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/leave/approvals` | `leave.approve` | Pending first. Approve, or reject with a reason |
 | `/hr/lop` | `leave.approve` | Monthly LOP table (click an LOP number to see its dates), "How this is calculated", and record an absence |
 
-The dashboard also shows these cards:
+### Role dashboards
 
-- **Finance** (`finance.dashboard`)
-- **My sales** (`sales.read`, for users without `finance.dashboard`)
-- **Stock**, with low items flagged (`stock.read`)
-- **Installations**: next 7 days, in progress, late, and the next few (`installations.read`)
-- **Service**: open, in progress, urgent, and overdue or upcoming service follow-ups, within your scope (`service.read`)
-- **My leave & allowances**: days left, pending requests, next holiday, allowances this month (`leave.apply`)
-- **HR**: leave and allowance claims to approve, LOP this month, who is off today (`leave.approve` / `allowances.manage`)
+The landing page (`/`) is designed around the user's **role** (`web/src/components/dashboards/`). Each dashboard only requests data its tags allow, and checks them again, so a user with extra or missing tags just sees more or fewer cards and never a permission error.
+
+| Role | Dashboard |
+|------|-----------|
+| **admin** | Executive view. **Money:** total revenue so far, revenue this month, collected so far (advances and payments), what customers owe (red if overdue). **Operations:** installations today (plus next 7 days and late), stock with low items flagged. **People:** leave and allowance claims awaiting approval, who's off today, LOP days this month, and the first few items waiting for a decision |
+| **sales** | My open leads, overdue follow-ups (red), my won deals, my revenue this month, pipeline by stage, follow-ups due today and overdue, my week ahead, my latest leads |
+| **telecaller** | My assigned leads, calls still to make today, overdue calls (red), upcoming follow-ups, today's call list, my week ahead, assigned leads with tap-to-call numbers. **No money anywhere** |
+| **factory_supervisor** | My installations today and this week (switchable to everyone's), with status, site and crew. Open service jobs, most urgent first (overdue follow-ups in red). Low-stock items. **No CRM or finance** |
+| any other role | The general dashboard: every card the user's tags allow |
 
 ## Useful scripts (in `/api`)
 
