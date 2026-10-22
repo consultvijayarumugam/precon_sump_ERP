@@ -2,6 +2,7 @@
 // api/src/access-control/permission-catalog.ts. The API always enforces these too.
 export const TAGS = {
   USERS_READ: "users.read",
+  USERS_MANAGE: "users.manage",
   PERMISSIONS_READ: "permissions.read",
   PERMISSIONS_ASSIGN: "permissions.assign",
   LEADS_READ: "leads.read",

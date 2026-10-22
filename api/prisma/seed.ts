@@ -29,7 +29,7 @@ const DEMO_USERS: { email: string; fullName: string; phone: string; role: RoleKe
   { email: 'sales2@precon.local', fullName: 'Priya Sales', phone: '9000000005', role: ROLES.SALES },
   { email: 'telecaller@precon.local', fullName: 'Tara Telecaller', phone: '9000000003', role: ROLES.TELECALLER },
   { email: 'supervisor@precon.local', fullName: 'Farid Supervisor', phone: '9000000004', role: ROLES.FACTORY_SUPERVISOR },
-  // Service technician: a factory supervisor with extra service tags granted to them alone (see seed-service.ts).
+  // Service technician: a factory supervisor (that role's preset includes service jobs).
   { email: 'tech@precon.local', fullName: 'Ravi Technician', phone: '9000000006', role: ROLES.FACTORY_SUPERVISOR },
 ];
 
@@ -99,6 +99,11 @@ async function main() {
       `Seeded ${PERMISSION_DEFINITIONS.length} permission tags, ${ROLE_DEFINITIONS.length} roles, ${DEMO_USERS.length} demo users:`,
     );
     for (const u of DEMO_USERS) console.log(`  ${u.role.padEnd(20)} ${u.email}`);
+
+    // Demo users follow their role preset exactly: clear any per-user tag overrides.
+    await prisma.userPermission.deleteMany({
+      where: { user: { email: { in: DEMO_USERS.map((u) => u.email) } } },
+    });
 
     // 4. Sample CRM data
     await seedSampleLeads(prisma);

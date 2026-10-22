@@ -1,5 +1,6 @@
 // Shared UI pieces and style tokens, so every page looks the same.
 // Change the look here; pages only compose these.
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { ReactNode } from "react";
 import { LeadStatus, STATUS_LABELS } from "@/lib/crm";
@@ -15,6 +16,7 @@ import {
   SiteVisitTag,
   TagColor,
 } from "@/lib/service";
+import { MODULES, ModuleKey } from "@/lib/modules";
 
 // --- Form controls and buttons ---------------------------------------------
 
@@ -172,7 +174,7 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">{title}</h1>
+        <h1 className="text-[26px] font-bold leading-tight tracking-tight text-neutral-900 dark:text-neutral-50">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>}
       </div>
       {action}
@@ -212,14 +214,44 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-/** Dashboard-style card with a title and an optional "View all" link. */
-export function Card({ title, href, children }: { title: string; href?: string; children: ReactNode }) {
+/**
+ * Dashboard-style card. `module` gives it that module's colour (a thin top bar
+ * and a tinted icon chip) so cards read as CRM / Finance / Operations / HR.
+ */
+export function Card({
+  title,
+  href,
+  module,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  href?: string;
+  module?: ModuleKey;
+  icon?: LucideIcon;
+  children: ReactNode;
+}) {
+  const mod = module ? MODULES[module] : null;
   return (
-    <section className={`${panelClass} flex flex-col p-5`}>
+    <section className={`${panelClass} relative flex flex-col overflow-hidden p-5`}>
+      {mod && <span className={`absolute inset-x-0 top-0 h-1 ${mod.dot}`} aria-hidden />}
       <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
+        <div className="flex items-center gap-2.5">
+          {Icon && (
+            <span className={`grid size-8 place-items-center rounded-lg ${mod?.chip ?? MODULES.home.chip}`}>
+              <Icon className="size-4" aria-hidden />
+            </span>
+          )}
+          <div>
+            <h2 className="text-[15px] font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
+            {mod && <p className={`text-[11px] font-semibold uppercase tracking-wider ${mod.text}`}>{mod.label}</p>}
+          </div>
+        </div>
         {href && (
-          <Link href={href} className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300">
+          <Link
+            href={href}
+            className="rounded-md px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950"
+          >
             View all →
           </Link>
         )}
@@ -233,13 +265,13 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   return (
     <div>
       <div
-        className={`text-xl font-semibold tracking-tight ${
+        className={`text-2xl font-bold tracking-tight tabular-nums ${
           tone === "alert" ? "text-red-600 dark:text-red-400" : "text-neutral-900 dark:text-neutral-50"
         }`}
       >
         {value}
       </div>
-      <div className="mt-0.5 text-xs text-neutral-500">{label}</div>
+      <div className={`mt-0.5 text-xs ${tone === "alert" ? "font-medium text-red-700 dark:text-red-300" : "text-neutral-500"}`}>{label}</div>
     </div>
   );
 }

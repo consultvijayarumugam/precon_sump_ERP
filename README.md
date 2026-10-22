@@ -38,18 +38,58 @@ npm install
 npm run dev                 # http://localhost:3000
 ```
 
+## Testing from other devices on the same Wi-Fi (local network only)
+
+> **This is not a deployment.** It runs the dev servers on your Mac so a phone or another laptop **on the same Wi-Fi** can try the app with demo data. Nothing is exposed to the internet. There's no HTTPS, no domain, and no production build. Real hosting will be set up separately later.
+
+**How it works.** The browser only talks to the web app on port **3000**. The web app forwards every `/api/v1/...` request to the API on this Mac (a `rewrites` rule in `web/next.config.ts`). So the phone never needs the API's address and no CORS is involved.
+
+1. **Find your Mac's Wi-Fi IP:** `ipconfig getifaddr en0` (e.g. `192.168.31.50`).
+2. **Start the API** in terminal 1: `cd api && npm run start:dev`. It listens on `0.0.0.0:4000`, set by `HOST` in `api/.env`.
+3. **Start the web app** in terminal 2: `cd web && npm run dev:lan`. It listens on `0.0.0.0:3000`.
+4. **On the phone or other laptop** (same Wi-Fi), open `http://<your-mac-ip>:3000` and sign in with a demo user.
+
+Things to know:
+
+- **The IP can change** when the Mac reconnects to Wi-Fi or the router restarts. Re-run step 1 and use the new address; nothing in the code needs changing. To keep it fixed, reserve the address for your Mac in the router's DHCP settings.
+- **Both devices must be on the same network.** Phones on mobile data, guest Wi-Fi, or networks with "client isolation" can't reach the Mac.
+- **Firewall:** if macOS asks whether `node` may accept incoming connections, choose **Allow**. If the firewall is on and blocking, allow `node` under System Settings → Network → Firewall → Options.
+- **Use `http://`, not `https://`,** in the phone's browser.
+- **Keep the Mac awake** with the lid open, or use `caffeinate`, while testing.
+- **Dev-only settings:**
+  - `allowedDevOrigins` in `web/next.config.ts` lets `192.168.*.*` and `10.*.*.*` addresses load development assets. It only affects `next dev`.
+  - `HOST=0.0.0.0` makes the API reachable on the LAN. Set `HOST=127.0.0.1` to keep it on this Mac only.
+  - `CORS_ORIGINS` in `api/.env` only matters if a browser calls the API directly instead of through the web app.
+- **Anyone on the same Wi-Fi** can open the login page while the servers run, so only use demo data and passwords.
+
 ### Demo users (password = `SEED_USER_PASSWORD` in `api/.env`)
 
-| Role               | Email                     | Default tags |
-|--------------------|---------------------------|--------------|
-| admin              | admin@precon.local        | all          |
-| sales              | sales@precon.local (Suresh) | `leads.read`, `leads.write`, `followups.write`, `sales.read`, `sales.write`, `service.read` |
-| sales              | sales2@precon.local (Priya) | same as above |
-| telecaller         | telecaller@precon.local   | none yet (dialer comes in Phase 4) |
-| factory_supervisor | supervisor@precon.local (Farid) | `stock.*`, `installations.read`, `installations.write`, `sitevisit.read`, `sitevisit.write` |
-| factory_supervisor | tech@precon.local (Ravi, service technician) | the supervisor's tags **plus `service.read` and `service.write` granted to him alone** (a per-user override) |
+| Role               | Email |
+|--------------------|-------|
+| admin              | admin@precon.local (Asha) |
+| sales              | sales@precon.local (Suresh), sales2@precon.local (Priya) |
+| telecaller         | telecaller@precon.local (Tara) |
+| factory_supervisor | supervisor@precon.local (Farid), tech@precon.local (Ravi, service technician) |
 
-Every role also gets the employee HR tags: `leave.apply`, `leave.read`, `allowances.read` and `allowances.claim`.
+Every demo user follows their **role preset** exactly. The seed clears any per-user tag overrides.
+
+### Role presets (requirement #20)
+
+Admins don't pick individual tags. They pick a **role** on **Admin → Users**, and the role's preset decides every tag. **Changing someone's role resets their tags to the new preset** and clears any custom grants or revokes. The presets live in `api/src/access-control/permission-catalog.ts` (`ROLE_DEFINITIONS`). Re-running the seed re-syncs them.
+
+| Role | Sees in the sidebar | Tags |
+|------|---------------------|------|
+| **admin** | Everything | All tags |
+| **sales** | CRM (Leads, Won, Follow-ups, Calendar), Orders, Revenue (own), Site visits, own leave and allowances | `leads.read` `leads.write` `followups.write` `sales.read` `sales.write` `sitevisit.read` `sitevisit.write` + own leave and allowances |
+| **telecaller** | Leads (read), Won, Follow-ups, Calendar, own leave and allowances. No finance, stock or HR admin | `leads.read` `followups.write` + own leave and allowances |
+| **factory_supervisor** | Stock, Installations, Service jobs, Service follow-ups, Site visits, own leave and allowances. No CRM or finance | `stock.read` `stock.write` `installations.read` `installations.write` `service.read` `service.read_all` `service.write` `sitevisit.read` `sitevisit.write` + own leave and allowances |
+
+- **Own leave and allowances** means `leave.apply`, `leave.read` (team calendar and holidays), `allowances.read` and `allowances.claim`.
+- **"Own" scoping:** sales see only their own leads and orders because they have `leads.read` and `sales.read` without the matching `*_read_all` tag.
+- **Revenue (own):** the Revenue page shows a salesperson only their own row. Admins with `finance.dashboard` still see every salesperson.
+- **Service for supervisors:** supervisors get `service.read_all` because they run the service team.
+- **Sales and service:** service jobs aren't in the sales preset.
+- **Per-user overrides:** `PUT /users/:id/permissions` still exists for exceptions, and "View tags" on the Users screen shows anyone's effective tags.
 
 The seed also adds 10 sample leads. Suresh has 5, Priya has 4, and 1 is unassigned. They cover every source, product and status. There are 14 follow-ups, dated relative to the day you seed, so some are always overdue, some due today and some upcoming. The seed adds sample leads only when the leads table is empty. Run `npm run db:reset` to start over.
 
@@ -83,7 +123,7 @@ The service seed adds the following.
   - SJ-0002 Divya pre-monsoon cleaning: urgent, open, unassigned.
   - SJ-0003 Kongu warranty: resolved.
   - SJ-0004 Kongu annual check: open, with an **overdue** follow-up.
-  - SJ-0005 Senthil Farms microbe check: open. This is the only one Suresh sees, because he sold that order. Priya sees the Divya and Kongu jobs.
+  - SJ-0005 Senthil Farms microbe check: open.
 - **5 site-visit tags:** survey, measurement, complaint-visit, installation-check and soil-test.
 - **4 site visits** that use the tags.
 
@@ -142,11 +182,11 @@ The HR seed adds the following.
 | `payments.write` | Record or remove customer payments |
 | `vendors.read` / `vendors.write` | View / manage vendors, purchases and vendor payments |
 | `stock.read` / `stock.write` | View stock / add production, adjust, set alert levels, **and mark orders delivered** |
-| `finance.dashboard` | Revenue by employee and the company-wide finance card |
+| `finance.dashboard` | Revenue for every salesperson and the company-wide finance card. Without it, `sales.read` holders see only their own revenue |
 
 - Admin holds all of these.
 - Salespeople hold only `sales.read` and `sales.write`, scoped to their own orders. They don't see payment or balance fields. The API leaves those fields out unless the user holds `payments.read`.
-- The factory supervisor holds the stock tags.
+- The factory supervisor holds the stock tags (see **Role presets** above for every role).
 - Marking an order delivered needs `sales.read` plus `stock.write`. So by default only admin can deliver. To let the supervisor deliver, an admin grants them `sales.read` and `sales.read_all`.
 
 ### Service and installation tags (Phase 5)
@@ -162,8 +202,8 @@ The HR seed adds the following.
 | `sitevisit.manage_tags` | Add, rename, recolour, retire or delete site-visit tags |
 
 - Admin holds all of these.
-- The factory supervisor holds the installation and site-visit tags.
-- Salespeople hold `service.read`, so they see their own customers' jobs but can't change them.
+- The factory supervisor holds the installation, service (all jobs) and site-visit tags.
+- Salespeople hold the site-visit tags but no service tags. Grant `service.read` to an individual if they need to see their customers' jobs.
 
 ### HR tags
 
@@ -257,7 +297,9 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 | POST   | `/auth/login`            | public                 | `{email, password}` → `{accessToken, expiresAt, user}` |
 | POST   | `/auth/logout`           | logged in              | Revokes the current token (204) |
 | GET    | `/auth/me`               | logged in              | Current user, role, effective tags, modules |
-| GET    | `/users`                 | `users.read`           | List users |
+| GET    | `/users`                 | `users.read`           | List users, with role and `customTagCount` |
+| POST   | `/users`                 | `users.manage`         | Create: `{fullName, email, roleKey, password, phone?}`. Tags come from the role preset |
+| PATCH  | `/users/:id`             | `users.manage`         | `{fullName?, phone?, roleKey?, isActive?, password?}`. Changing `roleKey` resets tags to that preset. You can't change your own role or deactivate yourself |
 | GET    | `/users/:id/permissions` | `permissions.read`     | Role tags, overrides, effective tags |
 | PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. |
 | GET    | `/roles`                 | `permissions.read`     | Roles with default tags and user counts |
@@ -283,7 +325,7 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 | POST   | `/sales-orders/:id/payments` | `sales.read` + `payments.write` | Record a payment: `{amount, paidOn, mode, reference?, note?}` |
 | DELETE | `/payments/:id`          | `sales.read` + `payments.write` | Remove a payment recorded by mistake |
 | GET    | `/finance/summary`       | `finance.dashboard`    | Revenue this month, receivable, overdue receivable, payable, overdue payable |
-| GET    | `/finance/revenue-by-employee` | `finance.dashboard` | `from`/`to` (order date). Per salesperson: orders, revenue, collected, outstanding |
+| GET    | `/finance/revenue-by-employee` | `finance.dashboard` or `sales.read` | `from`/`to` (order date). Per salesperson: orders, revenue, collected, outstanding. Without `finance.dashboard` you get only your own row (`scope: "own"`) |
 | GET    | `/finance/overdue-balances` | `payments.read`     | Orders with a balance past due, company-wide. `sort=oldest\|largest` |
 | GET    | `/vendors`               | `vendors.read`         | Vendors with purchased, paid, outstanding, overdue, oldest unpaid due |
 | GET    | `/vendors/:id`           | `vendors.read`         | Vendor with each purchase's unpaid and overdue amount, and its payments |
@@ -368,7 +410,9 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/calendar` | `leads.read` | Month calendar of *your* follow-ups. Users with `leads.read_all` can switch to everyone's |
 | `/orders` | `sales.read` | Sales orders. Balances and overdue flags appear with `payments.read`. Convert a lead to an order from a won lead's page |
 | `/orders/:id` | `sales.read` | Order details, edit, mark delivered (`stock.write`), cancel, payments (`payments.read`/`payments.write`) |
-| `/finance/revenue` | `finance.dashboard` | Revenue by employee with date presets (this month, last month, this financial year, all time) or a custom range |
+| `/finance/revenue` | `finance.dashboard` or `sales.read` | Revenue by employee (or "My revenue" for sales) with date presets (this month, last month, this financial year, all time) or a custom range |
+| `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** and **Edit** (pick a role, which previews the preset's tags), activate or deactivate, reset password. "View tags" needs `permissions.read` |
+| `/admin/permissions` | `permissions.read` | Grid of each role's preset tags |
 | `/finance/overdue` | `payments.read` | Balance overdue: orders with money owed past the due date, days overdue, sortable |
 | `/vendors` | `vendors.read` | Vendor outstanding: what we owe each vendor, with overdue flagged |
 | `/vendors/:id` | `vendors.read` | Purchases (unpaid and overdue per bill), payments, and forms to add both |
@@ -405,3 +449,15 @@ The dashboard also shows these cards:
 - `npm run db:reset`: **erases the local database**, then re-migrates and re-seeds. Development only.
 - `npm test`: unit tests
 - `npm run test:e2e`: end-to-end auth/RBAC tests against the local DB
+
+## Look and feel (web)
+
+- **Primary accent:** a confident blue (`brand-600` = `#2557eb`). It's used on primary buttons, the active sidebar item, links and key highlights.
+- **Module colours,** shown on sidebar section dots and icons, page breadcrumbs, and dashboard cards (top bar and icon chip):
+  - CRM: **violet**
+  - Finance: **emerald**
+  - Operations: **amber**
+  - HR: **cyan**
+  - Admin: **slate**
+- **Red is reserved** for overdue or urgent items. Those always also carry a text label ("Overdue", "needs action", "Low"), so meaning never depends on colour alone.
+- **Where to change it:** colour tokens are in `web/src/app/globals.css`, module colours in `web/src/lib/modules.ts`, and shared components and styles in `web/src/components/ui.tsx`.

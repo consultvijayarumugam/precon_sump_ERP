@@ -9,6 +9,7 @@
 
 export const PERMISSIONS = {
   USERS_READ: 'users.read',
+  USERS_MANAGE: 'users.manage',
   PERMISSIONS_READ: 'permissions.read',
   PERMISSIONS_ASSIGN: 'permissions.assign',
   LEADS_READ: 'leads.read',
@@ -54,6 +55,11 @@ export const PERMISSION_DEFINITIONS: {
     key: PERMISSIONS.USERS_READ,
     module: 'admin',
     description: 'View the list of users',
+  },
+  {
+    key: PERMISSIONS.USERS_MANAGE,
+    module: 'admin',
+    description: "Create users, edit them, change their role (which resets their tags to the role's preset)",
   },
   {
     key: PERMISSIONS.PERMISSIONS_READ,
@@ -217,8 +223,8 @@ export const PERMISSION_DEFINITIONS: {
   },
 ];
 
-/** Tags every employee gets, whatever their role. */
-const EVERY_EMPLOYEE: PermissionKey[] = [
+/** Every employee: their own leave (plus team calendar/holidays) and their own allowances. */
+const OWN_LEAVE_AND_ALLOWANCES: PermissionKey[] = [
   PERMISSIONS.LEAVE_APPLY,
   PERMISSIONS.LEAVE_READ,
   PERMISSIONS.ALLOWANCES_READ,
@@ -234,6 +240,12 @@ export const ROLES = {
 
 export type RoleKey = (typeof ROLES)[keyof typeof ROLES];
 
+/**
+ * ROLE PRESETS (requirement #20). Picking a role for a user gives them exactly
+ * this set of tags; admins normally never pick individual tags. "Own" scoping
+ * (e.g. sales only see their own leads/orders) comes from the *_read tags
+ * without the matching *_read_all tag.
+ */
 export const ROLE_DEFINITIONS: {
   key: RoleKey;
   name: string;
@@ -243,41 +255,53 @@ export const ROLE_DEFINITIONS: {
   {
     key: ROLES.ADMIN,
     name: 'Admin',
-    description: 'Full access; assigns modules and tags to other users',
+    description: 'Everything, including users, roles and approvals',
     defaultPermissions: PERMISSION_DEFINITIONS.map((p) => p.key),
   },
   {
     key: ROLES.SALES,
     name: 'Sales',
-    description: 'Field and office sales staff',
+    description: 'Own leads, follow-ups, won leads, own orders and revenue, site visits, own leave and allowances',
     defaultPermissions: [
+      // CRM: own leads (read/write), won, follow-ups, calendar
       PERMISSIONS.LEADS_READ,
       PERMISSIONS.LEADS_WRITE,
       PERMISSIONS.FOLLOWUPS_WRITE,
+      // Finance: own orders (read/write) and own revenue
       PERMISSIONS.SALES_READ,
       PERMISSIONS.SALES_WRITE,
-      PERMISSIONS.SERVICE_READ,
-      ...EVERY_EMPLOYEE,
+      // Operations: site visits
+      PERMISSIONS.SITEVISIT_READ,
+      PERMISSIONS.SITEVISIT_WRITE,
+      ...OWN_LEAVE_AND_ALLOWANCES,
     ],
   },
   {
     key: ROLES.TELECALLER,
     name: 'Telecaller',
-    description: 'Calls leads and logs follow-ups',
-    defaultPermissions: [...EVERY_EMPLOYEE],
+    description: 'Leads (read), follow-ups, calendar, own leave and allowances',
+    defaultPermissions: [
+      PERMISSIONS.LEADS_READ,
+      PERMISSIONS.FOLLOWUPS_WRITE,
+      ...OWN_LEAVE_AND_ALLOWANCES,
+    ],
   },
   {
     key: ROLES.FACTORY_SUPERVISOR,
     name: 'Factory Supervisor',
-    description: 'Runs production and stock on the factory floor',
+    description: 'Stock, installations, service jobs and follow-ups, site visits, own leave and allowances',
     defaultPermissions: [
       PERMISSIONS.STOCK_READ,
       PERMISSIONS.STOCK_WRITE,
       PERMISSIONS.INSTALLATIONS_READ,
       PERMISSIONS.INSTALLATIONS_WRITE,
+      // Service jobs + service follow-ups, for every customer (they run the service team)
+      PERMISSIONS.SERVICE_READ,
+      PERMISSIONS.SERVICE_READ_ALL,
+      PERMISSIONS.SERVICE_WRITE,
       PERMISSIONS.SITEVISIT_READ,
       PERMISSIONS.SITEVISIT_WRITE,
-      ...EVERY_EMPLOYEE,
+      ...OWN_LEAVE_AND_ALLOWANCES,
     ],
   },
 ];

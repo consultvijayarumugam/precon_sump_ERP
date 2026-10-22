@@ -4,8 +4,7 @@
  * Each part runs only when its table is empty.
  *
  * What you get:
- *  - Ravi Technician: a factory_supervisor given service.read + service.write
- *    as per-user grants, showing admin can tailor one person's tags.
+ *  - Ravi Technician: a factory_supervisor (the role preset covers service work).
  *  - 3 completed installations (Divya Hospital, Kongu College, Senthil Farms)
  *    and 1 scheduled in 3 days (Sri Murugan Residency, not yet delivered).
  *  - 5 service jobs across statuses and priorities, with follow-ups; 2 overdue.
@@ -136,17 +135,6 @@ export async function seedServiceAndInstallations(prisma: PrismaClient) {
     (await prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } })).id;
   const adminId = await userId('admin@precon.local');
   const people = { supervisor: await userId('supervisor@precon.local'), tech: await userId('tech@precon.local') };
-
-  // 1. The technician's per-user grants (only if none set yet).
-  if ((await prisma.userPermission.count({ where: { userId: people.tech } })) === 0) {
-    const grants = await prisma.permission.findMany({
-      where: { key: { in: ['service.read', 'service.write'] } },
-      select: { id: true },
-    });
-    await prisma.userPermission.createMany({
-      data: grants.map((p) => ({ userId: people.tech, permissionId: p.id, effect: 'GRANT' as const })),
-    });
-  }
 
   // 2. Site-visit tags
   for (const t of TAGS) {

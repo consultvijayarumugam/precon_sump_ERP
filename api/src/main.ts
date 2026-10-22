@@ -19,6 +19,8 @@ async function bootstrap() {
     SwaggerModule.createDocument(app, swaggerConfig),
   );
 
-  await app.listen(process.env.PORT ?? 4000);
+  // 0.0.0.0 = every network interface, so other devices on the same Wi-Fi can
+  // reach it during local testing. Set HOST=127.0.0.1 to keep it on this machine only.
+  await app.listen(process.env.PORT ?? 4000, process.env.HOST ?? '0.0.0.0');
 }
 await bootstrap();

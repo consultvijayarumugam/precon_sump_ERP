@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   CurrentUser,
+  RequireAnyPermission,
   RequirePermissions,
 } from '../access-control/access-policy.decorators.js';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
@@ -40,13 +41,15 @@ export class FinanceReportsController {
   }
 
   @Get('revenue-by-employee')
-  @RequirePermissions(PERMISSIONS.FINANCE_DASHBOARD)
+  @RequireAnyPermission(PERMISSIONS.FINANCE_DASHBOARD, PERMISSIONS.SALES_READ)
   @ApiOperation({
-    summary: 'Order value and collections per salesperson in a date range (needs finance.dashboard)',
-    description: 'Filters on order date; cancelled orders excluded. Omit from/to for all time.',
+    summary: 'Order value and collections per salesperson in a date range',
+    description:
+      'finance.dashboard: every salesperson. sales.read only: just your own row. Filters on order date; cancelled orders excluded.',
   })
-  revenueByEmployee(@Query() query: DateRangeQueryDto) {
-    return this.reports.revenueByEmployee(query);
+  revenueByEmployee(@CurrentUser() user: AuthenticatedUser, @Query() query: DateRangeQueryDto) {
+    const ownOnly = !user.permissions.includes(PERMISSIONS.FINANCE_DASHBOARD);
+    return this.reports.revenueByEmployee(query, ownOnly ? user.id : undefined);
   }
 
   @Get('overdue-balances')

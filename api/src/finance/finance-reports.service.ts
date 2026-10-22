@@ -26,7 +26,7 @@ export class FinanceReportsService {
    * Revenue per salesperson (#7): order value booked in the date range (by
    * order date, cancelled orders excluded), plus how much of it has been collected.
    */
-  async revenueByEmployee(range: { from?: string; to?: string }) {
+  async revenueByEmployee(range: { from?: string; to?: string }, onlySalespersonId?: string) {
     const from = range.from ? parseDateOnly(range.from) : undefined;
     const to = range.to ? parseDateOnly(range.to) : undefined;
     if (from && to && to < from) throw new BadRequestException('"to" is before "from"');
@@ -35,6 +35,7 @@ export class FinanceReportsService {
       where: {
         status: { not: SalesOrderStatus.CANCELLED },
         orderDate: { gte: from, lte: to },
+        salespersonId: onlySalespersonId,
       },
       select: {
         id: true,
@@ -78,6 +79,7 @@ export class FinanceReportsService {
     });
 
     return {
+      scope: onlySalespersonId ? 'own' : 'all',
       from: range.from ?? null,
       to: range.to ?? null,
       rows: rows.map((r) => ({ salesperson: r.salesperson, ...format(r) })),

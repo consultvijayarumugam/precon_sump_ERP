@@ -34,6 +34,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/components/auth-provider";
+import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
 
 interface NavItem {
@@ -42,14 +43,17 @@ interface NavItem {
   icon: LucideIcon;
   /** Permission tag needed to see the item; none = everyone signed in. */
   tag?: string;
+  /** Alternatively: shown if the user holds ANY of these tags. */
+  anyTags?: string[];
 }
 
 // Sections by module. Items the user lacks the tag for are hidden, and a
 // section with no visible items disappears entirely. The API still enforces
 // every tag; this only decides what is worth showing.
-const NAV: { title?: string; items: NavItem[] }[] = [
-  { items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }] },
+const NAV: { module: ModuleKey; title?: string; items: NavItem[] }[] = [
+  { module: "home", items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }] },
   {
+    module: "crm",
     title: "CRM",
     items: [
       { href: "/leads", label: "Leads", icon: Contact, tag: TAGS.LEADS_READ },
@@ -59,15 +63,17 @@ const NAV: { title?: string; items: NavItem[] }[] = [
     ],
   },
   {
+    module: "finance",
     title: "Finance",
     items: [
       { href: "/orders", label: "Orders", icon: Receipt, tag: TAGS.SALES_READ },
-      { href: "/finance/revenue", label: "Revenue", icon: TrendingUp, tag: TAGS.FINANCE_DASHBOARD },
+      { href: "/finance/revenue", label: "Revenue", icon: TrendingUp, anyTags: [TAGS.FINANCE_DASHBOARD, TAGS.SALES_READ] },
       { href: "/finance/overdue", label: "Overdue payments", icon: TriangleAlert, tag: TAGS.PAYMENTS_READ },
       { href: "/vendors", label: "Vendors", icon: Truck, tag: TAGS.VENDORS_READ },
     ],
   },
   {
+    module: "operations",
     title: "Operations",
     items: [
       { href: "/stock", label: "Stock", icon: Boxes, tag: TAGS.STOCK_READ },
@@ -78,6 +84,7 @@ const NAV: { title?: string; items: NavItem[] }[] = [
     ],
   },
   {
+    module: "hr",
     title: "HR",
     items: [
       { href: "/leave", label: "My leave", icon: Umbrella, tag: TAGS.LEAVE_APPLY },
@@ -89,6 +96,7 @@ const NAV: { title?: string; items: NavItem[] }[] = [
     ],
   },
   {
+    module: "admin",
     title: "Admin",
     items: [
       { href: "/admin/users", label: "Users", icon: Users, tag: TAGS.USERS_READ },
@@ -98,6 +106,15 @@ const NAV: { title?: string; items: NavItem[] }[] = [
 ];
 
 const ALL_HREFS = NAV.flatMap((s) => s.items.map((i) => i.href));
+
+/** The section (module) and item for a path, for the breadcrumb. */
+function sectionFor(href: string | undefined) {
+  for (const section of NAV) {
+    const item = section.items.find((i) => i.href === href);
+    if (item) return { section, item };
+  }
+  return null;
+}
 
 /** The nav item to highlight: the longest href that the current path falls under. */
 function activeHref(pathname: string): string | undefined {
@@ -111,7 +128,7 @@ const COLLAPSE_KEY = "precon.sidebarCollapsed";
 function Logo({ compact }: { compact?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="Precon ERP home">
-      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-brand-500 shadow-sm">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-sm">
         <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
           <rect x="3" y="3" width="14" height="4" rx="1" fill="white" />
           <rect x="3" y="8.5" width="9" height="4" rx="1" fill="white" opacity="0.85" />
@@ -121,7 +138,7 @@ function Logo({ compact }: { compact?: boolean }) {
       </span>
       {!compact && (
         <span className="text-[15px] leading-none tracking-tight text-white">
-          <span className="font-semibold">Precon</span> <span className="font-light text-brand-200">ERP</span>
+          <span className="font-semibold">Precon</span> <span className="font-light text-brand-300">ERP</span>
         </span>
       )}
     </Link>
@@ -151,16 +168,17 @@ function SidebarContent({
   const { user, can, logout } = useAuth();
   const pathname = usePathname();
   const current = activeHref(pathname);
-  const sections = NAV.map((s) => ({ ...s, items: s.items.filter((i) => !i.tag || can(i.tag)) })).filter(
+  const visible = (i: NavItem) => (i.anyTags ? i.anyTags.some(can) : !i.tag || can(i.tag));
+  const sections = NAV.map((s) => ({ ...s, items: s.items.filter(visible) })).filter(
     (s) => s.items.length > 0,
   );
 
   return (
-    <div className="flex h-full flex-col bg-brand-950 text-brand-100">
+    <div className="flex h-full flex-col bg-slate-900 text-slate-200">
       <div className={`flex h-16 shrink-0 items-center border-b border-white/10 ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
         <Logo compact={collapsed} />
         {onClose && (
-          <button onClick={onClose} className="rounded-md p-1.5 text-brand-200 hover:bg-white/10 hover:text-white" aria-label="Close menu">
+          <button onClick={onClose} className="rounded-md p-1.5 text-slate-300 hover:bg-white/10 hover:text-white" aria-label="Close menu">
             <X className="size-5" />
           </button>
         )}
@@ -173,7 +191,10 @@ function SidebarContent({
               (collapsed ? (
                 <div className="mx-2 mb-2 border-t border-white/10" aria-hidden />
               ) : (
-                <div className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-brand-300/70">{section.title}</div>
+                <div className={`mb-1.5 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-wider ${MODULES[section.module].sidebarLabel}`}>
+                  <span className={`size-1.5 rounded-full ${MODULES[section.module].dot}`} aria-hidden />
+                  {section.title}
+                </div>
               ))}
             <ul className="space-y-0.5">
               {section.items.map((item) => {
@@ -187,10 +208,15 @@ function SidebarContent({
                       title={collapsed ? item.label : undefined}
                       aria-current={active ? "page" : undefined}
                       className={`group flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors ${collapsed ? "justify-center" : ""} ${
-                        active ? "bg-white/12 font-medium text-white" : "text-brand-200 hover:bg-white/6 hover:text-white"
+                        active
+                          ? "bg-brand-600 font-semibold text-white shadow-sm shadow-brand-950/40"
+                          : "text-slate-300 hover:bg-white/8 hover:text-white"
                       }`}
                     >
-                      <Icon className={`size-[18px] shrink-0 ${active ? "text-white" : "text-brand-300 group-hover:text-white"}`} aria-hidden />
+                      <Icon
+                        className={`size-[18px] shrink-0 ${active ? "text-white" : `${MODULES[section.module].sidebarIcon} group-hover:text-white`}`}
+                        aria-hidden
+                      />
                       {!collapsed && <span className="truncate">{item.label}</span>}
                     </Link>
                   </li>
@@ -204,7 +230,7 @@ function SidebarContent({
       <div className="shrink-0 border-t border-white/10 p-3">
         <div className={`flex items-center gap-3 ${collapsed ? "flex-col" : ""}`}>
           <span
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-700 text-xs font-semibold text-white"
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-xs font-semibold text-white"
             title={collapsed ? `${user.fullName} · ${user.role.name}` : undefined}
           >
             {initials(user.fullName)}
@@ -212,12 +238,12 @@ function SidebarContent({
           {!collapsed && (
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-white">{user.fullName}</div>
-              <div className="truncate text-xs text-brand-300">{user.role.name}</div>
+              <div className="truncate text-xs text-slate-400">{user.role.name}</div>
             </div>
           )}
           <button
             onClick={logout}
-            className="rounded-md p-2 text-brand-200 hover:bg-white/10 hover:text-white"
+            className="rounded-md p-2 text-slate-300 hover:bg-white/10 hover:text-white"
             title="Log out"
             aria-label="Log out"
           >
@@ -227,7 +253,7 @@ function SidebarContent({
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className={`mt-2 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-brand-300 hover:bg-white/6 hover:text-white ${
+            className={`mt-2 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-slate-400 hover:bg-white/8 hover:text-white ${
               collapsed ? "justify-center" : ""
             }`}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -238,6 +264,22 @@ function SidebarContent({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** "● CRM / Leads" above the page, in the module's colour. */
+function Breadcrumb() {
+  const pathname = usePathname();
+  const found = sectionFor(activeHref(pathname));
+  if (!found || found.section.module === "home") return null;
+  const mod = MODULES[found.section.module];
+  return (
+    <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+      <span className={`size-2 rounded-full ${mod.dot}`} aria-hidden />
+      <span className={mod.text}>{mod.label}</span>
+      <span className="text-neutral-300 dark:text-neutral-600">/</span>
+      <span className="text-neutral-500">{found.item.label}</span>
     </div>
   );
 }
@@ -276,7 +318,7 @@ function Shell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       {/* Desktop sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 hidden border-r border-brand-900 transition-[width] duration-200 lg:block ${
+        className={`fixed inset-y-0 left-0 z-30 hidden border-r border-slate-800 transition-[width] duration-200 lg:block ${
           collapsed ? "w-[4.5rem]" : "w-64"
         }`}
       >
@@ -296,7 +338,7 @@ function Shell({ children }: { children: ReactNode }) {
           Precon <span className="font-light text-brand-600 dark:text-brand-300">ERP</span>
         </span>
         <span
-          className="ml-auto grid size-8 place-items-center rounded-full bg-brand-600 text-xs font-semibold text-white"
+          className="ml-auto grid size-8 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-xs font-semibold text-white"
           title={`${user.fullName} · ${user.role.name}`}
         >
           {initials(user.fullName)}
@@ -312,7 +354,10 @@ function Shell({ children }: { children: ReactNode }) {
       )}
 
       <div className={`transition-[padding] duration-200 ${collapsed ? "lg:pl-[4.5rem]" : "lg:pl-64"}`}>
-        <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <Breadcrumb />
+          {children}
+        </main>
       </div>
     </div>
   );

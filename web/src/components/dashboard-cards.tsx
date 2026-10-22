@@ -1,5 +1,6 @@
 "use client";
 
+import { BadgeIndianRupee, Boxes, ClipboardList, HardHat, Receipt, Umbrella, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import { Card, ErrorText, Stat } from "@/components/ui";
@@ -33,7 +34,7 @@ interface FinanceSummary {
 export function FinanceCard() {
   const { data, error } = useApi<FinanceSummary>("/finance/summary");
   return (
-    <Card title="Finance" href="/finance/revenue">
+    <Card title="Money this month" href="/finance/revenue" module="finance" icon={BadgeIndianRupee}>
       <ErrorText error={error} />
       {data && (
         <div className="grid grid-cols-2 gap-4">
@@ -69,7 +70,7 @@ interface SalesSummary {
 export function SalesCard({ title }: { title: string }) {
   const { data, error } = useApi<SalesSummary>("/sales-orders/summary");
   return (
-    <Card title={title} href="/orders">
+    <Card title={title} href="/orders" module="finance" icon={Receipt}>
       <ErrorText error={error} />
       {data && (
         <div className="grid grid-cols-3 gap-4">
@@ -86,7 +87,7 @@ export function SalesCard({ title }: { title: string }) {
 export function StockCard() {
   const { data, error } = useApi<{ lowCount: number; items: Product[] }>("/stock");
   return (
-    <Card title={data && data.lowCount > 0 ? `Stock: ${data.lowCount} low` : "Stock"} href="/stock">
+    <Card title={data && data.lowCount > 0 ? `Stock · ${data.lowCount} low` : "Stock"} href="/stock" module="operations" icon={Boxes}>
       <ErrorText error={error} />
       <ul className="space-y-1 text-sm">
         {data?.items.map((p) => (
@@ -117,7 +118,7 @@ export function InstallationsCard() {
   const summary = useApi<InstallationSummary>("/installations/summary");
   const upcoming = useApi<Installation[]>(`/installations?from=${dayKey(new Date())}&status=SCHEDULED`);
   return (
-    <Card title="Installations" href="/installations">
+    <Card title="Installations" href="/installations" module="operations" icon={HardHat}>
       <ErrorText error={summary.error ?? upcoming.error} />
       {summary.data && (
         <div className="mb-3 grid grid-cols-3 gap-4">
@@ -155,7 +156,7 @@ interface ServiceSummary {
 export function ServiceCard({ title }: { title: string }) {
   const { data, error } = useApi<ServiceSummary>("/service-jobs/summary");
   return (
-    <Card title={title} href="/service">
+    <Card title={title} href="/service" module="operations" icon={Wrench}>
       <ErrorText error={error} />
       {data && (
         <div className="grid grid-cols-3 gap-4">
@@ -190,7 +191,7 @@ export function MyHrCard() {
   const pending = mine.data?.filter((l) => l.status === "PENDING").length ?? 0;
 
   return (
-    <Card title="My leave & allowances" href="/leave">
+    <Card title="My leave & allowances" href="/leave" module="hr" icon={Umbrella}>
       <ErrorText error={balance.error ?? mine.error} />
       <div className="grid grid-cols-3 gap-4">
         {balance.data?.paid.map((p) => (
@@ -231,7 +232,7 @@ export function HrAdminCard() {
   const off = offToday.data?.leave.filter((l) => l.status === "APPROVED" && l.workingDates.includes(today)) ?? [];
 
   return (
-    <Card title="HR" href={approver ? "/leave/approvals" : "/allowances"}>
+    <Card title="HR approvals" href={approver ? "/leave/approvals" : "/allowances"} module="hr" icon={ClipboardList}>
       <div className="grid grid-cols-3 gap-4">
         {pendingLeave.data && (
           <Link href="/leave/approvals">

@@ -93,9 +93,16 @@ describe('Auth and RBAC (e2e)', () => {
       ).toBe(true);
     });
 
-    it('telecaller without CRM tags is refused', async () => {
+    it('telecaller preset: can read leads and log follow-ups, but not edit leads or see finance', async () => {
       const telecaller = (await login('telecaller@precon.local')).body.accessToken;
-      await request(app.getHttpServer()).get('/api/v1/leads').set(as(telecaller)).expect(403);
+      await request(app.getHttpServer()).get('/api/v1/leads').set(as(telecaller)).expect(200);
+      await request(app.getHttpServer())
+        .post('/api/v1/leads')
+        .set(as(telecaller))
+        .send({ name: 'E2E nope', phone: '9000099999', source: 'MANUAL', productInterest: 'UG_SUMP' })
+        .expect(403);
+      await request(app.getHttpServer()).get('/api/v1/sales-orders').set(as(telecaller)).expect(403);
+      await request(app.getHttpServer()).get('/api/v1/stock').set(as(telecaller)).expect(403);
     });
 
     it('sales creates a lead (auto-assigned), cannot reassign it, and another salesperson cannot see it', async () => {
@@ -269,10 +276,14 @@ describe('Auth and RBAC (e2e)', () => {
       await http().get('/api/v1/finance/overdue-balances').set(as(sales)).expect(403);
     });
 
-    it('revenue by employee is admin-only and includes the new order', async () => {
-      await http().get('/api/v1/finance/revenue-by-employee').set(as(sales)).expect(403);
-      const res = await http().get('/api/v1/finance/revenue-by-employee').set(as(admin)).expect(200);
-      expect(res.body.rows.some((r: { salesperson: { fullName: string } }) => r.salesperson.fullName === 'Suresh Sales')).toBe(true);
+    it('revenue by employee: admin sees everyone, a salesperson only their own', async () => {
+      const all = await http().get('/api/v1/finance/revenue-by-employee').set(as(admin)).expect(200);
+      expect(all.body.scope).toBe('all');
+      expect(all.body.rows.some((r: { salesperson: { fullName: string } }) => r.salesperson.fullName === 'Suresh Sales')).toBe(true);
+      const own = await http().get('/api/v1/finance/revenue-by-employee').set(as(sales)).expect(200);
+      expect(own.body.scope).toBe('own');
+      expect(own.body.rows.every((r: { salesperson: { fullName: string } }) => r.salesperson.fullName === 'Suresh Sales')).toBe(true);
+      await http().get('/api/v1/finance/summary').set(as(sales)).expect(403);
     });
 
     it('delivering reduces stock once; needs stock.write; refuses when stock is short', async () => {
@@ -347,7 +358,7 @@ describe('Auth and RBAC (e2e)', () => {
     beforeAll(async () => {
       for (const [who, email] of Object.entries({
         admin: 'admin@precon.local', sales: 'sales@precon.local', sales2: 'sales2@precon.local',
-        supervisor: 'supervisor@precon.local', tech: 'tech@precon.local',
+        supervisor: 'supervisor@precon.local', tech: 'tech@precon.local', telecaller: 'telecaller@precon.local',
       })) {
         tokens[who] = (await login(email)).body.accessToken;
       }
@@ -413,10 +424,9 @@ describe('Auth and RBAC (e2e)', () => {
       created.jobIds.push(job.body.id);
       expect(job.body.jobNumberLabel).toMatch(/^SJ-/);
 
-      await http().get(`/api/v1/service-jobs/${job.body.id}`).set(as('sales')).expect(200); // sold it
-      await http().get(`/api/v1/service-jobs/${job.body.id}`).set(as('sales2')).expect(404); // didn't
-      await http().get(`/api/v1/service-jobs/${job.body.id}`).set(as('tech')).expect(200); // assigned
-      await http().get('/api/v1/service-jobs').set(as('supervisor')).expect(403); // no service tags
+      await http().get(`/api/v1/service-jobs/${job.body.id}`).set(as('sales')).expect(403); // sales preset has no service tags
+      await http().get(`/api/v1/service-jobs/${job.body.id}`).set(as('tech')).expect(200); // supervisor preset
+      await http().get('/api/v1/service-jobs').set(as('supervisor')).expect(200); // sees every job (read_all)
       await http().patch(`/api/v1/service-jobs/${job.body.id}`).set(as('sales')).send({ status: 'RESOLVED' }).expect(403);
 
       const resolved = await http().patch(`/api/v1/service-jobs/${job.body.id}`).set(as('tech'))
@@ -432,7 +442,7 @@ describe('Auth and RBAC (e2e)', () => {
       const past = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       const fu = await http().post(`/api/v1/service-jobs/${jobId}/follow-ups`).set(as('tech'))
         .send({ scheduledAt: past, note: 'E2E call' }).expect(201);
-      const overdue = await http().get('/api/v1/service-follow-ups?state=overdue').set(as('sales')).expect(200);
+      const overdue = await http().get('/api/v1/service-follow-ups?state=overdue').set(as('supervisor')).expect(200);
       expect(overdue.body.some((f: { id: string }) => f.id === fu.body.id)).toBe(true);
       await http().post(`/api/v1/service-follow-ups/${fu.body.id}/complete`).set(as('sales2'))
         .send({ outcome: 'FIXED' }).expect(403); // no service.write
@@ -456,7 +466,8 @@ describe('Auth and RBAC (e2e)', () => {
       created.visitIds.push(visit.body.id);
       expect(visit.body.tags.map((t: { name: string }) => t.name)).toEqual(['e2e-tag']);
       expect(visit.body.person.fullName).toBe('Farid Supervisor');
-      await http().get('/api/v1/site-visits').set(as('sales')).expect(403);
+      await http().get('/api/v1/site-visits').set(as('sales')).expect(200); // sales preset includes site visits
+      await http().get('/api/v1/site-visits').set(as('telecaller')).expect(403);
 
       const filtered = await http().get(`/api/v1/site-visits?tagId=${tag.body.id}`).set(as('supervisor')).expect(200);
       expect(filtered.body).toHaveLength(1);
@@ -608,6 +619,63 @@ describe('Auth and RBAC (e2e)', () => {
       const mine = await http().get(`/api/v1/allowances/summary?month=${month}`).set(as('sales')).expect(200);
       expect(mine.body.rows.every((r: { employee: { id: string } }) => r.employee.id === ids.sales)).toBe(true);
       await http().get(`/api/v1/allowances?userId=${ids.tech}`).set(as('sales')).expect(403);
+    });
+  });
+
+  describe('Users: role presets', () => {
+    const email = 'e2e.newuser@precon.local';
+    let admin: string;
+    let sales: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+    });
+
+    afterAll(async () => {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    });
+
+    it('a new user gets exactly their role preset; changing role swaps the preset and clears custom tags', async () => {
+      await http().post('/api/v1/users').set(as(sales))
+        .send({ fullName: 'E2E New', email, roleKey: 'telecaller', password: 'secret123' }).expect(403);
+      const created = await http().post('/api/v1/users').set(as(admin))
+        .send({ fullName: 'E2E New', email: 'E2E.NewUser@precon.local', roleKey: 'telecaller', password: 'secret123' })
+        .expect(201);
+      expect(created.body.email).toBe(email);
+      await http().post('/api/v1/users').set(as(admin))
+        .send({ fullName: 'Dup', email, roleKey: 'sales', password: 'secret123' }).expect(409);
+
+      const loginAsNew = () => http().post('/api/v1/auth/login').send({ email, password: 'secret123' });
+      const asTelecaller = (await loginAsNew().expect(200)).body.user;
+      expect(asTelecaller.permissions).toEqual(
+        ['allowances.claim', 'allowances.read', 'followups.write', 'leads.read', 'leave.apply', 'leave.read'],
+      );
+
+      // Give a custom tag, then change role: the custom tag is cleared, preset applies.
+      await http().put(`/api/v1/users/${created.body.id}/permissions`).set(as(admin))
+        .send({ grant: ['stock.read'], revoke: [] }).expect(200);
+      const changed = await http().patch(`/api/v1/users/${created.body.id}`).set(as(admin))
+        .send({ roleKey: 'factory_supervisor' }).expect(200);
+      expect(changed.body.role.key).toBe('factory_supervisor');
+      expect(changed.body.customTagCount).toBe(0);
+      const asSupervisor = (await loginAsNew().expect(200)).body.user;
+      expect(asSupervisor.permissions).toContain('installations.write');
+      expect(asSupervisor.permissions).not.toContain('leads.read');
+
+      // Deactivate: can no longer sign in.
+      await http().patch(`/api/v1/users/${created.body.id}`).set(as(admin)).send({ isActive: false }).expect(200);
+      await loginAsNew().expect(401);
+    });
+
+    it("admins can't change their own role or deactivate themselves", async () => {
+      const me = (await http().get('/api/v1/auth/me').set(as(admin))).body;
+      await http().patch(`/api/v1/users/${me.id}`).set(as(admin)).send({ roleKey: 'sales' }).expect(400);
+      await http().patch(`/api/v1/users/${me.id}`).set(as(admin)).send({ isActive: false }).expect(400);
+      await http().patch(`/api/v1/users/${me.id}`).set(as(admin)).send({ fullName: 'Asha Admin' }).expect(200);
     });
   });
 });

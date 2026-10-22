@@ -1,7 +1,8 @@
 // Thin client for the Precon ERP API. The token lives in localStorage for now;
 // moving to an httpOnly cookie is a later hardening step.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+// Relative by default: the web server forwards /api/v1 to the API (next.config.ts rewrites).
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 const TOKEN_KEY = "precon.accessToken";
 
 export interface CurrentUser {

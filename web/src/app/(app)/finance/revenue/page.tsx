@@ -50,22 +50,23 @@ function presets() {
   };
 }
 
-/** Revenue by employee (#7). Admin-only via finance.dashboard. */
+/** Revenue by employee (#7): everyone with finance.dashboard, or just your own with sales.read. */
 export default function RevenuePage() {
   const { can } = useAuth();
   const [ranges] = useState(presets);
   const [range, setRange] = useState(ranges["This financial year"]);
 
-  const { data, error } = useApi<RevenueReport>(
-    can(TAGS.FINANCE_DASHBOARD) ? `/finance/revenue-by-employee${queryString(range)}` : null,
-  );
-  if (!can(TAGS.FINANCE_DASHBOARD)) return <NoAccess tag={TAGS.FINANCE_DASHBOARD} />;
+  // Company-wide with finance.dashboard; otherwise a salesperson's own revenue (the API scopes it).
+  const companyWide = can(TAGS.FINANCE_DASHBOARD);
+  const allowed = companyWide || can(TAGS.SALES_READ);
+  const { data, error } = useApi<RevenueReport>(allowed ? `/finance/revenue-by-employee${queryString(range)}` : null);
+  if (!allowed) return <NoAccess tag={TAGS.FINANCE_DASHBOARD} />;
 
   const max = Math.max(1, ...(data?.rows.map((r) => Number(r.revenue)) ?? [1]));
 
   return (
     <>
-      <PageHeader title="Revenue by employee" />
+      <PageHeader title={companyWide ? "Revenue by employee" : "My revenue"} />
       <div className="mb-4 flex flex-wrap items-end gap-2">
         {Object.entries(ranges).map(([label, r]) => (
           <button
