@@ -30,6 +30,7 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { StockMovementReason } from '../generated/prisma/client.js';
 import { StockService } from './stock.service.js';
+import { OperationsFeature } from '../features/features.js';
 
 const MANUAL_REASONS = [StockMovementReason.PRODUCTION, StockMovementReason.ADJUSTMENT] as const;
 
@@ -84,6 +85,7 @@ class MovementsQueryDto {
   productId?: string;
 }
 
+@OperationsFeature()
 @ApiTags('stock')
 @ApiBearerAuth()
 @Controller('stock')

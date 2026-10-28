@@ -9,8 +9,12 @@ import { configureApp } from './../src/app.setup.js';
 // Needs the local database from .env (run migrations + seed first).
 describe('Auth and RBAC (e2e)', () => {
   let app: INestApplication<App>;
+  const operationsBefore = process.env.OPERATIONS_ENABLED;
 
   beforeAll(async () => {
+    // The finance, service and HR tests below exercise the operations modules, so they run with the switch on.
+    // The product-switch tests at the end flip it off and back.
+    process.env.OPERATIONS_ENABLED = 'true';
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -20,6 +24,7 @@ describe('Auth and RBAC (e2e)', () => {
   });
 
   afterAll(async () => {
+    process.env.OPERATIONS_ENABLED = operationsBefore;
     await app.close();
   });
 
@@ -1261,7 +1266,10 @@ describe('Auth and RBAC (e2e)', () => {
 
     it('everyone with leads sees the active templates; only admins manage them', async () => {
       const list = (await http().get('/api/v1/message-templates').set(as(tara)).expect(200)).body;
-      expect(list.map((t: { name: string }) => t.name)).toEqual(['Intro message', 'Follow-up message', 'Quotation message']);
+      // The starters, in order (admins may have added their own around them).
+      const starters = list.map((t: { name: string }) => t.name).filter((n: string) => ['Intro message', 'Follow-up message', 'Quotation message'].includes(n));
+      expect(starters).toEqual(['Intro message', 'Follow-up message', 'Quotation message']);
+      expect(list.every((t: { isActive: boolean }) => t.isActive)).toBe(true);
       await http().get('/api/v1/message-templates?all=true').set(as(tara)).expect(403);
       await http().post('/api/v1/message-templates').set(as(tara)).send({ name: 'E2E Nope', body: 'Hello there' }).expect(403);
       const placeholders = (await http().get('/api/v1/message-templates/placeholders').set(as(tara)).expect(200)).body;
@@ -1294,6 +1302,50 @@ describe('Auth and RBAC (e2e)', () => {
       const off = (await http().post('/api/v1/message-templates').set(as(admin)).send({ name: 'E2E Off', body: 'Hello {name}', isActive: false }).expect(201)).body;
       await http().post(`/api/v1/leads/${id}/whatsapp`).set(as(tara)).send({ templateId: off.id }).expect(400);
       expect((await http().get('/api/v1/message-templates?all=true').set(as(admin)).expect(200)).body.map((t: { name: string }) => t.name)).toContain('E2E Off');
+    });
+
+    it('admin creates, edits, switches off and deletes templates; the picker shows active ones in order; others cannot manage', async () => {
+      const sales = (await login('sales@precon.local')).body.accessToken;
+      const picker = async () => (await http().get('/api/v1/message-templates').set(as(tara)).expect(200)).body.map((t: { name: string }) => t.name);
+
+      // Create: name and a real body are required.
+      await http().post('/api/v1/message-templates').set(as(admin)).send({ name: 'E2E Visit', body: '   ' }).expect(400);
+      const noName = await http().post('/api/v1/message-templates').set(as(admin)).send({ name: ' ', body: 'Hello {name}' }).expect(400);
+      expect(noName.body.message.join(' ')).toMatch(/Give the template a name/);
+      const created = (await http().post('/api/v1/message-templates').set(as(admin))
+        .send({ name: '  E2E Visit  ', body: '  Hi {first_name}, {my_name} will visit {city} tomorrow.  ', sortOrder: 0 }).expect(201)).body;
+      expect(created).toMatchObject({ name: 'E2E Visit', body: 'Hi {first_name}, {my_name} will visit {city} tomorrow.', isActive: true });
+      // Order: sortOrder, then name. Sort 0 comes before the starters (1, 2, 3).
+      let names = await picker();
+      expect(names.indexOf('E2E Visit')).toBeLessThan(names.indexOf('Intro message'));
+
+      // Edit (also works on a seeded starter): rename, new body, move down the list.
+      const edited = (await http().patch(`/api/v1/message-templates/${created.id}`).set(as(admin))
+        .send({ name: 'E2E Visit confirm', body: 'Hi {name}, confirming the site visit in {city}.', sortOrder: 50 }).expect(200)).body;
+      expect(edited).toMatchObject({ name: 'E2E Visit confirm', body: 'Hi {name}, confirming the site visit in {city}.', sortOrder: 50 });
+      names = await picker();
+      expect(names.indexOf('E2E Visit confirm')).toBeGreaterThan(names.indexOf('Quotation message'));
+      await http().patch(`/api/v1/message-templates/${created.id}`).set(as(admin)).send({ body: 'x' }).expect(400);
+      await http().patch(`/api/v1/message-templates/${created.id}`).set(as(admin)).send({ name: 'Intro message' }).expect(409);
+
+      // Switch off: hidden from the picker, still listed for admin.
+      await http().patch(`/api/v1/message-templates/${created.id}`).set(as(admin)).send({ isActive: false }).expect(200);
+      expect(await picker()).not.toContain('E2E Visit confirm');
+      const all = (await http().get('/api/v1/message-templates?all=true').set(as(admin)).expect(200)).body;
+      expect(all.find((t: { id: string }) => t.id === created.id).isActive).toBe(false);
+
+      // Telecallers and sales can use templates but not manage them.
+      for (const token of [tara, sales]) {
+        await http().post('/api/v1/message-templates').set(as(token)).send({ name: 'E2E Nope', body: 'Hello there' }).expect(403);
+        await http().patch(`/api/v1/message-templates/${created.id}`).set(as(token)).send({ isActive: true }).expect(403);
+        await http().delete(`/api/v1/message-templates/${created.id}`).set(as(token)).expect(403);
+      }
+
+      // Delete.
+      await http().delete(`/api/v1/message-templates/${created.id}`).set(as(admin)).expect(204);
+      await http().delete(`/api/v1/message-templates/${created.id}`).set(as(admin)).expect(404);
+      expect((await http().get('/api/v1/message-templates?all=true').set(as(admin)).expect(200)).body.map((t: { id: string }) => t.id)).not.toContain(created.id);
+      expect(await picker()).not.toContain('E2E Visit confirm');
     });
 
     it("refuses other people's leads and numbers WhatsApp can't use", async () => {
@@ -1500,6 +1552,79 @@ describe('Auth and RBAC (e2e)', () => {
       const note = await db.notification.findFirstOrThrow({ where: { leadId: imported.body.createdRows[0].leadId } });
       expect(note).toMatchObject({ userId: owner.assignedToId, type: 'LEAD_ASSIGNED' });
       expect(note.body).toMatch(/^Round-robin · Import: e2e-bell\.csv/);
+    });
+  });
+
+  describe('Product switch: operations modules behind OPERATIONS_ENABLED', () => {
+    let admin: string;
+    let sales: string;
+    let tara: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    // One representative route per hidden module, each readable by admin.
+    const OPERATIONS_ROUTES = [
+      '/api/v1/sales-orders',
+      '/api/v1/finance/overdue-balances',
+      '/api/v1/vendors',
+      '/api/v1/stock',
+      '/api/v1/installations',
+      '/api/v1/service-jobs',
+      '/api/v1/leave/mine',
+      '/api/v1/holidays',
+      '/api/v1/allowances',
+      '/api/v1/lop/summary?month=2026-10',
+      '/api/v1/hr/employees',
+    ];
+    const CRM_ROUTES = [
+      '/api/v1/leads',
+      '/api/v1/follow-ups',
+      '/api/v1/dashboards/master',
+      '/api/v1/reports',
+      '/api/v1/message-templates',
+      '/api/v1/notifications',
+      '/api/v1/lead-assignment',
+      '/api/v1/site-visits',
+    ];
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+    });
+    afterAll(() => {
+      process.env.OPERATIONS_ENABLED = 'true';
+    });
+
+    it('when OFF (the default): operations routes answer 404 for everyone, admin included; the CRM works', async () => {
+      delete process.env.OPERATIONS_ENABLED; // unset = off
+      expect((await http().get('/api/v1/config').expect(200)).body).toEqual({ operationsEnabled: false });
+      for (const path of OPERATIONS_ROUTES) {
+        const res = await http().get(path).set(as(admin));
+        expect({ path, status: res.status }).toEqual({ path, status: 404 });
+        expect(res.body.message).toMatch(/switched off/);
+      }
+      await http().get('/api/v1/sales-orders').set(as(sales)).expect(404);
+      await http().get('/api/v1/leave/mine').set(as(tara)).expect(404);
+      for (const path of CRM_ROUTES) {
+        const res = await http().get(path).set(as(admin));
+        expect({ path, status: res.status }).toEqual({ path, status: 200 });
+      }
+      await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200);
+      await http().get('/api/v1/dashboards/sales').set(as(sales)).expect(200);
+      // Unknown or "false" values also mean off.
+      process.env.OPERATIONS_ENABLED = 'false';
+      await http().get('/api/v1/stock').set(as(admin)).expect(404);
+    });
+
+    it('when ON: the same routes are available again, with the usual permissions', async () => {
+      process.env.OPERATIONS_ENABLED = 'true';
+      expect((await http().get('/api/v1/config').expect(200)).body).toEqual({ operationsEnabled: true });
+      for (const path of OPERATIONS_ROUTES) {
+        const res = await http().get(path).set(as(admin));
+        expect({ path, status: res.status }).toEqual({ path, status: 200 });
+      }
+      // Permissions apply as before: a telecaller still can't open finance.
+      await http().get('/api/v1/finance/overdue-balances').set(as(tara)).expect(403);
     });
   });
 });

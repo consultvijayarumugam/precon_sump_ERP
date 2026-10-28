@@ -11,6 +11,7 @@ import { WorkflowModule } from './workflow/workflow.module.js';
 import { MessagingModule } from './messaging/messaging.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { FeaturesModule } from './features/features.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ServiceModule } from './service/service.module.js';
 import { StockModule } from './stock/stock.module.js';
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module.js';
     MessagingModule,
     ReportsModule,
     NotificationsModule,
+    FeaturesModule,
   ],
   controllers: [HealthController],
 })

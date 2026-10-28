@@ -24,11 +24,13 @@ import {
   UpdateSalesOrderDto,
 } from './dto/sales-order.dto.js';
 import { SalesOrdersService } from './sales-orders.service.js';
+import { OperationsFeature } from '../features/features.js';
 
 const SCOPE =
   'You see orders credited to you; with sales.read_all you see every order. ' +
   'Paid/balance fields appear only with payments.read.';
 
+@OperationsFeature()
 @ApiTags('finance: sales orders & payments')
 @ApiBearerAuth()
 @Controller()

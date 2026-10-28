@@ -28,11 +28,11 @@ interface Props {
 
 /** Record or edit a site visit (#18) and choose its tags. */
 export function SiteVisitForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
-  const { user, can } = useAuth();
+  const { user, can, operations } = useAuth();
   const tags = useApi<SiteVisitTag[]>("/site-visit-tags");
   const people = useApi<Person[]>("/site-visits/people");
   // Linking to an installation needs installations.read to list them.
-  const installations = useApi<Installation[]>(can(TAGS.INSTALLATIONS_READ) ? "/installations" : null);
+  const installations = useApi<Installation[]>(can(TAGS.INSTALLATIONS_READ) && operations ? "/installations" : null);
 
   const [visitDate, setVisitDate] = useState(initial?.visitDate ?? dayKey(new Date()));
   const [personId, setPersonId] = useState(initial?.person.id ?? user.id);

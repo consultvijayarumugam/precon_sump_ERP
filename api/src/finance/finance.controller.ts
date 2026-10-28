@@ -26,7 +26,9 @@ import {
 } from './dto/vendor.dto.js';
 import { FinanceReportsService } from './finance-reports.service.js';
 import { VendorsService } from './vendors.service.js';
+import { OperationsFeature } from '../features/features.js';
 
+@OperationsFeature()
 @ApiTags('finance: reports')
 @ApiBearerAuth()
 @Controller('finance')
@@ -60,6 +62,7 @@ export class FinanceReportsController {
   }
 }
 
+@OperationsFeature()
 @ApiTags('finance: vendors')
 @ApiBearerAuth()
 @Controller()

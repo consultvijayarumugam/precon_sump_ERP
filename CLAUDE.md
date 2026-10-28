@@ -17,6 +17,18 @@ The business makes exactly TWO product types:
   low-stock threshold.
 There are no other product lines (no bio-septic tanks, no precast panels).
 
+## Product focus (current)
+
+The live product is ONLY the sales + telecaller + admin CRM (leads, round-robin,
+telecaller workbench, sales pipeline, master dashboard, follow-ups/calendar,
+reports, WhatsApp templates, notifications, GPS site visits). The operations
+modules (finance, stock, vendors, service, installations, HR leave/holidays/
+LOP/allowances) are built but HIDDEN behind the OPERATIONS_ENABLED switch in
+api/.env (default off). Do not delete their code or tables: the client plans to
+expand into operations in about 4-5 months. While the switch is off, keep new
+work CRM-focused and don't make CRM screens depend on operations endpoints.
+Live roles: admin, sales, telecaller.
+
 ## Architecture (decided)
 
 - API-first. One backend serves both the web dashboard and (later) the mobile app.

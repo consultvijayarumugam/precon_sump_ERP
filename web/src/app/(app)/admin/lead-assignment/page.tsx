@@ -80,7 +80,8 @@ export default function LeadAssignmentPage() {
   const { can } = useAuth();
   const today = dayKey(new Date());
   const [date, setDate] = useState(today);
-  const { data, error, reload } = useApi<Distribution>(`/lead-assignment?date=${date}`);
+  // Only users with leads.assign ask; others just see "no access".
+  const { data, error, reload } = useApi<Distribution>(can(TAGS.LEADS_ASSIGN) ? `/lead-assignment?date=${date}` : null);
   const toggle = useAction();
   if (!can(TAGS.LEADS_ASSIGN)) return <NoAccess tag={TAGS.LEADS_ASSIGN} />;
 

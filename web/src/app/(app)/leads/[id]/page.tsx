@@ -161,7 +161,7 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { can } = useAuth();
+  const { can, operations } = useAuth();
   const { data: lead, error, reload } = useApi<LeadDetail>(can(TAGS.LEADS_READ) ? `/leads/${id}` : null);
   const [editing, setEditing] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -254,7 +254,7 @@ export default function LeadDetailPage() {
         </section>
       )}
 
-      {lead.salesOrder && can(TAGS.SALES_READ) && (
+      {lead.salesOrder && can(TAGS.SALES_READ) && operations && (
         <p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm dark:border-green-900 dark:bg-green-950/40">
           Converted to sales order{" "}
           <Link href={`/orders/${lead.salesOrder.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
@@ -264,6 +264,7 @@ export default function LeadDetailPage() {
         </p>
       )}
       {lead.status === "WON" &&
+        operations &&
         !lead.salesOrder &&
         can(TAGS.SALES_WRITE) &&
         !editing && <ConvertToOrder lead={lead} />}

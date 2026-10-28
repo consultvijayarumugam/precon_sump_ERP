@@ -2,13 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { ApiError, CurrentUser, fetchCurrentUser, getToken, logout as apiLogout } from "@/lib/api";
+import { api, ApiError, CurrentUser, fetchCurrentUser, getToken, logout as apiLogout } from "@/lib/api";
 
 interface AuthContextValue {
   user: CurrentUser;
   /** True if the user holds the permission tag. UI gating only; the API enforces. */
   can: (tag: string) => boolean;
   logout: () => Promise<void>;
+  /** OPERATIONS_ENABLED on the server: finance, stock, service, HR etc. are switched on. */
+  operations: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -18,12 +20,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // null until GET /config answers, so pages don't flash "not available" while the switch is loading.
+  const [operations, setOperations] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
       return;
     }
+    // If the switch can't be read, keep operations hidden (the API blocks them anyway).
+    api<{ operationsEnabled: boolean }>("/config")
+      .then((c) => setOperations(c.operationsEnabled))
+      .catch(() => setOperations(false));
     fetchCurrentUser()
       .then(setUser)
       .catch((err) => {
@@ -38,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   if (error) return <main className="grid min-h-screen place-items-center p-4 text-sm font-medium text-red-600">{error}</main>;
-  if (!user) {
+  if (!user || operations === null) {
     return (
       <main className="grid min-h-screen place-items-center p-4">
         <div className="flex items-center gap-3 text-sm text-neutral-500">
@@ -50,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const can = (tag: string) => user.permissions.includes(tag);
-  return <AuthContext.Provider value={{ user, can, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, can, logout, operations }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

@@ -8,16 +8,16 @@ const emptyToUndefined = ({ value }: { value: unknown }) => (value === '' || val
 export class CreateTemplateDto {
   @ApiProperty({ example: 'Intro message' })
   @Transform(trim)
-  @IsString()
-  @MinLength(2)
-  @MaxLength(60)
+  @IsString({ message: 'Give the template a name' })
+  @MinLength(2, { message: 'Give the template a name (at least 2 characters)' })
+  @MaxLength(60, { message: 'Keep the name under 60 characters' })
   name: string;
 
   @ApiProperty({ example: 'Hi {first_name}, this is {my_name} from {company}. Thanks for your interest in our sumps!' })
   @Transform(trim)
-  @IsString()
-  @MinLength(5)
-  @MaxLength(1500)
+  @IsString({ message: 'Write the message' })
+  @MinLength(5, { message: 'Write the message (at least 5 characters)' })
+  @MaxLength(1500, { message: 'Keep the message under 1,500 characters' })
   body: string;
 
   @ApiPropertyOptional({ description: 'Lower numbers show first', default: 0 })

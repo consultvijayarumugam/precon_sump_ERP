@@ -39,7 +39,9 @@ import {
 import { InstallationsService } from './installations.service.js';
 import { ServiceJobsService } from './service-jobs.service.js';
 import { SiteVisitsService } from './site-visits.service.js';
+import { OperationsFeature } from '../features/features.js';
 
+@OperationsFeature()
 @ApiTags('service: installations')
 @ApiBearerAuth()
 @Controller('installations')
@@ -122,6 +124,7 @@ export class InstallationsController {
 const SERVICE_SCOPE =
   'You see jobs for customers you sold to and jobs assigned to you; with service.read_all, every job.';
 
+@OperationsFeature()
 @ApiTags('service: jobs & follow-ups')
 @ApiBearerAuth()
 @Controller()

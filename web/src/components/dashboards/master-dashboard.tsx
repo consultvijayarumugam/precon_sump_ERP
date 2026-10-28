@@ -3,6 +3,7 @@
 import { BellRing, CheckCircle2, Inbox, IndianRupee, PhoneCall, Shuffle, Sparkles, TriangleAlert, Trophy } from "lucide-react";
 import Link from "next/link";
 import { ReactNode } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { VisitsMap } from "@/components/check-in";
 import { Badge, ErrorText, panelClass, tableClass, tableWrapClass, tbodyClass, tdClass, thClass, theadClass } from "@/components/ui";
 import { formatINR } from "@/lib/finance";
@@ -28,6 +29,7 @@ const waited = (iso: string | null) => {
 
 /** Admin landing page: everyone's numbers side by side, who is slipping, today's split, site visits. */
 export function MasterDashboard() {
+  const { operations } = useAuth();
   const { data, error } = useApi<MasterDashboardData>("/dashboards/master");
   const t = data?.team;
   const maxToday = Math.max(1, ...(data?.today.members.map((m) => m.leads) ?? [1]));
@@ -212,13 +214,15 @@ export function MasterDashboard() {
         <div className={`${panelClass} p-3`}>{data && <VisitsMap visits={data.visits} height={420} />}</div>
       </section>
 
-      <p className="text-xs text-neutral-500">
-        Finance, stock, service and HR are under{" "}
-        <Link href="/admin/overview" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
-          Admin → Business overview
-        </Link>
-        .
-      </p>
+      {operations && (
+        <p className="text-xs text-neutral-500">
+          Finance, stock, service and HR are under{" "}
+          <Link href="/admin/overview" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">
+            Admin → Business overview
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 }

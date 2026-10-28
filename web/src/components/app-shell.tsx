@@ -41,6 +41,7 @@ import { AuthProvider, useAuth } from "@/components/auth-provider";
 import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
 import { NotificationBell } from "@/components/notification-bell";
+import { isOperationsPath } from "@/lib/features";
 
 interface NavItem {
   href: string;
@@ -50,6 +51,8 @@ interface NavItem {
   tag?: string;
   /** Alternatively: shown if the user holds ANY of these tags. */
   anyTags?: string[];
+  /** Part of the operations modules (hidden while OPERATIONS_ENABLED is off). */
+  operations?: boolean;
 }
 
 // Sections by module. Items the user lacks the tag for are hidden, and a
@@ -57,7 +60,8 @@ interface NavItem {
 // every tag; this only decides what is worth showing.
 // `whenAny`: the whole section shows only with one of these tags (keeps back-office
 // sections off the telecaller and sales screens; their pages and APIs are unchanged).
-const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavItem[] }[] = [
+// `operations`: part of the operations modules, shown only while OPERATIONS_ENABLED is on.
+const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; operations?: boolean; items: NavItem[] }[] = [
   { module: "home", items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }] },
   {
     module: "crm",
@@ -74,6 +78,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavIt
   {
     module: "finance",
     title: "Finance",
+    operations: true,
     whenAny: [TAGS.FINANCE_DASHBOARD],
     items: [
       { href: "/orders", label: "Orders", icon: Receipt, tag: TAGS.SALES_READ },
@@ -85,6 +90,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavIt
   {
     module: "operations",
     title: "Operations",
+    operations: true,
     items: [
       { href: "/stock", label: "Stock", icon: Boxes, tag: TAGS.STOCK_READ },
       { href: "/installations", label: "Installations", icon: HardHat, tag: TAGS.INSTALLATIONS_READ },
@@ -95,6 +101,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavIt
   {
     module: "hr",
     title: "HR",
+    operations: true,
     items: [
       { href: "/leave", label: "My leave", icon: Umbrella, tag: TAGS.LEAVE_APPLY },
       { href: "/leave/calendar", label: "Team calendar", icon: CalendarCheck, tag: TAGS.LEAVE_READ },
@@ -108,7 +115,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavIt
     module: "admin",
     title: "Admin",
     items: [
-      { href: "/admin/overview", label: "Business overview", icon: LayoutDashboard, tag: TAGS.FINANCE_DASHBOARD },
+      { href: "/admin/overview", label: "Business overview", icon: LayoutDashboard, tag: TAGS.FINANCE_DASHBOARD, operations: true },
       { href: "/admin/users", label: "Users", icon: Users, tag: TAGS.USERS_READ },
       { href: "/admin/permissions", label: "Permissions & tags", icon: ShieldCheck, tag: TAGS.PERMISSIONS_READ },
       { href: "/admin/lead-assignment", label: "Lead assignment", icon: Shuffle, tag: TAGS.LEADS_ASSIGN },
@@ -178,11 +185,11 @@ function SidebarContent({
   onNavigate?: () => void;
   onClose?: () => void;
 }) {
-  const { user, can, logout } = useAuth();
+  const { user, can, logout, operations } = useAuth();
   const pathname = usePathname();
   const current = activeHref(pathname);
-  const visible = (i: NavItem) => (i.anyTags ? i.anyTags.some(can) : !i.tag || can(i.tag));
-  const sections = NAV.filter((s) => !s.whenAny || s.whenAny.some(can))
+  const visible = (i: NavItem) => (!i.operations || operations) && (i.anyTags ? i.anyTags.some(can) : !i.tag || can(i.tag));
+  const sections = NAV.filter((s) => (!s.operations || operations) && (!s.whenAny || s.whenAny.some(can)))
     .map((s) => ({ ...s, items: s.items.filter(visible) }))
     .filter(
     (s) => s.items.length > 0,
@@ -299,8 +306,24 @@ function Breadcrumb() {
   );
 }
 
+/** Shown instead of an operations page while OPERATIONS_ENABLED is off (also for typed URLs). */
+function OperationsOff() {
+  return (
+    <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-xs dark:border-neutral-800 dark:bg-neutral-900">
+      <h1 className="text-xl font-bold tracking-tight">This module isn&apos;t available</h1>
+      <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+        Precon ERP is running as the sales and telecaller CRM. Finance, stock, service, installations and HR are switched off for now.
+      </p>
+      <Link href="/" className="mt-5 inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+        Go to the dashboard
+      </Link>
+    </div>
+  );
+}
+
 function Shell({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, operations } = useAuth();
+  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === "1";
@@ -379,7 +402,7 @@ function Shell({ children }: { children: ReactNode }) {
               <NotificationBell />
             </div>
           </div>
-          {children}
+          {!operations && isOperationsPath(pathname) ? <OperationsOff /> : children}
         </main>
       </div>
     </div>

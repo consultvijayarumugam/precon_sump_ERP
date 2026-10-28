@@ -8,6 +8,9 @@ ERP for a manufacturer of precon (precast concrete) sumps and microbes. See `CLA
 
 Wherever a product is chosen, it's either **Sump + size** or **Microbes**. A lead's sump size is optional; an order's is required.
 
+> **Live product: the sales + telecaller + admin CRM.** Leads (import, API, Meta), round-robin, the telecaller workbench, sales pipeline, master dashboard, follow-ups and calendar, reports and export, WhatsApp templates, in-app notifications and GPS site check-ins.
+> The **operations modules** (finance, stock, vendors, service, installations, HR leave / holidays / LOP / allowances) are built but **switched off** by `OPERATIONS_ENABLED` (see "Product switch" below). Their code and tables are kept, ready to switch on when the business expands into operations.
+
 **Current status: Phases 1–3, the web part of Phase 5, and the web HR pieces are done.** The Phase 4 mobile app (GPS attendance, location check-in, dialer) is not started.
 
 - **Phase 1:** DB schema for users, roles and permission tags, JWT auth (login/logout), the RBAC guard, and admin endpoints for assigning tags.
@@ -154,6 +157,30 @@ The HR seed adds the following.
   - Approved, pending and rejected ones.
   - Some linked to Ravi's and Farid's site visits or installations.
   - One of Priya's is from last month.
+
+## Product switch: operations modules (`OPERATIONS_ENABLED`)
+
+One setting in **`api/.env`** decides whether the operations modules exist in the product. It's **off by default**: unset, `false`, or anything other than `true` / `1` / `yes` / `on` means off.
+
+```bash
+# api/.env
+OPERATIONS_ENABLED=false   # live product: CRM only (default)
+OPERATIONS_ENABLED=true    # bring finance, stock, vendors, service, installations and HR back
+```
+Then restart the API (`npm run start:dev`). The web app reads the setting from the API (`GET /api/v1/config`), so there's nothing to change in `web/`; just reload the browser.
+
+| | **OFF** (default) | **ON** |
+|---|---|---|
+| Sidebar, every role including admin | Dashboard, CRM (Leads, Won, Follow-ups, Calendar, Site visits, Reports) and Admin (Users, Permissions & tags, Lead assignment, Message templates, API keys) | Also Finance, Operations, HR and Admin → Business overview, exactly as before |
+| Operations pages (`/orders`, `/finance/*`, `/vendors`, `/stock`, `/installations`, `/service`, `/leave`, `/holidays`, `/hr/*`, `/allowances`, `/admin/overview`), even typed into the address bar | "This module isn't available" | Open, with the usual permissions |
+| Operations API routes (sales orders, finance, vendors, stock, installations, service jobs and follow-ups, leave, holidays, LOP, allowances, HR) | **404** "This module is switched off", for everyone, admin included | Normal |
+| Admin landing page | The sales/telecaller master dashboard | Same; the old finance/operations view is under Admin → Business overview |
+| On CRM pages | The sales-order link and "Convert to order" on won leads, and the installation link on site visits, are hidden | Shown |
+
+- **Not affected either way:** leads, import, public API and Meta webhook, round-robin, telecaller workbench, sales dashboard, master dashboard, follow-ups, calendar, reports and export, WhatsApp templates, notifications, GPS site visits.
+- **Revenue while off:** revenue figures (sales dashboard, master scorecard, revenue report) come from sales orders. Existing orders still count, but with orders switched off no new ones can be recorded, so revenue won't grow until operations are switched on.
+- **Roles:** the live roles are admin, sales and telecaller, with their CRM tags. The operations tags (finance, stock, service, installations, HR) stay in the role presets and on the Permissions page but have no effect while the switch is off. The factory supervisor role gets a "switched off" notice.
+- **How it works:** operations controllers carry an `@OperationsFeature()` marker, and a global guard (`api/src/features/`) answers 404 for them while the switch is off. The web sidebar items and page paths are listed in `web/src/lib/features.ts`.
 
 ## How access control works
 
@@ -416,7 +443,11 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 - A green **WhatsApp** button sits next to the phone on the telecaller workbench and on every lead page. It opens a picker of the admin's **message templates** (plus "open chat without a message").
 - Picking one fills the template from the lead on the server, records it under the lead's **Calls & messages**, and opens `https://wa.me/<number>?text=<message>`. WhatsApp opens with the message typed in; the sender still taps Send, so the log means "started", not "delivered".
 - **Numbers:** Indian numbers get country code 91 when missing (`98765 43210`, `098765 43210`, `+91 98765 43210` all become `919876543210`); other international numbers are kept; landlines and short numbers are refused with a message.
-- **Templates:** Admin → Message templates (`templates.manage`, admin): create, edit, reorder, switch off (hidden from the picker) or delete (past messages keep the template's name). Starter templates: Intro, Follow-up, Quotation.
+- **Templates:** Admin → Message templates (`templates.manage`, admin only; telecallers and sales can use templates but not create, edit or delete them):
+  - **Create / edit** (including the 3 starters: Intro, Follow-up, Quotation): a name, the message, and an order number. Buttons insert a placeholder at the cursor; the live preview fills them with a sample lead before you save. A name (2+ characters) and a message (5+ characters) are required, checked on the page and again by the API; names must be unique.
+  - **Switch off / on**: hides a template from the WhatsApp picker without deleting it.
+  - **Delete** asks to confirm; past messages keep the template's name. Deleting or switching off the last template people can pick gives an extra warning, and the page shows a banner if none is switched on.
+  - **The picker** shows only switched-on templates, by order number then name.
 - **Placeholders:** `{name}`, `{first_name}`, `{city}`, `{product}` (e.g. "Sump · 10,000 L"), `{my_name}` (the sender), `{company}` (`COMPANY_NAME` in `api/.env`, default "Precon"). Any case and spacing work (`{ Name }`); a misspelt placeholder is left visible so it gets noticed.
 
 ## Reports & export
@@ -444,6 +475,7 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | Method | Path                     | Access                 | Purpose |
 |--------|--------------------------|------------------------|---------|
 | GET    | `/health`                | public                 | API + DB up check |
+| GET    | `/config`                | public                 | `{operationsEnabled}`: whether the operations modules are switched on (`OPERATIONS_ENABLED`) |
 | POST   | `/auth/login`            | public                 | `{email, password}` → `{accessToken, expiresAt, user}` |
 | POST   | `/auth/logout`           | logged in              | Revokes the current token (204) |
 | GET    | `/auth/me`               | logged in              | Current user, role, effective tags, modules |

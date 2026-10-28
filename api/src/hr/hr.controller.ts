@@ -40,7 +40,9 @@ import {
 import { HolidaysService } from './holidays.service.js';
 import { LeaveService } from './leave.service.js';
 import { LopService } from './lop.service.js';
+import { OperationsFeature } from '../features/features.js';
 
+@OperationsFeature()
 @ApiTags('hr: leave')
 @ApiBearerAuth()
 @Controller('leave')
@@ -123,6 +125,7 @@ export class LeaveController {
   }
 }
 
+@OperationsFeature()
 @ApiTags('hr: holidays')
 @ApiBearerAuth()
 @Controller('holidays')
@@ -166,6 +169,7 @@ export class HolidaysController {
   }
 }
 
+@OperationsFeature()
 @ApiTags('hr: LOP & absences')
 @ApiBearerAuth()
 @Controller('lop')
@@ -206,6 +210,7 @@ export class LopController {
   }
 }
 
+@OperationsFeature()
 @ApiTags('hr: allowances')
 @ApiBearerAuth()
 @Controller('allowances')
@@ -267,6 +272,7 @@ export class AllowancesController {
   }
 }
 
+@OperationsFeature()
 @ApiTags('hr: employees')
 @ApiBearerAuth()
 @Controller('hr')

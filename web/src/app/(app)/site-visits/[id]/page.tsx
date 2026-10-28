@@ -20,7 +20,7 @@ import { useApi } from "@/lib/use-api";
 
 export default function SiteVisitPage() {
   const { id } = useParams<{ id: string }>();
-  const { can } = useAuth();
+  const { can, operations } = useAuth();
   const { data: visit, error, reload } = useApi<SiteVisit>(can(TAGS.SITEVISIT_READ) ? `/site-visits/${id}` : null);
   const [editing, setEditing] = useState(false);
 
@@ -85,7 +85,7 @@ export default function SiteVisitPage() {
           {visit.installation && (
             <div>
               <span className="text-neutral-500">Installation: </span>
-              {can(TAGS.INSTALLATIONS_READ) ? (
+              {can(TAGS.INSTALLATIONS_READ) && operations ? (
                 <Link href={`/installations/${visit.installation.id}`} className="text-brand-700 hover:underline dark:text-brand-300">
                   {visit.installation.orderNumberLabel}
                 </Link>
