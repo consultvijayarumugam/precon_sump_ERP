@@ -45,6 +45,7 @@ export async function seedWorkflow(prisma: PrismaClient) {
     arjun: await userId('telecaller3@precon.local'),
   };
   const sales = { sales: await userId('sales@precon.local'), sales2: await userId('sales2@precon.local') };
+  const adminLeadOwner = await userId('admin@precon.local');
   const now = Date.now();
 
   // --- 1. The Meta WhatsApp leads (yesterday's 14, then today's 12), in creation order ---
@@ -203,9 +204,134 @@ export async function seedWorkflow(prisma: PrismaClient) {
     visits += 1;
   }
 
+  // --- 4b. A few WhatsApp messages already started from the app (shown in each lead's history) ---
+  const templates = await prisma.messageTemplate.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, body: true } });
+  let messages = 0;
+  if (templates.length > 0) {
+    const worked = whatsapp.filter((_, i) => ['callback', 'qualified'].includes(stages[i]?.kind ?? ''));
+    for (const [i, lead] of worked.slice(0, 6).entries()) {
+      const sender = await prisma.user.findUniqueOrThrow({ where: { id: lead.assignedToId! }, select: { id: true, fullName: true } });
+      const template = templates[i % 2]; // intro / follow-up
+      const leadName = (await prisma.lead.findUniqueOrThrow({ where: { id: lead.id }, select: { name: true } })).name;
+      await prisma.leadActivity.create({
+        data: {
+          leadId: lead.id,
+          userId: sender.id,
+          type: 'WHATSAPP',
+          templateId: template.id,
+          templateName: template.name,
+          message: template.body
+            .replace(/\{first_name\}/g, leadName.split(' ')[0])
+            .replace(/\{name\}/g, leadName)
+            .replace(/\{my_name\}/g, sender.fullName)
+            .replace(/\{company\}/g, 'Precon')
+            .replace(/\{product\}/g, 'sump')
+            .replace(/\{city\}/g, ''),
+          createdAt: new Date(Math.min(now - MIN, lead.createdAt.getTime() + 10 * MIN)),
+        },
+      });
+      messages += 1;
+    }
+  }
+
+  // --- 4c. History for the reports: leads from 5 to 13 weeks ago, already worked through ---
+  const NAMES = ['Kumaresan', 'Sharmila', 'Balaji Traders', 'Revathy', 'Murali', 'Sri Vari Homes', 'Ilango', 'Pavithra', 'Rajendran',
+    'Kongu Builders', 'Saranya', 'Velmurugan'];
+  const SOURCES = ['META', 'META', 'WEBSITE', 'REFERRAL', 'META', 'OTHER', 'MANUAL', 'META'] as const;
+  const salesIds = [sales.sales, sales.sales2];
+  let history = 0;
+  for (let i = 0; i < 36; i += 1) {
+    const created = new Date(now - (35 + Math.round((i * 56) / 36)) * DAY + (i % 7) * HOUR);
+    const telecallerId = telecallerIds[i % 3];
+    // Outcome mix: a third lost at the telecaller stage, the rest qualified and then quoted / won / lost by sales.
+    const kind = i % 6;
+    const lostEarly = kind === 0 || kind === 3;
+    const qualifiedAt = new Date(created.getTime() + (2 + (i % 3)) * HOUR);
+    const salesStatus = kind === 1 ? 'WON' : kind === 2 ? 'QUOTED' : kind === 4 ? 'LOST' : 'QUALIFIED';
+    const lead = await prisma.lead.create({
+      data: {
+        name: `${NAMES[i % NAMES.length]} ${String.fromCharCode(65 + (i % 26))}.`,
+        phone: `70300${String(10001 + i).padStart(5, '0')}`,
+        source: SOURCES[i % SOURCES.length],
+        city: ['Coimbatore', 'Tiruppur', 'Erode', 'Salem', 'Karur'][i % 5],
+        productInterest: lostEarly ? null : i % 4 === 0 ? 'MICROBES' : 'SUMP',
+        sumpSizeLitres: lostEarly || i % 4 === 0 ? null : [5000, 6000, 8000, 10000, 12000][i % 5],
+        status: lostEarly ? 'LOST' : salesStatus,
+        closedAt: lostEarly ? new Date(created.getTime() + HOUR) : salesStatus === 'WON' || salesStatus === 'LOST' ? new Date(created.getTime() + 9 * DAY) : null,
+        assignedToId: lostEarly ? telecallerId : salesIds[i % 2],
+        autoAssigned: true,
+        telecallerId,
+        qualifiedAt: lostEarly ? null : qualifiedAt,
+        qualifiedById: lostEarly ? null : telecallerId,
+        createdById: adminLeadOwner,
+        sourceDetail: 'Meta click-to-WhatsApp ad (history)',
+        createdAt: created,
+      },
+    });
+    await prisma.callLog.create({
+      data: { leadId: lead.id, callerId: telecallerId, outcome: lostEarly ? (i % 2 ? 'WRONG_NUMBER' : 'NOT_INTERESTED') : 'INTERESTED', calledAt: new Date(created.getTime() + HOUR) },
+    });
+    calls += 1;
+    if (!lostEarly) {
+      // A sales follow-up 1-2 days later: most done the same day, some a day late, a few never.
+      const due = new Date(qualifiedAt.getTime() + (1 + (i % 2)) * DAY);
+      const late = i % 5 === 0;
+      const missed = i % 7 === 0 && salesStatus === 'QUALIFIED';
+      await prisma.followUp.create({
+        data: {
+          leadId: lead.id,
+          scheduledAt: due,
+          note: 'Call to quote',
+          createdById: telecallerId,
+          completedAt: missed ? null : new Date(due.getTime() + (late ? 30 : 2) * HOUR),
+          outcome: missed ? null : salesStatus === 'LOST' ? 'NOT_INTERESTED' : 'QUOTE_SENT',
+        },
+      });
+    }
+    history += 1;
+  }
+
+  // --- 4d. Bell notifications for recent assignments and handovers (yesterday's are read) ---
+  let notes = 0;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const recent = await prisma.lead.findMany({
+    where: { createdAt: { gte: new Date(now - 2 * DAY) }, telecallerId: { not: null } },
+    select: { id: true, name: true, createdAt: true, telecallerId: true, assignedToId: true, qualifiedAt: true, qualifiedById: true, qualifiedBy: { select: { fullName: true } } },
+  });
+  for (const l of recent) {
+    const old = l.createdAt < startOfToday;
+    await prisma.notification.create({
+      data: {
+        userId: l.telecallerId!,
+        type: 'LEAD_ASSIGNED',
+        leadId: l.id,
+        title: `New lead: ${l.name}`,
+        body: 'Round-robin · Meta click-to-WhatsApp ad',
+        createdAt: l.createdAt,
+        readAt: old ? new Date(l.createdAt.getTime() + 30 * MIN) : null,
+      },
+    });
+    notes += 1;
+    if (l.qualifiedAt && l.assignedToId && l.qualifiedBy) {
+      await prisma.notification.create({
+        data: {
+          userId: l.assignedToId,
+          type: 'LEAD_HANDED_OVER',
+          leadId: l.id,
+          title: `Qualified lead from ${l.qualifiedBy.fullName}: ${l.name}`,
+          body: 'Handed over to you. Call to quote.',
+          createdAt: l.qualifiedAt,
+          readAt: l.qualifiedAt < startOfToday ? new Date(l.qualifiedAt.getTime() + HOUR) : null,
+        },
+      });
+      notes += 1;
+    }
+  }
+
   // --- 5. Sales round-robin starts with Suresh ---
   await prisma.user.update({ where: { id: sales.sales }, data: { lastAutoAssignedAt: new Date(now - 2 * DAY), autoAssignEnabled: true } });
   await prisma.user.update({ where: { id: sales.sales2 }, data: { lastAutoAssignedAt: new Date(now - DAY), autoAssignEnabled: true } });
 
-  console.log(`Seeded the telecaller/sales workflow: ${calls} call logs, ${salesLeads.length} sales leads attributed, ${visits} GPS check-ins.`);
+  console.log(`Seeded the telecaller/sales workflow: ${calls} call logs, ${salesLeads.length} sales leads attributed, ${visits} GPS check-ins, ${messages} WhatsApp messages, ${history} older leads for the reports, ${notes} notifications.`);
 }

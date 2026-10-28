@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LeadSource, LeadStatus, Prisma, ProductInterest } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { notifyLeadAssigned } from '../notifications/notify.js';
 import { phoneMatchKey } from './intake-parsing.js';
 import { Assignee, LeadAssignmentService } from './lead-assignment.service.js';
 
@@ -89,6 +90,15 @@ export class LeadIntakeService {
           },
           select: { id: true, assignedTo: { select: { id: true, fullName: true } } },
         });
+        if (lead.assignedTo) {
+          await notifyLeadAssigned(tx, {
+            userId: lead.assignedTo.id,
+            leadId: lead.id,
+            leadName: input.name,
+            actorId: input.createdById,
+            how: auto ? `Round-robin · ${input.sourceDetail}` : input.sourceDetail,
+          });
+        }
         return { leadId: lead.id, assignedTo: lead.assignedTo, autoAssigned: Boolean(auto) };
       });
     } catch (error) {

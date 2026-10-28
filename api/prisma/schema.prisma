@@ -114,6 +114,8 @@ model User {
   workedLeads          Lead[]             @relation("LeadTelecaller")
   qualifiedLeads       Lead[]             @relation("LeadQualifier")
   callLogs             CallLog[]          @relation("CallLogCaller")
+  leadActivities       LeadActivity[]     @relation("LeadActivityUser")
+  notifications        Notification[]     @relation("NotificationRecipient")
   lastLoginAt          DateTime?          @map("last_login_at")
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
@@ -217,6 +219,8 @@ model Lead {
   qualifiedById   String?          @map("qualified_by_id") @db.Uuid
   qualifiedBy     User?            @relation("LeadQualifier", fields: [qualifiedById], references: [id])
   calls           CallLog[]
+  activities      LeadActivity[]
+  notifications   Notification[]
   siteVisits      SiteVisit[]
   createdById     String           @map("created_by_id") @db.Uuid
   createdBy       User             @relation("LeadCreator", fields: [createdById], references: [id])
@@ -237,17 +241,18 @@ model Lead {
 
 // A planned contact with a lead. Pending until an outcome is recorded.
 model FollowUp {
-  id          String           @id @default(uuid()) @db.Uuid
-  leadId      String           @map("lead_id") @db.Uuid
-  lead        Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  scheduledAt DateTime         @map("scheduled_at")
-  note        String?
-  outcome     FollowUpOutcome?
-  completedAt DateTime?        @map("completed_at")
-  createdById String           @map("created_by_id") @db.Uuid
-  createdBy   User             @relation("FollowUpCreator", fields: [createdById], references: [id])
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id            String           @id @default(uuid()) @db.Uuid
+  leadId        String           @map("lead_id") @db.Uuid
+  lead          Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  scheduledAt   DateTime         @map("scheduled_at")
+  note          String?
+  outcome       FollowUpOutcome?
+  completedAt   DateTime?        @map("completed_at")
+  createdById   String           @map("created_by_id") @db.Uuid
+  createdBy     User             @relation("FollowUpCreator", fields: [createdById], references: [id])
+  notifications Notification[]
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
 
   @@index([leadId])
   @@index([completedAt, scheduledAt])
@@ -732,4 +737,69 @@ model ApiKey {
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("api_keys")
+}
+
+// Things done to a lead besides calls (#11): for now, a WhatsApp message started from the app.
+enum LeadActivityType {
+  WHATSAPP
+}
+
+model LeadActivity {
+  id           String           @id @default(uuid()) @db.Uuid
+  leadId       String           @map("lead_id") @db.Uuid
+  lead         Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId       String           @map("user_id") @db.Uuid
+  user         User             @relation("LeadActivityUser", fields: [userId], references: [id])
+  type         LeadActivityType
+  // The template used, if any (kept by name too, in case the template is later deleted).
+  templateId   String?          @map("template_id") @db.Uuid
+  template     MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateName String?          @map("template_name")
+  message      String
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([leadId, createdAt])
+  @@index([userId, createdAt])
+  @@map("lead_activities")
+}
+
+// Reusable WhatsApp messages the admin manages; {name}-style placeholders fill from the lead.
+model MessageTemplate {
+  id         String         @id @default(uuid()) @db.Uuid
+  name       String         @unique
+  body       String
+  sortOrder  Int            @default(0) @map("sort_order")
+  isActive   Boolean        @default(true) @map("is_active")
+  activities LeadActivity[]
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  @@map("message_templates")
+}
+
+// In-app notifications (bell). WhatsApp/email delivery is a later, deployment-time add-on.
+enum NotificationType {
+  LEAD_ASSIGNED // a lead was given to you (round-robin, import, or by hand)
+  LEAD_HANDED_OVER // a telecaller qualified a lead and handed it to you
+  FOLLOW_UP_DUE // one of your callbacks / follow-ups is due today or overdue
+}
+
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  user       User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  leadId     String?          @map("lead_id") @db.Uuid
+  lead       Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  // For FOLLOW_UP_DUE: which follow-up. One reminder per person per follow-up.
+  followUpId String?          @map("follow_up_id") @db.Uuid
+  followUp   FollowUp?        @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+  title      String
+  body       String?
+  readAt     DateTime?        @map("read_at")
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  @@unique([userId, followUpId])
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
 }

@@ -13,6 +13,9 @@ export const PERMISSIONS = {
   PERMISSIONS_READ: 'permissions.read',
   PERMISSIONS_ASSIGN: 'permissions.assign',
   APIKEYS_MANAGE: 'apikeys.manage',
+  TEMPLATES_MANAGE: 'templates.manage',
+  REPORTS_VIEW: 'reports.view',
+  REPORTS_VIEW_ALL: 'reports.view_all',
   LEADS_READ: 'leads.read',
   LEADS_READ_ALL: 'leads.read_all',
   LEADS_WRITE: 'leads.write',
@@ -79,6 +82,21 @@ export const PERMISSION_DEFINITIONS: {
     key: PERMISSIONS.APIKEYS_MANAGE,
     module: 'admin',
     description: 'Create, view and revoke API keys for the public create-lead API',
+  },
+  {
+    key: PERMISSIONS.TEMPLATES_MANAGE,
+    module: 'admin',
+    description: 'Create and edit the WhatsApp message templates telecallers and sales pick from',
+  },
+  {
+    key: PERMISSIONS.REPORTS_VIEW,
+    module: 'crm',
+    description: 'Open the Reports page for your own numbers (and export them)',
+  },
+  {
+    key: PERMISSIONS.REPORTS_VIEW_ALL,
+    module: 'crm',
+    description: "Reports for everyone (widens reports.view). Revenue still needs sales.read_all or finance.dashboard",
   },
   {
     key: PERMISSIONS.LEADS_READ,
@@ -296,6 +314,7 @@ export const ROLE_DEFINITIONS: {
       PERMISSIONS.LEADS_READ,
       PERMISSIONS.LEADS_WRITE,
       PERMISSIONS.LEADS_RECEIVE_QUALIFIED,
+      PERMISSIONS.REPORTS_VIEW,
       PERMISSIONS.FOLLOWUPS_WRITE,
       // Finance: own orders (read/write) and own revenue
       PERMISSIONS.SALES_READ,
@@ -314,6 +333,7 @@ export const ROLE_DEFINITIONS: {
       PERMISSIONS.LEADS_READ,
       PERMISSIONS.LEADS_QUALIFY,
       PERMISSIONS.LEADS_AUTO_ASSIGN,
+      PERMISSIONS.REPORTS_VIEW,
       PERMISSIONS.FOLLOWUPS_WRITE,
       ...OWN_LEAVE_AND_ALLOWANCES,
     ],

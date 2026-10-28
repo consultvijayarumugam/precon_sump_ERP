@@ -14,6 +14,9 @@ import { PrismaClient } from '../src/generated/prisma/client.js';
 
 // Child tables first is not required (CASCADE), but listing them all keeps it explicit.
 const DEMO_TABLES = [
+  'notifications',
+  'lead_activities',
+  'message_templates',
   'call_logs',
   'follow_ups',
   'payments',

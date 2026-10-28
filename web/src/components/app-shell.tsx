@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   Boxes,
   CalendarCheck,
   CalendarClock,
@@ -14,6 +15,7 @@ import {
   LogOut,
   type LucideIcon,
   MapPin,
+  MessageCircle,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -38,6 +40,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/components/auth-provider";
 import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface NavItem {
   href: string;
@@ -65,6 +68,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavIt
       { href: "/follow-ups", label: "Follow-ups", icon: PhoneCall, tag: TAGS.LEADS_READ },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, tag: TAGS.LEADS_READ },
       { href: "/site-visits", label: "Site visits", icon: MapPin, tag: TAGS.SITEVISIT_READ },
+      { href: "/reports", label: "Reports", icon: BarChart3, anyTags: [TAGS.REPORTS_VIEW, TAGS.REPORTS_VIEW_ALL] },
     ],
   },
   {
@@ -108,6 +112,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavIt
       { href: "/admin/users", label: "Users", icon: Users, tag: TAGS.USERS_READ },
       { href: "/admin/permissions", label: "Permissions & tags", icon: ShieldCheck, tag: TAGS.PERMISSIONS_READ },
       { href: "/admin/lead-assignment", label: "Lead assignment", icon: Shuffle, tag: TAGS.LEADS_ASSIGN },
+      { href: "/admin/message-templates", label: "Message templates", icon: MessageCircle, tag: TAGS.TEMPLATES_MANAGE },
       { href: "/admin/api-keys", label: "API keys", icon: KeyRound, tag: TAGS.APIKEYS_MANAGE },
     ],
   },
@@ -347,8 +352,11 @@ function Shell({ children }: { children: ReactNode }) {
         <span className="text-[15px] font-semibold tracking-tight">
           Precon <span className="font-light text-brand-600 dark:text-brand-300">ERP</span>
         </span>
+        <span className="ml-auto">
+          <NotificationBell />
+        </span>
         <span
-          className="ml-auto grid size-8 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-xs font-semibold text-white"
+          className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-violet-500 text-xs font-semibold text-white"
           title={`${user.fullName} · ${user.role.name}`}
         >
           {initials(user.fullName)}
@@ -365,7 +373,12 @@ function Shell({ children }: { children: ReactNode }) {
 
       <div className={`transition-[padding] duration-200 ${collapsed ? "lg:pl-[4.5rem]" : "lg:pl-64"}`}>
         <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <Breadcrumb />
+          <div className="flex items-start justify-between gap-3">
+            <Breadcrumb />
+            <div className="ml-auto hidden lg:block">
+              <NotificationBell />
+            </div>
+          </div>
           {children}
         </main>
       </div>

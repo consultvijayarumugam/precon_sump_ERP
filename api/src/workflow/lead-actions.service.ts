@@ -4,6 +4,7 @@ import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { leadScope } from '../crm/lead-scope.js';
 import { CallOutcome, FollowUpOutcome, LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
+import { notifyLeadHandedOver } from '../notifications/notify.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
 
@@ -166,6 +167,8 @@ export class LeadActionsService {
           telecallerId: lead.telecallerId ?? user.id,
         },
       });
+      const leadName = (await tx.lead.findUniqueOrThrow({ where: { id: leadId }, select: { name: true } })).name;
+      await notifyLeadHandedOver(tx, { userId: sales.id, leadId, leadName, fromName: user.fullName, actorId: user.id });
       return { leadId, status: 'QUALIFIED' as const, handedTo: sales, roundRobin: Boolean(picked) };
     });
   }

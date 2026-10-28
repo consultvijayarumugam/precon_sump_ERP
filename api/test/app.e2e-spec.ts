@@ -687,7 +687,7 @@ describe('Auth and RBAC (e2e)', () => {
       const loginAsNew = () => http().post('/api/v1/auth/login').send({ email, password: 'secret123' });
       const asTelecaller = (await loginAsNew().expect(200)).body.user;
       expect(asTelecaller.permissions).toEqual(
-        ['allowances.claim', 'allowances.read', 'followups.write', 'leads.auto_assign', 'leads.qualify', 'leads.read', 'leave.apply', 'leave.read'],
+        ['allowances.claim', 'allowances.read', 'followups.write', 'leads.auto_assign', 'leads.qualify', 'leads.read', 'leave.apply', 'leave.read', 'reports.view'],
       );
 
       // Give a custom tag, then change role: the custom tag is cleared, preset applies.
@@ -1226,6 +1226,280 @@ describe('Auth and RBAC (e2e)', () => {
       row = after.telecallers.find((t: { fullName: string }) => t.fullName === 'Tara Telecaller');
       expect(row.callsToday).toBe(notCalledBefore.callsToday + 1);
       expect(row.notCalled).toBe(notCalledBefore.notCalled);
+    });
+  });
+
+  describe('WhatsApp quick-contact: templates, wa.me link, activity log', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    async function taraLead(name: string, phone: string, extra: Record<string, unknown> = {}) {
+      const taraUser = await (await prisma()).user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name, phone, source: 'META', assignedToId: taraUser.id, ...extra }).expect(201);
+      leadIds.push(res.body.id);
+      return res.body.id as string;
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+    });
+    afterAll(async () => {
+      const db = await prisma();
+      await db.lead.deleteMany({ where: { id: { in: leadIds } } });
+      await db.messageTemplate.deleteMany({ where: { name: { startsWith: 'E2E' } } });
+    });
+
+    it('everyone with leads sees the active templates; only admins manage them', async () => {
+      const list = (await http().get('/api/v1/message-templates').set(as(tara)).expect(200)).body;
+      expect(list.map((t: { name: string }) => t.name)).toEqual(['Intro message', 'Follow-up message', 'Quotation message']);
+      await http().get('/api/v1/message-templates?all=true').set(as(tara)).expect(403);
+      await http().post('/api/v1/message-templates').set(as(tara)).send({ name: 'E2E Nope', body: 'Hello there' }).expect(403);
+      const placeholders = (await http().get('/api/v1/message-templates/placeholders').set(as(tara)).expect(200)).body;
+      expect(placeholders.map((p: { key: string }) => p.key)).toContain('{name}');
+    });
+
+    it('fills the template from the lead, adds 91 to the number, logs it on the lead', async () => {
+      const id = await taraLead('E2E Wa Ravi Kumar', '98765 01234', { city: 'Erode', productInterest: 'SUMP', sumpSizeLitres: 10000 });
+      const tpl = (await http().post('/api/v1/message-templates').set(as(admin))
+        .send({ name: 'E2E Quote', body: 'Hi {first_name}, {my_name} from {company}: your {product} for {city}. {Name}', sortOrder: 9 }).expect(201)).body;
+      await http().post('/api/v1/message-templates').set(as(admin)).send({ name: 'E2E Quote', body: 'Duplicate name' }).expect(409);
+
+      const res = await http().post(`/api/v1/leads/${id}/whatsapp`).set(as(tara)).send({ templateId: tpl.id }).expect(201);
+      expect(res.body.phone).toBe('919876501234');
+      expect(res.body.message).toBe('Hi E2E, Tara Telecaller from Precon: your Sump · 10,000 L for Erode. E2E Wa Ravi Kumar');
+      expect(res.body.url).toBe(`https://wa.me/919876501234?text=${encodeURIComponent(res.body.message)}`);
+
+      // Without a template: just opens the chat.
+      const blank = await http().post(`/api/v1/leads/${id}/whatsapp`).set(as(tara)).send({}).expect(201);
+      expect(blank.body.url).toBe('https://wa.me/919876501234');
+
+      const log = (await http().get(`/api/v1/leads/${id}/messages`).set(as(tara)).expect(200)).body;
+      expect(log).toHaveLength(2);
+      expect(log[1]).toMatchObject({ type: 'WHATSAPP', templateName: 'E2E Quote', user: { fullName: 'Tara Telecaller' } });
+
+      // Deleting the template keeps the history readable; switched-off templates can't be used.
+      await http().delete(`/api/v1/message-templates/${tpl.id}`).set(as(admin)).expect(204);
+      const after = (await http().get(`/api/v1/leads/${id}/messages`).set(as(tara)).expect(200)).body;
+      expect(after[1].templateName).toBe('E2E Quote');
+      const off = (await http().post('/api/v1/message-templates').set(as(admin)).send({ name: 'E2E Off', body: 'Hello {name}', isActive: false }).expect(201)).body;
+      await http().post(`/api/v1/leads/${id}/whatsapp`).set(as(tara)).send({ templateId: off.id }).expect(400);
+      expect((await http().get('/api/v1/message-templates?all=true').set(as(admin)).expect(200)).body.map((t: { name: string }) => t.name)).toContain('E2E Off');
+    });
+
+    it("refuses other people's leads and numbers WhatsApp can't use", async () => {
+      const id = await taraLead('E2E Wa Scope', '9876501235');
+      await http().post(`/api/v1/leads/${id}/whatsapp`).set(as(kavya)).send({}).expect(404);
+      await http().get(`/api/v1/leads/${id}/messages`).set(as(kavya)).expect(404);
+      const landline = await taraLead('E2E Wa Landline', '0422 2345678');
+      const res = await http().post(`/api/v1/leads/${landline}/whatsapp`).set(as(tara)).send({}).expect(400);
+      expect(res.body.message).toMatch(/WhatsApp/);
+    });
+  });
+
+  describe('Reports: date ranges, role scope, CSV / Excel export', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    let sales: string;
+    let supervisor: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const range = '?from=2026-01-01&to=2028-12-31'; // within the 3-year limit
+    const leadIds: string[] = [];
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+      supervisor = (await login('supervisor@precon.local')).body.accessToken;
+    });
+    afterAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { id: { in: leadIds } } });
+    });
+
+    it('admin sees every report for everyone; telecallers get no revenue; others no reports at all', async () => {
+      const mine = (await http().get('/api/v1/reports').set(as(admin)).expect(200)).body;
+      expect(mine.map((r: { key: string }) => r.key)).toEqual(['leads-by-source', 'telecallers', 'pipeline', 'revenue', 'follow-ups']);
+      expect(mine.every((r: { scope: string }) => r.scope === 'all')).toBe(true);
+      const tc = (await http().get('/api/v1/reports').set(as(tara)).expect(200)).body;
+      expect(tc.map((r: { key: string }) => r.key)).not.toContain('revenue');
+      expect(tc[0].scope).toBe('own');
+      await http().get(`/api/v1/reports/revenue${range}`).set(as(tara)).expect(403);
+      await http().get('/api/v1/reports').set(as(supervisor)).expect(403);
+      await http().get('/api/v1/reports/nope').set(as(admin)).expect(404);
+      await http().get('/api/v1/reports/pipeline?from=2026-10-10&to=2026-10-01').set(as(admin)).expect(400);
+      await http().get('/api/v1/reports/pipeline?from=2026-13-40').set(as(admin)).expect(400);
+      await http().get('/api/v1/reports/pipeline?from=2020-01-01&to=2026-01-01').set(as(admin)).expect(400); // over 3 years
+    });
+
+    it('a salesperson only sees their own revenue and follow-ups; admin sees both salespeople', async () => {
+      const all = (await http().get(`/api/v1/reports/revenue${range}`).set(as(admin)).expect(200)).body;
+      expect(all.rows.map((r: { salesperson: string }) => r.salesperson).sort()).toEqual(['Priya Sales', 'Suresh Sales']);
+      const totalRevenue = all.rows.reduce((n: number, r: { revenue: string }) => n + Number(r.revenue), 0);
+      expect(Number(all.totals.revenue)).toBeCloseTo(totalRevenue, 2);
+
+      const own = (await http().get(`/api/v1/reports/revenue${range}`).set(as(sales)).expect(200)).body;
+      expect(own.scope).toBe('own');
+      expect(own.rows.map((r: { salesperson: string }) => r.salesperson)).toEqual(['Suresh Sales']);
+      expect(own.rows[0].revenue).toBe(all.rows.find((r: { salesperson: string }) => r.salesperson === 'Suresh Sales').revenue);
+
+      const fu = (await http().get(`/api/v1/reports/follow-ups${range}`).set(as(sales)).expect(200)).body;
+      expect(fu.rows.map((r: { person: string }) => r.person)).toEqual(['Suresh Sales']);
+      const tel = (await http().get(`/api/v1/reports/telecallers${range}`).set(as(sales)).expect(200)).body;
+      expect(tel.rows.map((r: { telecaller: string }) => r.telecaller)).toEqual(['Suresh Sales']);
+      const allTel = (await http().get(`/api/v1/reports/telecallers${range}`).set(as(admin)).expect(200)).body;
+      expect(allTel.rows.map((r: { telecaller: string }) => r.telecaller)).toEqual(['Arjun Telecaller', 'Kavya Telecaller', 'Tara Telecaller']);
+    });
+
+    it("telecallers' lead reports count only their own leads", async () => {
+      const before = (await http().get(`/api/v1/reports/pipeline${range}`).set(as(tara)).expect(200)).body;
+      const kavyaBefore = (await http().get(`/api/v1/reports/pipeline${range}`).set(as(kavya)).expect(200)).body;
+      const taraUser = await (await prisma()).user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Report Lead', phone: '9000085001', source: 'REFERRAL', assignedToId: taraUser.id }).expect(201);
+      leadIds.push(res.body.id);
+      const after = (await http().get(`/api/v1/reports/pipeline${range}`).set(as(tara)).expect(200)).body;
+      expect(after.totals.leads).toBe(before.totals.leads + 1);
+      expect(after.rows.reduce((n: number, r: { leads: number }) => n + r.leads, 0)).toBe(after.totals.leads);
+      expect((await http().get(`/api/v1/reports/pipeline${range}`).set(as(kavya)).expect(200)).body.totals.leads).toBe(kavyaBefore.totals.leads);
+      const bySource = (await http().get(`/api/v1/reports/leads-by-source${range}`).set(as(tara)).expect(200)).body;
+      expect(bySource.rows.find((r: { source: string }) => r.source === 'Referral').leads).toBeGreaterThanOrEqual(1);
+    });
+
+    it('exports to CSV and Excel with the same numbers', async () => {
+      const json = (await http().get(`/api/v1/reports/leads-by-source${range}`).set(as(admin)).expect(200)).body;
+      const csv = await http().get(`/api/v1/reports/leads-by-source${range}&format=csv`).set(as(admin)).expect(200);
+      expect(csv.headers['content-type']).toMatch(/text\/csv/);
+      expect(csv.headers['content-disposition']).toMatch(/precon-leads-by-source-2026-01-01-to-2028-12-31\.csv/);
+      const lines = csv.text.replace(/^﻿/, '').trim().split('\r\n');
+      expect(lines[0]).toBe('Source,Leads,Qualified,Won,Lost,Qualified rate (%),Win rate (%)');
+      expect(lines).toHaveLength(json.rows.length + 2); // header + rows + total
+      expect(lines.at(-1)).toMatch(new RegExp(`^Total,${json.totals.leads},`));
+
+      const xlsx = await http().get(`/api/v1/reports/revenue${range}&format=xlsx`).set(as(admin)).buffer(true).parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      }).expect(200);
+      expect(xlsx.headers['content-type']).toMatch(/spreadsheetml/);
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(xlsx.body);
+      const ws = wb.worksheets[0];
+      expect(ws.getCell('A1').value).toBe('Revenue by salesperson');
+      expect(ws.getRow(4).values).toEqual([undefined, 'Salesperson', 'Orders', 'Revenue', 'Average order', 'Leads won']);
+      expect(ws.getColumn(3).numFmt).toMatch(/#,##0\.00/);
+
+      // A salesperson's export is their own data only.
+      const ownCsv = await http().get(`/api/v1/reports/revenue${range}&format=csv`).set(as(sales)).expect(200);
+      expect(ownCsv.text).toMatch(/Suresh Sales/);
+      expect(ownCsv.text).not.toMatch(/Priya Sales/);
+    });
+  });
+
+  describe('Notifications: bell, reminders, mark as read', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    let sales: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+    const bell = async (token: string) => (await http().get('/api/v1/notifications').set(as(token)).expect(200)).body;
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+    });
+    afterAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { id: { in: leadIds } } });
+    });
+
+    it('a lead assigned to you shows in your bell (not the assigner’s); mark one / all read', async () => {
+      const db = await prisma();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const before = await bell(tara);
+      const adminBefore = await bell(admin);
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Bell Lead', phone: '9000086001', source: 'META', assignedToId: taraUser.id }).expect(201);
+      leadIds.push(res.body.id);
+
+      const after = await bell(tara);
+      expect(after.unread).toBe(before.unread + 1);
+      expect(after.updates[0]).toMatchObject({ type: 'LEAD_ASSIGNED', title: 'New lead: E2E Bell Lead', readAt: null, lead: { id: res.body.id } });
+      expect(after.updates[0].body).toMatch(/Assigned by Asha Admin/);
+      expect((await bell(admin)).updates.length).toBe(adminBefore.updates.length);
+
+      // Only the owner can mark it read.
+      await http().post(`/api/v1/notifications/${after.updates[0].id}/read`).set(as(kavya)).expect(404);
+      await http().post(`/api/v1/notifications/${after.updates[0].id}/read`).set(as(tara)).expect(200);
+      expect((await bell(tara)).unread).toBe(before.unread);
+      await http().post('/api/v1/notifications/read-all').set(as(tara)).expect(200);
+      expect((await bell(tara)).unread).toBe(0);
+    });
+
+    it('due and overdue callbacks become reminders once, and clear when the call is logged', async () => {
+      const db = await prisma();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Bell Callback', phone: '9000086002', source: 'META', assignedToId: taraUser.id }).expect(201);
+      leadIds.push(res.body.id);
+      await db.followUp.create({ data: { leadId: res.body.id, scheduledAt: new Date(Date.now() - 3_600_000), note: 'E2E call back', createdById: taraUser.id } });
+
+      let feed = await bell(tara);
+      const reminder = feed.reminders.find((r: { lead: { id: string } }) => r.lead.id === res.body.id);
+      expect(reminder).toMatchObject({ type: 'FOLLOW_UP_DUE', overdue: true, title: 'Call E2E Bell Callback', body: 'E2E call back' });
+      feed = await bell(tara); // checking again doesn't duplicate it
+      expect(feed.reminders.filter((r: { lead: { id: string } }) => r.lead.id === res.body.id)).toHaveLength(1);
+      const summary = (await http().get('/api/v1/notifications/summary').set(as(tara)).expect(200)).body;
+      expect(summary.overdue.map((f: { lead: { id: string } }) => f.lead.id)).toContain(res.body.id);
+
+      const unread = feed.unread;
+      await http().post(`/api/v1/leads/${res.body.id}/calls`).set(as(tara)).send({ outcome: 'NO_ANSWER' }).expect(201);
+      feed = await bell(tara);
+      expect(feed.reminders.find((r: { lead: { id: string } }) => r.lead.id === res.body.id)).toBeUndefined();
+      expect(feed.unread).toBe(unread - 1);
+    });
+
+    it('a qualified lead handed to sales notifies the salesperson; round-robin leads notify the telecaller', async () => {
+      const db = await prisma();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const suresh = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Bell Handover', phone: '9000086003', source: 'META', assignedToId: taraUser.id }).expect(201);
+      leadIds.push(res.body.id);
+      await http().post(`/api/v1/leads/${res.body.id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh.id }).expect(200);
+      const feed = await bell(sales);
+      expect(feed.updates[0]).toMatchObject({ type: 'LEAD_HANDED_OVER', title: 'Qualified lead from Tara Telecaller: E2E Bell Handover', readAt: null });
+      expect((await http().get('/api/v1/notifications/summary').set(as(sales)).expect(200)).body.handedToday).toBeGreaterThanOrEqual(1);
+
+      // An import shared round-robin notifies whoever got each lead.
+      const csv = 'name,phone\nE2E Bell Import,9000086004\n';
+      const imported = await http().post('/api/v1/leads/import').set(as(admin)).attach('file', Buffer.from(csv), 'e2e-bell.csv').expect(200);
+      leadIds.push(imported.body.createdRows[0].leadId);
+      const owner = await db.lead.findUniqueOrThrow({ where: { id: imported.body.createdRows[0].leadId }, select: { assignedToId: true } });
+      const note = await db.notification.findFirstOrThrow({ where: { leadId: imported.body.createdRows[0].leadId } });
+      expect(note).toMatchObject({ userId: owner.assignedToId, type: 'LEAD_ASSIGNED' });
+      expect(note.body).toMatch(/^Round-robin · Import: e2e-bell\.csv/);
     });
   });
 });

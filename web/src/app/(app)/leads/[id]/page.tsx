@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { FollowUpItem } from "@/components/follow-up-item";
 import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 import {
   buttonClass,
   ErrorText,
@@ -89,36 +90,65 @@ interface CallLogRow {
   caller: { id: string; fullName: string };
 }
 
-/** Every call logged on the lead (by telecallers and sales), newest first. */
-function CallHistory({ leadId, refreshKey }: { leadId: string; refreshKey: string }) {
-  const { data, error } = useApi<CallLogRow[]>(`/leads/${leadId}/calls?r=${refreshKey}`);
+interface MessageRow {
+  id: string;
+  templateName: string | null;
+  message: string;
+  createdAt: string;
+  user: { id: string; fullName: string };
+}
+
+type HistoryEntry =
+  | { kind: "call"; id: string; at: string; by: string; call: CallLogRow }
+  | { kind: "whatsapp"; id: string; at: string; by: string; msg: MessageRow };
+
+/** Calls logged and WhatsApp messages started on the lead, newest first. */
+function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: string }) {
+  const calls = useApi<CallLogRow[]>(`/leads/${leadId}/calls?r=${refreshKey}`);
+  const messages = useApi<MessageRow[]>(`/leads/${leadId}/messages?r=${refreshKey}`);
+  const entries: HistoryEntry[] | null =
+    calls.data && messages.data
+      ? [
+          ...calls.data.map((c) => ({ kind: "call" as const, id: c.id, at: c.calledAt, by: c.caller.fullName, call: c })),
+          ...messages.data.map((m) => ({ kind: "whatsapp" as const, id: m.id, at: m.createdAt, by: m.user.fullName, msg: m })),
+        ].sort((a, b) => b.at.localeCompare(a.at))
+      : null;
   return (
     <section className="space-y-3">
       <h2 className="font-medium">
-        Call history{data && data.length > 0 && <span className="ml-1 text-neutral-500">· {data.length}</span>}
+        Calls &amp; messages{entries && entries.length > 0 && <span className="ml-1 text-neutral-500">· {entries.length}</span>}
       </h2>
-      <ErrorText error={error} />
-      {data && data.length === 0 && <p className="text-sm text-neutral-500">No calls logged yet.</p>}
-      {data && data.length > 0 && (
+      <ErrorText error={calls.error ?? messages.error} />
+      {entries && entries.length === 0 && <p className="text-sm text-neutral-500">No calls or messages yet.</p>}
+      {entries && entries.length > 0 && (
         <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
-          {data.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
-              <span>
-                <span
-                  className={`font-semibold ${
-                    CLOSING_OUTCOMES.includes(c.outcome)
-                      ? "text-red-700 dark:text-red-300"
-                      : c.outcome === "INTERESTED"
-                        ? "text-emerald-700 dark:text-emerald-300"
-                        : ""
-                  }`}
-                >
-                  {CALL_OUTCOME_LABELS[c.outcome]}
+          {entries.map((e) => (
+            <li key={`${e.kind}-${e.id}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+              {e.kind === "call" ? (
+                <span>
+                  <span className="mr-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">Call</span>
+                  <span
+                    className={`font-semibold ${
+                      CLOSING_OUTCOMES.includes(e.call.outcome)
+                        ? "text-red-700 dark:text-red-300"
+                        : e.call.outcome === "INTERESTED"
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : ""
+                    }`}
+                  >
+                    {CALL_OUTCOME_LABELS[e.call.outcome]}
+                  </span>
+                  {e.call.note && <span className="text-neutral-600 dark:text-neutral-400"> · {e.call.note}</span>}
                 </span>
-                {c.note && <span className="text-neutral-600 dark:text-neutral-400"> · {c.note}</span>}
-              </span>
+              ) : (
+                <span className="min-w-0 flex-1">
+                  <span className="mr-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-600">WhatsApp</span>
+                  <span className="font-semibold">{e.msg.templateName ?? "Chat opened"}</span>
+                  {e.msg.message && <span className="mt-0.5 block text-neutral-600 dark:text-neutral-400">{e.msg.message}</span>}
+                </span>
+              )}
               <span className="text-xs text-neutral-500">
-                {formatDateTime(c.calledAt)} · {c.caller.fullName}
+                {formatDateTime(e.at)} · {e.by}
               </span>
             </li>
           ))}
@@ -134,6 +164,7 @@ export default function LeadDetailPage() {
   const { can } = useAuth();
   const { data: lead, error, reload } = useApi<LeadDetail>(can(TAGS.LEADS_READ) ? `/leads/${id}` : null);
   const [editing, setEditing] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [statusError, setStatusError] = useState<string | null>(null);
 
   if (!can(TAGS.LEADS_READ)) return <NoAccess tag={TAGS.LEADS_READ} />;
@@ -191,9 +222,12 @@ export default function LeadDetailPage() {
       ) : (
         <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <Detail label="Phone">
-            <a href={`tel:${lead.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
-              {lead.phone}
-            </a>
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <a href={`tel:${lead.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
+                {lead.phone}
+              </a>
+              <WhatsAppButton leadId={lead.id} onSent={() => setHistoryVersion((v) => v + 1)} />
+            </span>
           </Detail>
           <Detail label="Email">{lead.email ?? "-"}</Detail>
           <Detail label="City">{lead.city ?? "-"}</Detail>
@@ -253,7 +287,7 @@ export default function LeadDetailPage() {
         </section>
       )}
 
-      <CallHistory leadId={lead.id} refreshKey={lead.updatedAt} />
+      <ContactHistory leadId={lead.id} refreshKey={`${lead.updatedAt}-${historyVersion}`} />
 
       <section className="space-y-3">
         <h2 className="font-medium">Follow-ups</h2>

@@ -9,6 +9,7 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { notifyLeadAssigned } from '../notifications/notify.js';
 import { CreateLeadDto, ListLeadsQueryDto, UpdateLeadDto } from './dto/lead.dto.js';
 import {
   canAssignLeads,
@@ -127,6 +128,9 @@ export class LeadsService {
       },
       select: { id: true },
     });
+    if (assignedToId) {
+      await notifyLeadAssigned(this.prisma, { userId: assignedToId, leadId: lead.id, leadName: dto.name, actorId: user.id, how: `Assigned by ${user.fullName}` });
+    }
     return this.findOne(user, lead.id);
   }
 
@@ -186,7 +190,10 @@ export class LeadsService {
       else if (wasClosed) data.closedAt = null; // reopened
     }
 
-    await this.prisma.lead.update({ where: { id }, data });
+    const updated = await this.prisma.lead.update({ where: { id }, data, select: { name: true } });
+    if (typeof data.assignedToId === 'string') {
+      await notifyLeadAssigned(this.prisma, { userId: data.assignedToId, leadId: id, leadName: updated.name, actorId: user.id, how: `Assigned by ${user.fullName}` });
+    }
 
     // If the change moved the lead out of this user's scope, they can no longer read it.
     const visible = await this.prisma.lead.count({

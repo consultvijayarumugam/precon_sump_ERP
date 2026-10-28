@@ -1,20 +1,21 @@
 "use client";
 
-import { AlarmClock, CalendarClock, MessageCircle, Phone, PhoneCall, PhoneOutgoing, Sparkles } from "lucide-react";
+import { AlarmClock, CalendarClock, Phone, PhoneCall, PhoneOutgoing, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { CallbackPanel, LogCallPanel, QualifyPanel } from "@/components/lead-quick-actions";
 import { ErrorText, panelClass, secondaryButtonSmClass, StatusBadge } from "@/components/ui";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 import { formatDateTime, formatTime, productInterestLabel, SOURCE_LABELS } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
 import {
   BUCKET_LABELS,
   CALL_OUTCOME_LABELS,
   TelecallerDashboardData,
-  whatsappLink,
   WorklistBucket,
   WorklistItem,
 } from "@/lib/workflow";
+import { MyReminders } from "./my-reminders";
 import { EmptyNote, Greeting, KpiRow, KpiTile } from "./shared";
 
 const BUCKET_ORDER: WorklistBucket[] = ["overdue", "today", "new", "no_next_step", "later"];
@@ -67,16 +68,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
           >
             <Phone className="size-4" aria-hidden /> {item.phone}
           </a>
-          <a
-            href={whatsappLink(item.phone)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center rounded-lg border border-emerald-300 p-2 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
-            aria-label={`WhatsApp ${item.name}`}
-            title="Open WhatsApp chat"
-          >
-            <MessageCircle className="size-4" aria-hidden />
-          </a>
+          <WhatsAppButton leadId={item.id} />
         </div>
       </div>
 
@@ -170,6 +162,7 @@ export function TelecallerDashboard() {
         }
       />
       <ErrorText error={error} />
+      <MyReminders />
       <KpiRow>
         <KpiTile label="My new leads today" value={c?.newToday} href="/leads?status=NEW" icon={Sparkles} module="crm" hint={c && `${c.notCalledYet} not called yet`} />
         <KpiTile label="Callbacks due today" value={c?.callbacksDueToday} href="/follow-ups" icon={CalendarClock} module="crm" />

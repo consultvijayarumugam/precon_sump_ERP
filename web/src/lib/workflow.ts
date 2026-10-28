@@ -162,12 +162,6 @@ export interface MasterDashboardData {
   visits: CheckIn[];
 }
 
-/** "9876543210" / "+919876543210" -> a wa.me chat link (Indian numbers default to +91). */
-export function whatsappLink(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return `https://wa.me/${digits.length === 10 ? `91${digits}` : digits}`;
-}
-
 export const percent = (rate: number | null) => (rate === null ? "–" : `${Math.round(rate * 100)}%`);
 
 /** Value for a datetime-local input, in local time. */

@@ -8,6 +8,7 @@ import { Badge, ErrorText, panelClass, tableClass, tableWrapClass, tbodyClass, t
 import { formatINR } from "@/lib/finance";
 import { useApi } from "@/lib/use-api";
 import { MasterDashboardData, percent } from "@/lib/workflow";
+import { MyReminders } from "./my-reminders";
 import { EmptyNote, Greeting, KpiTile, SectionHeader } from "./shared";
 
 /** A table cell that turns red when there's something to chase. */
@@ -35,6 +36,7 @@ export function MasterDashboard() {
     <div className="space-y-7">
       <Greeting subtitle="Telecalling and sales at a glance: today's leads, who is keeping up, and where the team has been." />
       <ErrorText error={error} />
+      <MyReminders />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <KpiTile label="Leads in today" value={t?.incomingToday} href="/admin/lead-assignment" icon={Inbox} module="crm" />

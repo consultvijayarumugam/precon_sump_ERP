@@ -13,6 +13,7 @@ import { TAGS } from "@/lib/tags";
 import { useAuth } from "@/components/auth-provider";
 import { useApi } from "@/lib/use-api";
 import { SalesDashboardData, SalesLead } from "@/lib/workflow";
+import { MyReminders } from "./my-reminders";
 import { EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from "./shared";
 
 const COLUMNS: { status: "QUALIFIED" | "QUOTED" | "WON" | "LOST"; title: string; tone: string }[] = [
@@ -111,6 +112,7 @@ export function SalesDashboard() {
         }
       />
       <ErrorText error={error} />
+      <MyReminders />
       <KpiRow>
         {data?.revenueThisMonth !== null && (
           <KpiTile label="My revenue this month" value={data ? formatINR(data.revenueThisMonth ?? 0) : undefined} href="/leads/won" icon={IndianRupee} module="finance" />

@@ -179,6 +179,9 @@ The HR seed adds the following.
 | `leads.write` | Create leads and edit leads you can see (details, notes, pipeline status) |
 | `leads.qualify` | Telecaller preset. Update leads **assigned to you** after a call: name, email, city, product, size, notes and pipeline status. Phone and source stay locked (the phone is what duplicate checks match on); no creating, importing or reassigning |
 | `leads.assign` | Choose or change who a lead is assigned to; see Admin → Lead assignment and switch telecallers in or out of the rotation |
+| `reports.view` | Sales and telecaller presets. Reports page with your own numbers, and exports of them |
+| `reports.view_all` | Admin. Reports for everyone (revenue still needs `sales.read_all` or `finance.dashboard`) |
+| `templates.manage` | Admin. Create and edit the WhatsApp message templates |
 | `leads.receive_qualified` | Sales preset. Puts the holder in the round-robin for leads telecallers qualify. Not given to admin |
 | `leads.auto_assign` | Puts the holder in the round-robin for incoming leads (telecaller preset). Not given to admin: admin manages the rotation, it doesn't receive leads |
 | `followups.write` | Schedule, reschedule and complete follow-ups on leads you can see |
@@ -408,6 +411,34 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 - **GPS check-in** ("I'm at site", `sitevisit.write`): the browser reads the location **once** when the button is pressed and stores latitude, longitude, accuracy and time on a site visit, optionally linked to one of your leads. No tracking. Maps are OpenStreetMap with Leaflet (no Google, no API key). Browsers only share location on a secure page: it works on `http://localhost:3001` on the Mac and on HTTPS later, but **not on the LAN address** (`http://192.168.x.x`); there the button says so.
 - **Sidebar:** telecallers and sales see Dashboard, Leads, Follow-ups, Calendar (sales also Won and Site visits) and their own leave/allowances. The Finance section needs `finance.dashboard`, so it is off their screens; stock and service need their own tags. Pages and APIs are unchanged.
 
+## WhatsApp quick-contact
+
+- A green **WhatsApp** button sits next to the phone on the telecaller workbench and on every lead page. It opens a picker of the admin's **message templates** (plus "open chat without a message").
+- Picking one fills the template from the lead on the server, records it under the lead's **Calls & messages**, and opens `https://wa.me/<number>?text=<message>`. WhatsApp opens with the message typed in; the sender still taps Send, so the log means "started", not "delivered".
+- **Numbers:** Indian numbers get country code 91 when missing (`98765 43210`, `098765 43210`, `+91 98765 43210` all become `919876543210`); other international numbers are kept; landlines and short numbers are refused with a message.
+- **Templates:** Admin → Message templates (`templates.manage`, admin): create, edit, reorder, switch off (hidden from the picker) or delete (past messages keep the template's name). Starter templates: Intro, Follow-up, Quotation.
+- **Placeholders:** `{name}`, `{first_name}`, `{city}`, `{product}` (e.g. "Sump · 10,000 L"), `{my_name}` (the sender), `{company}` (`COMPANY_NAME` in `api/.env`, default "Precon"). Any case and spacing work (`{ Name }`); a misspelt placeholder is left visible so it gets noticed.
+
+## Reports & export
+
+- **Reports page** (`/reports`): leads by source, leads & conversion per telecaller, pipeline status breakdown, revenue by salesperson, follow-up compliance. Date presets (this month, last month, last 7 / 90 days, this financial year) or any from/to range up to 3 years, in the business time zone.
+- **Export:** every report downloads as **CSV** (UTF-8 with BOM so Excel shows ₹ correctly; percentages as numbers, e.g. `45.5`) or **Excel .xlsx** (title, period, bold header and total, rupee and percent formats). Exports contain exactly what the user can see on screen.
+- **Who sees what** (tags, not roles):
+  - `reports.view_all` (admin): everyone's numbers.
+  - `reports.view` (sales and telecaller presets): only rows about you: your leads (assigned, received or qualified by you), your own telecaller row, your own follow-ups, your own revenue.
+  - **Revenue** also needs `sales.read` (your own) or `sales.read_all` / `finance.dashboard` (everyone's). Telecallers don't have it, so they don't get the revenue report. A **manager** given `reports.view_all` without finance tags gets every report except revenue.
+- **Definitions:** qualified = has been qualified (or is past Qualified); win rate = won ÷ leads; telecaller conversion = share of the leads they received in the period that have been qualified; follow-up compliance = done ÷ due (follow-ups that came due in the period, up to now); "on time" = done within 24 hours of being due.
+
+## In-app notifications & reminders
+
+- **Bell** (top right; in the top bar on phones), checked every minute and when opened:
+  - **Reminders:** each callback / follow-up on your leads that is due today or overdue (overdue in red). A reminder disappears by itself once the follow-up is done (e.g. you log the call) or the lead moves to someone else.
+  - **Updates:** a lead was assigned to you (round-robin, import, API, Meta or by hand) or a telecaller handed you a qualified lead. You are never notified about your own actions.
+  - Click an item to open the lead (and mark it read), or **Mark all as read**.
+- **My reminders today** card on the telecaller, sales and master dashboards: overdue and due-later-today follow-ups (tap to open), plus how many leads were assigned or handed to you today.
+- **How it works:** updates are written in the same transaction as the assignment or handover. Reminders are created when you check, at most one per follow-up, so no background job or scheduler is needed.
+- **WhatsApp / email delivery of notifications is a later, deployment-time add-on.** It needs a hosted server with a scheduler and a provider account (e.g. WhatsApp Business API, an email service). Nothing is sent outside the app today.
+
 ## API endpoints (prefix `/api/v1`)
 
 | Method | Path                     | Access                 | Purpose |
@@ -441,6 +472,19 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | GET    | `/dashboards/telecaller` | `leads.read`           | Workbench: counts and your worklist in call order |
 | GET    | `/dashboards/sales`      | `leads.read`           | Your pipeline, follow-ups due, revenue this month (with `sales.read`), check-ins |
 | GET    | `/dashboards/master`     | `leads.read_all` + `leads.assign` | Scorecards, accountability flags, today's split, site-visit map |
+| GET    | `/message-templates`     | `leads.read`           | Active WhatsApp templates (`?all=true` with `templates.manage` includes switched-off ones) |
+| GET    | `/message-templates/placeholders` | `leads.read`  | Placeholders and what they fill in |
+| POST   | `/message-templates`     | `templates.manage`     | `{name, body, sortOrder?, isActive?}` (409 if the name exists) |
+| PATCH  | `/message-templates/:id` | `templates.manage`     | Edit, reorder, switch off |
+| DELETE | `/message-templates/:id` | `templates.manage`     | Delete (past messages keep its name) |
+| POST   | `/leads/:id/whatsapp`    | `leads.read`           | `{templateId?, message?}` → `{url, message, phone}`; logs the message on the lead. 400 if the number can't be used |
+| GET    | `/leads/:id/messages`    | `leads.read`           | WhatsApp messages started on the lead |
+| GET    | `/reports`               | `reports.view` or `reports.view_all` | Reports you can open, and your scope (`all` / `own`) |
+| GET    | `/reports/:key`          | `reports.view` or `reports.view_all` | `from`, `to` (YYYY-MM-DD), optional `format=csv\|xlsx`. Keys: `leads-by-source`, `telecallers`, `pipeline`, `revenue`, `follow-ups` |
+| GET    | `/notifications`         | logged in              | `{unread, reminders[], updates[]}` |
+| GET    | `/notifications/summary` | logged in              | `{overdue[], dueToday[], assignedToday, handedToday}` |
+| POST   | `/notifications/:id/read` | logged in             | Mark one of yours read (404 for anyone else's) |
+| POST   | `/notifications/read-all` | logged in             | Mark all yours read |
 | GET    | `/lead-assignment`       | `leads.assign`         | `date=YYYY-MM-DD` (default today): `{total, autoAssigned, unassigned, spread, nextUp, members[{fullName, autoAssignEnabled, leads, autoAssignedLeads, lastAutoAssignedAt}], others[]}` |
 | PATCH  | `/lead-assignment/members/:userId` | `leads.assign` | `{enabled}`: switch a telecaller or salesperson in or out of their round-robin (they must hold `leads.auto_assign` or `leads.receive_qualified`) |
 | GET    | `/api-keys`              | `apikeys.manage`       | Keys with prefix, status, last used (never the key or hash) |
@@ -554,6 +598,8 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/finance/revenue` | `finance.dashboard` or `sales.read` | Revenue by employee (or "My revenue" for sales) with date presets (this month, last month, this financial year, all time) or a custom range |
 | `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** and **Edit** (pick a role, which previews the preset's tags), activate or deactivate, reset password. "View tags" needs `permissions.read` |
 | `/admin/permissions` | `permissions.read` | Grid of each role's preset tags |
+| `/reports` | `reports.view` or `reports.view_all` | Five reports with date presets, each exportable to CSV and Excel; badge shows "Everyone's data" or "Your own data" |
+| `/admin/message-templates` | `templates.manage` | WhatsApp templates: create, edit, order, switch off, delete; placeholder list and live preview |
 | `/admin/overview` | `finance.dashboard` | Business overview: the former admin dashboard (money, operations, people) |
 | `/admin/lead-assignment` | `leads.assign` | A day's leads and their split across the telecallers (Even ✓ check), who is next, and on/off switches for both rotations (telecallers; salespeople receiving qualified leads). "Their leads →" opens the leads list filtered to that person |
 | `/admin/api-keys` | `apikeys.manage` | Generate (shown once, with a copy button), list and revoke API keys. API docs with a curl example, and Meta webhook status |
