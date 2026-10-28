@@ -165,3 +165,65 @@ export async function seedSampleLeads(prisma: PrismaClient) {
   }
   console.log(`Seeded ${SAMPLE_LEADS.length} sample leads with ${followUpCount} follow-ups.`);
 }
+
+/** Names for the Meta click-to-WhatsApp demo leads (name + phone only). */
+const WHATSAPP_NAMES = [
+  'Senthil Kumar', 'Revathi M', 'Karthik R', 'Anitha Selvam', 'Murugan P', 'Deepa Ravi', 'Vignesh S', 'Kalaivani',
+  'Prakash N', 'Sangeetha', 'Rajesh Babu', 'Meena K', 'Saravanan', 'Divya Lakshmi', 'Gopal Krishnan', 'Nandhini',
+  'Bala Murugan', 'Priyanka S', 'Arul Doss', 'Malathi', 'Suresh Kannan', 'Jayanthi', 'Mohan Raj', 'Uma Devi',
+  'Ganesh V', 'Bhuvana',
+];
+
+/**
+ * A day's worth of Meta click-to-WhatsApp leads, name and phone only, shared
+ * round-robin across the telecallers exactly as the live intake does:
+ * yesterday's batch (14) and this morning's (12). Runs with the CRM sample data.
+ */
+export async function seedWhatsAppLeads(prisma: PrismaClient) {
+  if ((await prisma.lead.count({ where: { sourceDetail: { startsWith: 'Meta click-to-WhatsApp' } } })) > 0) {
+    console.log('WhatsApp demo leads already exist; skipping.');
+    return;
+  }
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@precon.local' }, select: { id: true } });
+  // Rotation order = the order the live round-robin starts in (oldest account first).
+  const telecallers = await prisma.user.findMany({
+    where: { email: { in: ['telecaller@precon.local', 'telecaller2@precon.local', 'telecaller3@precon.local'] } },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  if (telecallers.length === 0) return;
+
+  const now = Date.now();
+  const yesterday = Array.from({ length: 14 }, (_, i) => at(-1, 9).getTime() + i * 40 * 60 * 1000); // 09:00 to ~17:40
+  const today = Array.from({ length: 12 }, (_, i) => now - (12 - i) * 3 * 60 * 1000); // the last 36 minutes
+  const lastAssigned = new Map<string, Date>();
+
+  const times = [...yesterday, ...today];
+  for (const [i, time] of times.entries()) {
+    const owner = telecallers[i % telecallers.length];
+    const createdAt = new Date(time);
+    const isYesterday = i < yesterday.length;
+    await prisma.lead.create({
+      data: {
+        name: WHATSAPP_NAMES[i % WHATSAPP_NAMES.length],
+        phone: `70100${String(10001 + i).padStart(5, '0')}`,
+        source: 'META',
+        productInterest: null, // not known yet: the telecaller qualifies it
+        // Some of yesterday's are already being worked.
+        status: isYesterday && i % 3 === 0 ? 'CONTACTED' : 'NEW',
+        assignedToId: owner.id,
+        autoAssigned: true,
+        telecallerId: owner.id,
+        createdById: admin.id,
+        sourceDetail: 'Meta click-to-WhatsApp ad (demo)',
+        createdAt,
+      },
+    });
+    lastAssigned.set(owner.id, createdAt);
+  }
+  // Continue the rotation from where the demo batch left off.
+  for (const [id, when] of lastAssigned) {
+    await prisma.user.update({ where: { id }, data: { lastAutoAssignedAt: when, autoAssignEnabled: true } });
+  }
+  console.log(`Seeded ${times.length} Meta WhatsApp leads (name + phone) round-robin across ${telecallers.length} telecallers.`);
+}

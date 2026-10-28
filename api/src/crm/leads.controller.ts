@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   CurrentUser,
+  RequireAnyPermission,
   RequirePermissions,
 } from '../access-control/access-policy.decorators.js';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
@@ -76,10 +77,12 @@ export class LeadsController {
   }
 
   @Patch(':id')
-  @RequirePermissions(PERMISSIONS.LEADS_WRITE)
+  @RequireAnyPermission(PERMISSIONS.LEADS_WRITE, PERMISSIONS.LEADS_QUALIFY)
   @ApiOperation({
-    summary: 'Edit a lead or move it through the pipeline (needs leads.write)',
-    description: 'Changing assignedToId also needs leads.assign. ' + SCOPE_NOTE,
+    summary: 'Edit a lead or move it through the pipeline (leads.write, or leads.qualify for your own leads)',
+    description:
+      'Changing assignedToId also needs leads.assign. With leads.qualify but not leads.write you can only edit leads ' +
+      'assigned to you, and not their phone or source. ' + SCOPE_NOTE,
   })
   update(
     @CurrentUser() user: AuthenticatedUser,

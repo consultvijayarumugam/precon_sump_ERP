@@ -1,10 +1,19 @@
 "use client";
 
+import { Upload } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { LeadsTable, Pager } from "@/components/leads-table";
-import { ErrorText, inputClass, LinkButton, NoAccess, PageHeader } from "@/components/ui";
+import {
+  ErrorText,
+  inputClass,
+  LinkButton,
+  NoAccess,
+  PageHeader,
+  secondaryButtonClass,
+} from "@/components/ui";
 import { queryString } from "@/lib/api";
 import {
   LEAD_SOURCES,
@@ -32,6 +41,7 @@ function LeadsView() {
     status: params.get("status") ?? "",
     source: params.get("source") ?? "",
     productInterest: params.get("productInterest") ?? "",
+    assignedToId: params.get("assignedToId") ?? "",
     search: params.get("search") ?? "",
     page: Number(params.get("page") ?? 1),
   };
@@ -50,6 +60,8 @@ function LeadsView() {
     router.replace(`${pathname}${queryString({ ...next, page: next.page > 1 ? next.page : undefined })}`);
   }
 
+  const canAssign = can(TAGS.LEADS_ASSIGN);
+  const assignees = useApi<{ id: string; fullName: string; role: { name: string } }[]>(canAssign ? "/leads/assignees" : null);
   const { data, error } = useApi<Paginated<LeadListItem>>(
     `/leads${queryString({ ...filters, pageSize: PAGE_SIZE })}`,
   );
@@ -58,9 +70,18 @@ function LeadsView() {
     <>
       <PageHeader
         title={can(TAGS.LEADS_READ_ALL) ? "All leads" : "My leads"}
-        action={can(TAGS.LEADS_WRITE) && <LinkButton href="/leads/new">New lead</LinkButton>}
+        action={
+          can(TAGS.LEADS_WRITE) && (
+            <div className="flex gap-2">
+              <Link href="/leads/import" className={secondaryButtonClass}>
+                <Upload className="size-4" aria-hidden /> Import
+              </Link>
+              <LinkButton href="/leads/new">New lead</LinkButton>
+            </div>
+          )
+        }
       />
-      <div className="mb-4 grid gap-2 sm:grid-cols-4">
+      <div className={`mb-4 grid gap-2 ${canAssign ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
         <input
           className={inputClass}
           placeholder="Search name, phone, city"
@@ -95,6 +116,16 @@ function LeadsView() {
             </option>
           ))}
         </select>
+        {canAssign && (
+          <select className={inputClass} value={filters.assignedToId} onChange={(e) => setFilter("assignedToId", e.target.value)}>
+            <option value="">Everyone</option>
+            {assignees.data?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.fullName} ({a.role.name})
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       <ErrorText error={error} />
       {data && (

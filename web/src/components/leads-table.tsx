@@ -33,7 +33,7 @@ export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; 
             <th className={thClass}>Product</th>
             <th className={thClass}>Source</th>
             {variant === "all" && <th className={thClass}>Status</th>}
-            {showOwner && <th className={thClass}>Salesperson</th>}
+            {showOwner && <th className={thClass}>Assigned to</th>}
             <th className={thClass}>{variant === "won" ? "Won on" : "Next follow-up"}</th>
           </tr>
         </thead>
@@ -58,7 +58,12 @@ export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; 
                     <StatusBadge status={lead.status} />
                   </td>
                 )}
-                {showOwner && <td className={tdClass}>{lead.assignedTo?.fullName ?? <em>Unassigned</em>}</td>}
+                {showOwner && (
+                  <td className={tdClass}>
+                    {lead.assignedTo?.fullName ?? <em>Unassigned</em>}
+                    {lead.autoAssigned && <div className="text-xs text-neutral-500">round-robin</div>}
+                  </td>
+                )}
                 <td className={tdClass}>
                   {variant === "won" ? (
                     lead.closedAt ? formatDate(lead.closedAt) : "-"

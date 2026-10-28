@@ -17,7 +17,8 @@ export type AccessPolicy =
   | { type: 'public' }
   | { type: 'authenticated' }
   | { type: 'permissions'; permissions: PermissionKey[] }
-  | { type: 'anyPermission'; permissions: PermissionKey[] };
+  | { type: 'anyPermission'; permissions: PermissionKey[] }
+  | { type: 'apiKey' };
 
 /** No login needed (e.g. login itself, health check). */
 export const Public = () =>
@@ -48,3 +49,10 @@ export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthenticatedUser =>
     ctx.switchToHttp().getRequest().user,
 );
+
+/**
+ * Called by an external system with an API key (X-API-Key header) instead of a
+ * user login. The global user guards step aside; ApiKeyGuard (applied on the
+ * route) checks the key. See src/intake/api-key.guard.ts.
+ */
+export const ApiKeyPolicy = () => SetMetadata(ACCESS_POLICY_KEY, { type: 'apiKey' } satisfies AccessPolicy);

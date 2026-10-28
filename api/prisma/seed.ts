@@ -18,16 +18,21 @@ import {
   ROLES,
   type RoleKey,
 } from '../src/access-control/permission-catalog.js';
-import { seedSampleLeads } from './seed-crm.js';
+import { seedSampleLeads, seedWhatsAppLeads } from './seed-crm.js';
 import { seedFinanceAndStock } from './seed-finance.js';
 import { seedServiceAndInstallations } from './seed-service.js';
 import { seedHr } from './seed-hr.js';
+import { seedDevApiKeys } from './seed-dev-api-keys.js';
+import { seedWorkflow } from './seed-workflow.js';
 
 const DEMO_USERS: { email: string; fullName: string; phone: string; role: RoleKey }[] = [
   { email: 'admin@precon.local', fullName: 'Asha Admin', phone: '9000000001', role: ROLES.ADMIN },
   { email: 'sales@precon.local', fullName: 'Suresh Sales', phone: '9000000002', role: ROLES.SALES },
   { email: 'sales2@precon.local', fullName: 'Priya Sales', phone: '9000000005', role: ROLES.SALES },
   { email: 'telecaller@precon.local', fullName: 'Tara Telecaller', phone: '9000000003', role: ROLES.TELECALLER },
+  // Three telecallers share incoming leads round-robin.
+  { email: 'telecaller2@precon.local', fullName: 'Kavya Telecaller', phone: '9000000007', role: ROLES.TELECALLER },
+  { email: 'telecaller3@precon.local', fullName: 'Arjun Telecaller', phone: '9000000008', role: ROLES.TELECALLER },
   { email: 'supervisor@precon.local', fullName: 'Farid Supervisor', phone: '9000000004', role: ROLES.FACTORY_SUPERVISOR },
   // Service technician: a factory supervisor (that role's preset includes service jobs).
   { email: 'tech@precon.local', fullName: 'Ravi Technician', phone: '9000000006', role: ROLES.FACTORY_SUPERVISOR },
@@ -107,6 +112,7 @@ async function main() {
 
     // 4. Sample CRM data
     await seedSampleLeads(prisma);
+    await seedWhatsAppLeads(prisma);
 
     // 5. Sample finance + stock data
     await seedFinanceAndStock(prisma);
@@ -116,6 +122,12 @@ async function main() {
 
     // 7. Sample HR data: holidays, leave, absences, allowances
     await seedHr(prisma);
+
+    // 8. Telecaller → sales workflow: call logs, handovers, GPS check-ins (needs the leads above)
+    await seedWorkflow(prisma);
+
+    // 9. Dev-only sample API keys (skipped when NODE_ENV=production)
+    await seedDevApiKeys(prisma);
   } finally {
     await prisma.$disconnect();
   }

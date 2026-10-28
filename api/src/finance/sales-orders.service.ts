@@ -182,6 +182,7 @@ export class SalesOrdersService {
     const order = await this.prisma.$transaction(async (tx) => {
       // Product defaults to what the lead wanted; a sump also needs a size.
       const code = dto.product ?? lead.productInterest;
+      if (!code) throw new BadRequestException("The lead's product isn't known yet; choose the product for this order");
       // A size sent with microbes is refused (resolveSku), not silently dropped.
       const size = code === 'SUMP' ? (dto.sizeLitres ?? lead.sumpSizeLitres) : (dto.sizeLitres ?? null);
       const productId = await this.stock.productIdFor(tx, code, size);

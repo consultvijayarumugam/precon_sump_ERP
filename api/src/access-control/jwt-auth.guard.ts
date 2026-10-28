@@ -44,6 +44,8 @@ export class JwtAuthGuard implements CanActivate {
       throw new ForbiddenException('This endpoint has no access policy');
     }
     if (policy.type === 'public') return true;
+    // API-key routes are checked by ApiKeyGuard on the route itself.
+    if (policy.type === 'apiKey') return true;
 
     const request = context.switchToHttp().getRequest<Request>();
     const token = this.extractBearerToken(request);

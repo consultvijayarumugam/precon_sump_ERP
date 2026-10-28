@@ -12,10 +12,14 @@ export const PERMISSIONS = {
   USERS_MANAGE: 'users.manage',
   PERMISSIONS_READ: 'permissions.read',
   PERMISSIONS_ASSIGN: 'permissions.assign',
+  APIKEYS_MANAGE: 'apikeys.manage',
   LEADS_READ: 'leads.read',
   LEADS_READ_ALL: 'leads.read_all',
   LEADS_WRITE: 'leads.write',
+  LEADS_QUALIFY: 'leads.qualify',
   LEADS_ASSIGN: 'leads.assign',
+  LEADS_AUTO_ASSIGN: 'leads.auto_assign',
+  LEADS_RECEIVE_QUALIFIED: 'leads.receive_qualified',
   FOLLOWUPS_WRITE: 'followups.write',
   SALES_READ: 'sales.read',
   SALES_READ_ALL: 'sales.read_all',
@@ -72,6 +76,11 @@ export const PERMISSION_DEFINITIONS: {
     description: 'Grant or revoke permission tags for individual users',
   },
   {
+    key: PERMISSIONS.APIKEYS_MANAGE,
+    module: 'admin',
+    description: 'Create, view and revoke API keys for the public create-lead API',
+  },
+  {
     key: PERMISSIONS.LEADS_READ,
     module: 'crm',
     description: 'View leads assigned to you, their follow-ups and calendar',
@@ -87,9 +96,25 @@ export const PERMISSION_DEFINITIONS: {
     description: 'Create leads and edit leads you can see',
   },
   {
+    key: PERMISSIONS.LEADS_QUALIFY,
+    module: 'crm',
+    description:
+      'Update leads assigned to you after a call: name, email, city, product, size, notes, status. Not phone or source; no creating, importing or reassigning',
+  },
+  {
     key: PERMISSIONS.LEADS_ASSIGN,
     module: 'crm',
     description: 'Assign or reassign a lead to a salesperson',
+  },
+  {
+    key: PERMISSIONS.LEADS_AUTO_ASSIGN,
+    module: 'crm',
+    description: 'Receive new incoming leads (import, API, Meta) by round-robin',
+  },
+  {
+    key: PERMISSIONS.LEADS_RECEIVE_QUALIFIED,
+    module: 'crm',
+    description: 'Receive leads that telecallers qualify and hand over (round-robin across sales)',
   },
   {
     key: PERMISSIONS.FOLLOWUPS_WRITE,
@@ -256,16 +281,21 @@ export const ROLE_DEFINITIONS: {
     key: ROLES.ADMIN,
     name: 'Admin',
     description: 'Everything, including users, roles and approvals',
-    defaultPermissions: PERMISSION_DEFINITIONS.map((p) => p.key),
+    // Every capability. leads.auto_assign / leads.receive_qualified aren't ones:
+    // they put the holder in a round-robin (telecallers / sales), not the admin.
+    defaultPermissions: PERMISSION_DEFINITIONS.map((p) => p.key).filter(
+      (k) => k !== PERMISSIONS.LEADS_AUTO_ASSIGN && k !== PERMISSIONS.LEADS_RECEIVE_QUALIFIED,
+    ),
   },
   {
     key: ROLES.SALES,
     name: 'Sales',
     description: 'Own leads, follow-ups, won leads, own orders and revenue, site visits, own leave and allowances',
     defaultPermissions: [
-      // CRM: own leads (read/write), won, follow-ups, calendar
+      // CRM: own leads (read/write), won, follow-ups, calendar; receives qualified leads
       PERMISSIONS.LEADS_READ,
       PERMISSIONS.LEADS_WRITE,
+      PERMISSIONS.LEADS_RECEIVE_QUALIFIED,
       PERMISSIONS.FOLLOWUPS_WRITE,
       // Finance: own orders (read/write) and own revenue
       PERMISSIONS.SALES_READ,
@@ -279,9 +309,11 @@ export const ROLE_DEFINITIONS: {
   {
     key: ROLES.TELECALLER,
     name: 'Telecaller',
-    description: 'Leads (read), follow-ups, calendar, own leave and allowances',
+    description: 'Own leads: qualify them (update details and status), follow-ups, calendar; receives round-robin leads; own leave and allowances',
     defaultPermissions: [
       PERMISSIONS.LEADS_READ,
+      PERMISSIONS.LEADS_QUALIFY,
+      PERMISSIONS.LEADS_AUTO_ASSIGN,
       PERMISSIONS.FOLLOWUPS_WRITE,
       ...OWN_LEAVE_AND_ALLOWANCES,
     ],

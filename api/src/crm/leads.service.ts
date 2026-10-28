@@ -116,7 +116,7 @@ export class LeadsService {
         email: dto.email ?? null,
         city: dto.city || null,
         source: dto.source,
-        productInterest: dto.productInterest,
+        productInterest: dto.productInterest ?? null,
         // A size only makes sense for a sump.
         sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
         status,
@@ -131,11 +131,20 @@ export class LeadsService {
   }
 
   async update(user: AuthenticatedUser, id: string, dto: UpdateLeadDto) {
+    // leads.qualify without leads.write: only your own leads, and not their phone or source
+    // (the phone is what duplicate checks match on; the source records where the lead came from).
+    const qualifyOnly = !user.permissions.includes(PERMISSIONS.LEADS_WRITE);
     const existing = await this.prisma.lead.findFirst({
-      where: { AND: [{ id }, leadScope(user)] },
-      select: { status: true, assignedToId: true, salesOrder: { select: { status: true } } },
+      where: { AND: [{ id }, leadScope(user), qualifyOnly ? { assignedToId: user.id } : {}] },
+      select: { status: true, assignedToId: true, phone: true, source: true, salesOrder: { select: { status: true } } },
     });
     if (!existing) throw new NotFoundException('Lead not found');
+    if (qualifyOnly && dto.phone !== undefined && dto.phone !== existing.phone) {
+      throw new ForbiddenException("You can't change a lead's phone number; ask an admin");
+    }
+    if (qualifyOnly && dto.source !== undefined && dto.source !== existing.source) {
+      throw new ForbiddenException("You can't change a lead's source; ask an admin");
+    }
     if (
       dto.status &&
       dto.status !== LeadStatus.WON &&
@@ -156,14 +165,17 @@ export class LeadsService {
       productInterest: dto.productInterest,
       notes: dto.notes === undefined ? undefined : dto.notes || null,
     };
-    // Sump size: switching to microbes clears it; otherwise set it when given.
-    if (dto.productInterest === 'MICROBES') data.sumpSizeLitres = null;
+    // Sump size: switching to microbes (or back to "not known") clears it; otherwise set it when given.
+    if (dto.productInterest === 'MICROBES' || dto.productInterest === null) data.sumpSizeLitres = null;
     else if (dto.sumpSizeLitres !== undefined) data.sumpSizeLitres = dto.sumpSizeLitres;
 
     if (dto.assignedToId !== undefined && dto.assignedToId !== existing.assignedToId) {
       this.requireAssignPermission(user);
-      if (dto.assignedToId) await this.ensureAssignable(dto.assignedToId);
+      const targetTags = dto.assignedToId ? await this.ensureAssignable(dto.assignedToId) : [];
       data.assignedToId = dto.assignedToId;
+      data.autoAssigned = false; // now a manual assignment
+      // Moved to a telecaller by hand: they're now the one working it (for their scorecard).
+      if (targetTags.includes(PERMISSIONS.LEADS_AUTO_ASSIGN)) data.telecallerId = dto.assignedToId;
     }
 
     if (dto.status && dto.status !== existing.status) {
@@ -248,7 +260,8 @@ export class LeadsService {
     }
   }
 
-  private async ensureAssignable(userId: string) {
+  /** Throws unless the user can hold leads; returns their tags. */
+  private async ensureAssignable(userId: string): Promise<string[]> {
     const target = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { isActive: true },
@@ -262,5 +275,6 @@ export class LeadsService {
         `Assignee must hold the ${PERMISSIONS.LEADS_READ} tag`,
       );
     }
+    return permissions;
   }
 }

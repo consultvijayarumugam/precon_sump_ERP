@@ -62,9 +62,11 @@ export class CreateLeadDto {
   @IsEnum(LeadSource)
   source: LeadSource;
 
-  @ApiProperty({ enum: ProductInterest })
+  @ApiPropertyOptional({ enum: ProductInterest, nullable: true, description: 'Null or left out = not known yet' })
+  @IsOptional()
+  @Transform(emptyToNull)
   @IsEnum(ProductInterest)
-  productInterest: ProductInterest;
+  productInterest?: ProductInterest | null;
 
   @ApiPropertyOptional({
     enum: SUMP_SIZES_LITRES,

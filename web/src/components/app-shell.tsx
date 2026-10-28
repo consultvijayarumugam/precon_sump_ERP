@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Contact,
   HardHat,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -20,6 +21,7 @@ import {
   PhoneCall,
   Receipt,
   ShieldCheck,
+  Shuffle,
   TrendingUp,
   TriangleAlert,
   Trophy,
@@ -50,21 +52,25 @@ interface NavItem {
 // Sections by module. Items the user lacks the tag for are hidden, and a
 // section with no visible items disappears entirely. The API still enforces
 // every tag; this only decides what is worth showing.
-const NAV: { module: ModuleKey; title?: string; items: NavItem[] }[] = [
+// `whenAny`: the whole section shows only with one of these tags (keeps back-office
+// sections off the telecaller and sales screens; their pages and APIs are unchanged).
+const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; items: NavItem[] }[] = [
   { module: "home", items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }] },
   {
     module: "crm",
     title: "CRM",
     items: [
       { href: "/leads", label: "Leads", icon: Contact, tag: TAGS.LEADS_READ },
-      { href: "/leads/won", label: "Won", icon: Trophy, tag: TAGS.LEADS_READ },
+      { href: "/leads/won", label: "Won", icon: Trophy, anyTags: [TAGS.LEADS_WRITE, TAGS.LEADS_READ_ALL] },
       { href: "/follow-ups", label: "Follow-ups", icon: PhoneCall, tag: TAGS.LEADS_READ },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, tag: TAGS.LEADS_READ },
+      { href: "/site-visits", label: "Site visits", icon: MapPin, tag: TAGS.SITEVISIT_READ },
     ],
   },
   {
     module: "finance",
     title: "Finance",
+    whenAny: [TAGS.FINANCE_DASHBOARD],
     items: [
       { href: "/orders", label: "Orders", icon: Receipt, tag: TAGS.SALES_READ },
       { href: "/finance/revenue", label: "Revenue", icon: TrendingUp, anyTags: [TAGS.FINANCE_DASHBOARD, TAGS.SALES_READ] },
@@ -80,7 +86,6 @@ const NAV: { module: ModuleKey; title?: string; items: NavItem[] }[] = [
       { href: "/installations", label: "Installations", icon: HardHat, tag: TAGS.INSTALLATIONS_READ },
       { href: "/service", label: "Service jobs", icon: Wrench, tag: TAGS.SERVICE_READ },
       { href: "/service/follow-ups", label: "Service follow-ups", icon: ListChecks, tag: TAGS.SERVICE_READ },
-      { href: "/site-visits", label: "Site visits", icon: MapPin, tag: TAGS.SITEVISIT_READ },
     ],
   },
   {
@@ -99,8 +104,11 @@ const NAV: { module: ModuleKey; title?: string; items: NavItem[] }[] = [
     module: "admin",
     title: "Admin",
     items: [
+      { href: "/admin/overview", label: "Business overview", icon: LayoutDashboard, tag: TAGS.FINANCE_DASHBOARD },
       { href: "/admin/users", label: "Users", icon: Users, tag: TAGS.USERS_READ },
       { href: "/admin/permissions", label: "Permissions & tags", icon: ShieldCheck, tag: TAGS.PERMISSIONS_READ },
+      { href: "/admin/lead-assignment", label: "Lead assignment", icon: Shuffle, tag: TAGS.LEADS_ASSIGN },
+      { href: "/admin/api-keys", label: "API keys", icon: KeyRound, tag: TAGS.APIKEYS_MANAGE },
     ],
   },
 ];
@@ -169,7 +177,9 @@ function SidebarContent({
   const pathname = usePathname();
   const current = activeHref(pathname);
   const visible = (i: NavItem) => (i.anyTags ? i.anyTags.some(can) : !i.tag || can(i.tag));
-  const sections = NAV.map((s) => ({ ...s, items: s.items.filter(visible) })).filter(
+  const sections = NAV.filter((s) => !s.whenAny || s.whenAny.some(can))
+    .map((s) => ({ ...s, items: s.items.filter(visible) }))
+    .filter(
     (s) => s.items.length > 0,
   );
 

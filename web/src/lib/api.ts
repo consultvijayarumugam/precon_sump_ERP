@@ -48,6 +48,9 @@ export const apiPost = <T>(path: string, body?: unknown) =>
 export const apiPatch = <T>(path: string, body: unknown) =>
   api<T>(path, { method: "PATCH", body: JSON.stringify(body) });
 
+export const apiPut = <T>(path: string, body: unknown) =>
+  api<T>(path, { method: "PUT", body: JSON.stringify(body) });
+
 /** Builds "?a=1&b=2", skipping empty values. */
 export function queryString(params: Record<string, string | number | undefined | null>) {
   const search = new URLSearchParams();
@@ -77,4 +80,37 @@ export async function logout(): Promise<void> {
   } finally {
     localStorage.removeItem(TOKEN_KEY);
   }
+}
+
+/** POST a file (multipart/form-data, field "file") plus any text fields, and parse the JSON reply. */
+export async function apiUpload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
+  const token = getToken();
+  const form = new FormData();
+  for (const [name, value] of Object.entries(fields)) form.append(name, value);
+  form.append("file", file);
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    body: form, // the browser sets the multipart Content-Type and boundary
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = Array.isArray(body.message) ? body.message.join(", ") : body.message;
+    throw new ApiError(response.status, message ?? response.statusText);
+  }
+  return body as T;
+}
+
+/** GET a file with the user's token and save it in the browser. */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) throw new ApiError(response.status, response.statusText);
+  const name = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await response.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }

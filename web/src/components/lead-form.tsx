@@ -26,7 +26,8 @@ export interface LeadFormValues {
   email: string;
   city: string;
   source: LeadSource;
-  productInterest: ProductInterest;
+  /** "" = not known yet. */
+  productInterest: ProductInterest | "";
   /** "" = not decided yet (sumps only). */
   sumpSizeLitres: string;
   status: LeadStatus;
@@ -35,7 +36,8 @@ export interface LeadFormValues {
 }
 
 /** What the form submits: assignedToId is null for "unassigned", absent if the user can't assign. */
-export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId" | "sumpSizeLitres"> & {
+export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId" | "sumpSizeLitres" | "productInterest"> & {
+  productInterest: ProductInterest | null;
   assignedToId?: string | null;
   sumpSizeLitres: number | null;
 };
@@ -62,10 +64,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Create/edit form. The salesperson picker only appears with leads.assign. */
+/**
+ * Create/edit form. The salesperson picker only appears with leads.assign.
+ * With leads.qualify but not leads.write (telecallers), phone and source are read-only.
+ */
 export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
   const { can } = useAuth();
   const canAssign = can(TAGS.LEADS_ASSIGN);
+  const lockContact = !can(TAGS.LEADS_WRITE);
   const assignees = useApi<Assignee[]>(canAssign ? "/leads/assignees" : null);
 
   const [values, setValues] = useState<LeadFormValues>({
@@ -74,7 +80,8 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     email: initial?.email ?? "",
     city: initial?.city ?? "",
     source: initial?.source ?? "MANUAL",
-    productInterest: initial?.productInterest ?? "SUMP",
+    // An existing lead keeps "not known yet"; a new one starts at Sump.
+    productInterest: initial ? (initial.productInterest ?? "") : "SUMP",
     sumpSizeLitres: initial?.sumpSizeLitres ? String(initial.sumpSizeLitres) : "",
     status: initial?.status ?? "NEW",
     notes: initial?.notes ?? "",
@@ -91,9 +98,10 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const { assignedToId, sumpSizeLitres, ...rest } = values;
+      const { assignedToId, sumpSizeLitres, productInterest, ...rest } = values;
       await onSubmit({
         ...rest,
+        productInterest: productInterest || null,
         // A size only applies to sumps; "" = not decided yet.
         sumpSizeLitres: values.productInterest === "SUMP" && sumpSizeLitres ? Number(sumpSizeLitres) : null,
         // Only send assignment if the user may assign; "" means unassigned.
@@ -120,6 +128,8 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
             placeholder="98765 43210"
             value={values.phone}
             onChange={(e) => set("phone", e.target.value)}
+            disabled={lockContact}
+            title={lockContact ? "Only an admin or salesperson can change the phone number" : undefined}
           />
         </Field>
         <Field label="Email">
@@ -129,20 +139,27 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
           <input className={inputClass} value={values.city} onChange={(e) => set("city", e.target.value)} />
         </Field>
         <Field label="Source *">
-          <select className={inputClass} value={values.source} onChange={(e) => set("source", e.target.value as LeadSource)}>
-            {LEAD_SOURCES.map((s) => (
+          <select
+            className={inputClass}
+            value={values.source}
+            onChange={(e) => set("source", e.target.value as LeadSource)}
+            disabled={lockContact}
+            title={lockContact ? "Only an admin or salesperson can change the source" : undefined}
+          >
+            {LEAD_SOURCES.filter((s) => s !== "API" || initial?.source === "API").map((s) => (
               <option key={s} value={s}>
                 {SOURCE_LABELS[s]}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Product interest *">
+        <Field label="Product interest">
           <select
             className={inputClass}
             value={values.productInterest}
-            onChange={(e) => set("productInterest", e.target.value as ProductInterest)}
+            onChange={(e) => set("productInterest", e.target.value as ProductInterest | "")}
           >
+            <option value="">Not known yet</option>
             {PRODUCT_INTERESTS.map((p) => (
               <option key={p} value={p}>
                 {PRODUCT_LABELS[p]}
@@ -172,7 +189,7 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
           </select>
         </Field>
         {canAssign && (
-          <Field label="Assigned salesperson">
+          <Field label="Assigned to">
             <select className={inputClass} value={values.assignedToId} onChange={(e) => set("assignedToId", e.target.value)}>
               <option value="">Unassigned</option>
               {assignees.data?.map((a) => (

@@ -1,7 +1,7 @@
 // CRM types and display labels, mirroring the API's enums.
 
 export const LEAD_STATUSES = ["NEW", "CONTACTED", "QUALIFIED", "QUOTED", "WON", "LOST"] as const;
-export const LEAD_SOURCES = ["META", "MANUAL", "WEBSITE", "REFERRAL", "OTHER"] as const;
+export const LEAD_SOURCES = ["META", "MANUAL", "WEBSITE", "REFERRAL", "OTHER", "API"] as const;
 /** The two product types (see CLAUDE.md "Products"). */
 export const PRODUCT_INTERESTS = ["SUMP", "MICROBES"] as const;
 /** Valid sump sizes in litres; each size is its own stock item. */
@@ -36,6 +36,7 @@ export const SOURCE_LABELS: Record<LeadSource, string> = {
   WEBSITE: "Website",
   REFERRAL: "Referral",
   OTHER: "Other",
+  API: "External system (API)",
 };
 
 export const PRODUCT_LABELS: Record<ProductInterest, string> = {
@@ -47,8 +48,9 @@ const litres = new Intl.NumberFormat("en-IN");
 /** 10000 -> "10,000 L" */
 export const formatLitres = (sizeLitres: number) => `${litres.format(sizeLitres)} L`;
 
-/** "Sump · 10,000 L", "Sump (size not decided)" or "Microbes". */
-export function productInterestLabel(p: { productInterest: ProductInterest; sumpSizeLitres?: number | null }) {
+/** "Sump · 10,000 L", "Sump (size not decided)", "Microbes" or "Product not known yet". */
+export function productInterestLabel(p: { productInterest: ProductInterest | null; sumpSizeLitres?: number | null }) {
+  if (!p.productInterest) return "Product not known yet";
   if (p.productInterest !== "SUMP") return PRODUCT_LABELS[p.productInterest];
   return p.sumpSizeLitres ? `Sump · ${formatLitres(p.sumpSizeLitres)}` : "Sump (size not decided)";
 }
@@ -75,10 +77,15 @@ export interface Lead {
   email: string | null;
   city: string | null;
   source: LeadSource;
-  productInterest: ProductInterest;
+  /** Null = not known yet (e.g. a Meta lead with just name and phone). */
+  productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   status: LeadStatus;
   notes: string | null;
+  /** The round-robin picked the assignee (cleared when someone reassigns it by hand). */
+  autoAssigned: boolean;
+  /** Where it came from in detail, e.g. "Import: march.xlsx", "API key: Website form". */
+  sourceDetail: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -107,7 +114,7 @@ export interface FollowUpWithLead extends FollowUp {
     name: string;
     phone: string;
     status: LeadStatus;
-    productInterest: ProductInterest;
+    productInterest: ProductInterest | null;
     sumpSizeLitres: number | null;
     assignedTo: UserRef | null;
   };

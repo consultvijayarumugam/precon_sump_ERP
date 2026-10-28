@@ -29,6 +29,7 @@ import {
   toDateTimeLocal,
 } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
+import { CALL_OUTCOME_LABELS, CallOutcome, CLOSING_OUTCOMES } from "@/lib/workflow";
 
 function AddFollowUp({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
   // Default: tomorrow at 11:00.
@@ -80,6 +81,53 @@ function AddFollowUp({ leadId, onAdded }: { leadId: string; onAdded: () => void 
   );
 }
 
+interface CallLogRow {
+  id: string;
+  outcome: CallOutcome;
+  note: string | null;
+  calledAt: string;
+  caller: { id: string; fullName: string };
+}
+
+/** Every call logged on the lead (by telecallers and sales), newest first. */
+function CallHistory({ leadId, refreshKey }: { leadId: string; refreshKey: string }) {
+  const { data, error } = useApi<CallLogRow[]>(`/leads/${leadId}/calls?r=${refreshKey}`);
+  return (
+    <section className="space-y-3">
+      <h2 className="font-medium">
+        Call history{data && data.length > 0 && <span className="ml-1 text-neutral-500">· {data.length}</span>}
+      </h2>
+      <ErrorText error={error} />
+      {data && data.length === 0 && <p className="text-sm text-neutral-500">No calls logged yet.</p>}
+      {data && data.length > 0 && (
+        <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
+          {data.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+              <span>
+                <span
+                  className={`font-semibold ${
+                    CLOSING_OUTCOMES.includes(c.outcome)
+                      ? "text-red-700 dark:text-red-300"
+                      : c.outcome === "INTERESTED"
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : ""
+                  }`}
+                >
+                  {CALL_OUTCOME_LABELS[c.outcome]}
+                </span>
+                {c.note && <span className="text-neutral-600 dark:text-neutral-400"> · {c.note}</span>}
+              </span>
+              <span className="text-xs text-neutral-500">
+                {formatDateTime(c.calledAt)} · {c.caller.fullName}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -92,7 +140,8 @@ export default function LeadDetailPage() {
   if (error) return <ErrorText error={error} />;
   if (!lead) return <p className="text-sm text-neutral-500">Loading…</p>;
 
-  const canWrite = can(TAGS.LEADS_WRITE);
+  // Telecallers qualify their own leads with leads.qualify; the scope check is on the server.
+  const canWrite = can(TAGS.LEADS_WRITE) || can(TAGS.LEADS_QUALIFY);
 
   async function changeStatus(status: LeadStatus) {
     setStatusError(null);
@@ -149,8 +198,14 @@ export default function LeadDetailPage() {
           <Detail label="Email">{lead.email ?? "-"}</Detail>
           <Detail label="City">{lead.city ?? "-"}</Detail>
           <Detail label="Product interest">{productInterestLabel(lead)}</Detail>
-          <Detail label="Source">{SOURCE_LABELS[lead.source]}</Detail>
-          <Detail label="Salesperson">{lead.assignedTo?.fullName ?? "Unassigned"}</Detail>
+          <Detail label="Source">
+            {SOURCE_LABELS[lead.source]}
+            {lead.sourceDetail && <span className="text-neutral-500"> · {lead.sourceDetail}</span>}
+          </Detail>
+          <Detail label="Assigned to">
+            {lead.assignedTo?.fullName ?? "Unassigned"}
+            {lead.autoAssigned && <span className="text-neutral-500"> · round-robin</span>}
+          </Detail>
           <Detail label="Created">
             {formatDate(lead.createdAt)} by {lead.createdBy.fullName}
           </Detail>
@@ -197,6 +252,8 @@ export default function LeadDetailPage() {
           <ErrorText error={statusError} />
         </section>
       )}
+
+      <CallHistory leadId={lead.id} refreshKey={lead.updatedAt} />
 
       <section className="space-y-3">
         <h2 className="font-medium">Follow-ups</h2>

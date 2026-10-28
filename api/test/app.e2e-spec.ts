@@ -14,7 +14,7 @@ describe('Auth and RBAC (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ rawBody: true });
     configureApp(app);
     await app.init();
   });
@@ -687,7 +687,7 @@ describe('Auth and RBAC (e2e)', () => {
       const loginAsNew = () => http().post('/api/v1/auth/login').send({ email, password: 'secret123' });
       const asTelecaller = (await loginAsNew().expect(200)).body.user;
       expect(asTelecaller.permissions).toEqual(
-        ['allowances.claim', 'allowances.read', 'followups.write', 'leads.read', 'leave.apply', 'leave.read'],
+        ['allowances.claim', 'allowances.read', 'followups.write', 'leads.auto_assign', 'leads.qualify', 'leads.read', 'leave.apply', 'leave.read'],
       );
 
       // Give a custom tag, then change role: the custom tag is cleared, preset applies.
@@ -713,4 +713,520 @@ describe('Auth and RBAC (e2e)', () => {
       await http().patch(`/api/v1/users/${me.id}`).set(as(admin)).send({ fullName: 'Asha Admin' }).expect(200);
     });
   });
+
+  describe('Lead intake: import, public API, Meta webhook', () => {
+    let admin: string;
+    let sales: string;
+    let telecaller: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const savedEnv = { ...process.env };
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+      telecaller = (await login('telecaller@precon.local')).body.accessToken;
+      process.env.META_VERIFY_TOKEN = 'e2e-verify';
+      process.env.META_APP_SECRET = 'e2e-secret';
+    });
+
+    afterAll(async () => {
+      process.env.META_VERIFY_TOKEN = savedEnv.META_VERIFY_TOKEN;
+      process.env.META_APP_SECRET = savedEnv.META_APP_SECRET;
+      const db = await prisma();
+      await db.lead.deleteMany({
+        where: {
+          OR: [
+            { sourceDetail: { startsWith: 'Import: e2e' } },
+            { sourceDetail: { startsWith: 'API key: E2E' } },
+            { externalRef: { startsWith: 'meta:leadgen:e2e-' } },
+          ],
+        },
+      });
+      await db.apiKey.deleteMany({ where: { name: { startsWith: 'E2E' } } });
+    });
+
+    it('import: creates valid rows, skips duplicates, reports invalid rows with reasons', async () => {
+      const csv = [
+        'Name,Phone,City,Product,Sump Size,Source,Assigned Salesperson,Notes,Extra column',
+        'E2E Import Sump,+91 90000 81001,Salem,Sump,"10,000 L",Facebook,sales@precon.local,first,x',
+        'E2E Import Microbes,9000081002,Erode,microbes,,referral,,,',
+        'E2E Dup Of Seed,9840012345,Coimbatore,Sump,,,,,', // Ramesh Kumar's phone from the seed
+        'E2E Dup In File,900-008-1001,Salem,Sump,,,,,', // same as row 2
+        'E2E Bad Phone,12345,Salem,Sump,,,,,',
+        'E2E Bad Size,9000081003,Salem,Sump,7000,,,,',
+        'Example - Ravi Kumar,9000081004,Coimbatore,Sump,10000,Meta,,,',
+      ].join('\n');
+      const res = await http().post('/api/v1/leads/import').set(as(admin))
+        .attach('file', Buffer.from(csv), 'e2e-leads.csv').expect(200);
+      expect(res.body.totalRows).toBe(7);
+      expect(res.body.created).toBe(2);
+      expect(res.body.duplicates.map((d: { row: number }) => d.row)).toEqual([4, 5]);
+      expect(res.body.failed.map((f: { row: number }) => f.row)).toEqual([6, 7, 8]);
+      expect(res.body.failed[1].errors[0]).toMatch(/Sump size/);
+      expect(res.body.ignoredColumns).toEqual(['Extra column']);
+
+      const db = await prisma();
+      const sump = await db.lead.findFirstOrThrow({ where: { name: 'E2E Import Sump' }, include: { assignedTo: true } });
+      expect(sump.source).toBe('META');
+      expect(sump.sumpSizeLitres).toBe(10000);
+      expect(sump.assignedTo?.email).toBe('sales@precon.local');
+    });
+
+    it("import by a salesperson: blank rows go round-robin, own email keeps it, others can't be named", async () => {
+      const csv = 'name,phone,product,assigned salesperson\n' +
+        'E2E Sales Row,9000081010,Sump,\n' +
+        'E2E Sales Mine,9000081012,Sump,sales@precon.local\n' +
+        'E2E Sales Other,9000081011,Sump,Priya Sales\n';
+      const res = await http().post('/api/v1/leads/import').set(as(sales))
+        .attach('file', Buffer.from(csv), 'e2e-sales.csv').expect(200);
+      expect(res.body.created).toBe(2);
+      expect(res.body.failed[0].errors[0]).toMatch(/someone else/);
+      const db = await prisma();
+      const roundRobin = await db.lead.findFirstOrThrow({ where: { name: 'E2E Sales Row' }, include: { assignedTo: { include: { role: true } } } });
+      expect(roundRobin.autoAssigned).toBe(true);
+      expect(roundRobin.assignedTo?.role.key).toBe('telecaller');
+      const mine = await db.lead.findFirstOrThrow({ where: { name: 'E2E Sales Mine' }, include: { assignedTo: true } });
+      expect(mine.assignedTo?.email).toBe('sales@precon.local');
+      expect(mine.autoAssigned).toBe(false);
+    });
+
+    it('import: bad files import nothing; telecaller (no leads.write) is refused', async () => {
+      const wrongType = await http().post('/api/v1/leads/import').set(as(admin))
+        .attach('file', Buffer.from('hello'), 'e2e-notes.txt').expect(400);
+      expect(wrongType.body.message).toMatch(/\.csv or \.xlsx/);
+      const noPhone = await http().post('/api/v1/leads/import').set(as(admin))
+        .attach('file', Buffer.from('name,product\nE2E No Phone,Sump\n'), 'e2e-nophone.csv').expect(400);
+      expect(noPhone.body.message).toMatch(/Missing required column\(s\): phone/);
+      await http().post('/api/v1/leads/import').set(as(admin))
+        .attach('file', Buffer.from('not a spreadsheet'), 'e2e-broken.xlsx').expect(400);
+      await http().post('/api/v1/leads/import').set(as(telecaller))
+        .attach('file', Buffer.from('name,phone,product\nX,9000081020,Sump\n'), 'e2e-t.csv').expect(403);
+    });
+
+    it('import: reads .xlsx files (template layout)', async () => {
+      const tpl = await http().get('/api/v1/leads/import/template?format=xlsx').set(as(admin))
+        .buffer(true).parse((res, cb) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => cb(null, Buffer.concat(chunks)));
+        }).expect(200);
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(tpl.body);
+      const ws = wb.getWorksheet('Leads')!;
+      ws.spliceRows(2, 2); // remove the example rows, as the user would
+      ws.addRow(['E2E Xlsx Lead', 9000081030, 'Karur', 'Sump', 6000, 'Website', '', 'from excel']);
+      const file = Buffer.from(await wb.xlsx.writeBuffer());
+      const res = await http().post('/api/v1/leads/import').set(as(admin)).attach('file', file, 'e2e-leads.xlsx').expect(200);
+      expect(res.body.created).toBe(1);
+      const lead = await (await prisma()).lead.findFirstOrThrow({ where: { name: 'E2E Xlsx Lead' } });
+      expect(lead.phone).toBe('9000081030');
+      expect(lead.sumpSizeLitres).toBe(6000);
+    });
+
+    it('API keys: admin-only; full key shown once; revoked keys stop working', async () => {
+      await http().get('/api/v1/api-keys').set(as(sales)).expect(403);
+      const created = await http().post('/api/v1/api-keys').set(as(admin)).send({ name: 'E2E Partner' }).expect(201);
+      const key: string = created.body.key;
+      expect(key).toMatch(/^precon_/);
+      const list = await http().get('/api/v1/api-keys').set(as(admin)).expect(200);
+      const row = list.body.find((k: { id: string }) => k.id === created.body.id);
+      expect(row.key).toBeUndefined();
+      expect(row.keyHash).toBeUndefined();
+      expect(key.startsWith(row.prefix)).toBe(true);
+
+      const body = { name: 'E2E Api Lead', phone: '9000081040', product: 'SUMP', sumpSizeLitres: 5000, externalId: 'e2e-1' };
+      const first = await http().post('/api/v1/public/leads').set('X-API-Key', key).send(body).expect(201);
+      expect(first.body.status).toBe('created');
+      const lead = await (await prisma()).lead.findUniqueOrThrow({ where: { id: first.body.leadId } });
+      expect(lead.source).toBe('API');
+      expect(lead.sourceDetail).toBe('API key: E2E Partner');
+
+      const samePhone = await http().post('/api/v1/public/leads').set('X-API-Key', key)
+        .send({ ...body, externalId: 'e2e-2', phone: '+91 9000081040' }).expect(200);
+      expect(samePhone.body).toMatchObject({ status: 'duplicate', reason: 'phone' });
+      const sameId = await http().post('/api/v1/public/leads').set('X-API-Key', key)
+        .send({ ...body, phone: '9000081041' }).expect(200);
+      expect(sameId.body).toMatchObject({ status: 'duplicate', reason: 'externalId' });
+
+      await http().post('/api/v1/public/leads').send(body).expect(401);
+      await http().post('/api/v1/public/leads').set('X-API-Key', 'precon_wrongwrongwrongwrong').send(body).expect(401);
+      await http().post(`/api/v1/api-keys/${created.body.id}/revoke`).set(as(admin)).expect(200);
+      await http().post('/api/v1/public/leads').set('X-API-Key', key).send({ ...body, phone: '9000081042' }).expect(401);
+    });
+
+    it('Meta webhook: verify handshake, signed leadgen creates a lead once, bad signatures refused', async () => {
+      const ok = await http().get('/api/v1/webhooks/meta')
+        .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'e2e-verify', 'hub.challenge': '424242' }).expect(200);
+      expect(ok.text).toBe('424242');
+      await http().get('/api/v1/webhooks/meta')
+        .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'nope', 'hub.challenge': '1' }).expect(403);
+
+      const { createHmac } = await import('node:crypto');
+      const payload = JSON.stringify({
+        object: 'page',
+        entry: [{ id: 'p', time: 1, changes: [{ field: 'leadgen', value: {
+          leadgen_id: 'e2e-lg-1', form_id: 'f1',
+          field_data: [
+            { name: 'full_name', values: ['E2E Meta Lead'] },
+            { name: 'phone_number', values: ['+919000081050'] },
+            { name: 'sump_size', values: ['12000'] },
+          ],
+        } }] }],
+      });
+      const sign = (body: string) => 'sha256=' + createHmac('sha256', 'e2e-secret').update(body).digest('hex');
+      const send = (sig: string) => http().post('/api/v1/webhooks/meta')
+        .set('Content-Type', 'application/json').set('X-Hub-Signature-256', sig).send(payload);
+
+      const first = await send(sign(payload)).expect(200);
+      expect(first.body.results[0].status).toBe('created');
+      const again = await send(sign(payload)).expect(200);
+      expect(again.body.results[0].status).toBe('duplicate');
+      await send('sha256=' + '0'.repeat(64)).expect(403);
+
+      const lead = await (await prisma()).lead.findUniqueOrThrow({ where: { externalRef: 'meta:leadgen:e2e-lg-1' } });
+      // A size answer alone means a sump; the lead goes to a telecaller in the rotation.
+      expect(lead).toMatchObject({ source: 'META', productInterest: 'SUMP', sumpSizeLitres: 12000, name: 'E2E Meta Lead', autoAssigned: true });
+      expect(lead.assignedToId).not.toBeNull();
+
+      // Not configured: answer 503, don't crash.
+      delete process.env.META_VERIFY_TOKEN;
+      delete process.env.META_APP_SECRET;
+      await http().get('/api/v1/webhooks/meta').query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'x', 'hub.challenge': '1' }).expect(503);
+      await send(sign(payload)).expect(503);
+      await http().get('/api/v1/health').expect(200);
+    });
+
+    it("telecallers qualify their own leads (leads.qualify) but can't change phone/source, touch others' leads, create or import", async () => {
+      const db = await prisma();
+      const tara = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const created = await http().post('/api/v1/leads').set(as(admin))
+        .send({ name: 'E2E Qualify', phone: '9000083001', source: 'META', assignedToId: tara.id }).expect(201);
+      const id = created.body.id;
+      const other = await http().post('/api/v1/leads').set(as(admin))
+        .send({ name: 'E2E Qualify Other', phone: '9000083002', source: 'META' }).expect(201);
+      try {
+        expect(created.body.productInterest).toBeNull();
+        // After the call: fill in what the customer said and move it along. Same phone/source sent back is fine.
+        const updated = await http().patch(`/api/v1/leads/${id}`).set(as(telecaller)).send({
+          name: 'E2E Qualify Ravi', phone: '9000083001', source: 'META', city: 'Salem',
+          productInterest: 'SUMP', sumpSizeLitres: 10000, status: 'QUALIFIED', notes: 'Needs it in 2 weeks',
+        }).expect(200);
+        expect(updated.body).toMatchObject({ name: 'E2E Qualify Ravi', city: 'Salem', productInterest: 'SUMP', sumpSizeLitres: 10000, status: 'QUALIFIED' });
+
+        const phone = await http().patch(`/api/v1/leads/${id}`).set(as(telecaller)).send({ phone: '9000083009' }).expect(403);
+        expect(phone.body.message).toMatch(/phone/);
+        await http().patch(`/api/v1/leads/${id}`).set(as(telecaller)).send({ source: 'WEBSITE' }).expect(403);
+        await http().patch(`/api/v1/leads/${id}`).set(as(telecaller)).send({ assignedToId: null }).expect(403);
+        await http().patch(`/api/v1/leads/${other.body.id}`).set(as(telecaller)).send({ city: 'X' }).expect(404);
+        await http().post('/api/v1/leads').set(as(telecaller)).send({ name: 'E2E No', phone: '9000083003', source: 'MANUAL' }).expect(403);
+        // A salesperson (leads.write) can still change the phone on their own lead.
+        const salesUser = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
+        await http().patch(`/api/v1/leads/${id}`).set(as(admin)).send({ assignedToId: salesUser.id }).expect(200);
+        await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ phone: '9000083004' }).expect(200);
+      } finally {
+        await db.lead.deleteMany({ where: { id: { in: [id, other.body.id] } } });
+      }
+    });
+
+    describe('round-robin assignment', () => {
+      type Member = { id: string; fullName: string; autoAssignEnabled: boolean };
+      let members: Member[] = [];
+      const distribution = async () => (await http().get('/api/v1/lead-assignment').set(as(admin)).expect(200)).body;
+      const csvOf = (prefix: string, phones: string[]) =>
+        Buffer.from('full_name,phone_number\n' + phones.map((p, i) => `${prefix} ${i + 1},p:+91${p}`).join('\n') + '\n');
+
+      beforeAll(async () => {
+        members = (await distribution()).members;
+        // Start from a known state: every telecaller switched on.
+        for (const m of members) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: true }).expect(200);
+      });
+      afterAll(async () => {
+        for (const m of members) {
+          await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: m.autoAssignEnabled });
+        }
+      });
+
+      it('the rotation is the three seeded telecallers (not the admin)', () => {
+        expect(members.map((m) => m.fullName).sort()).toEqual(['Arjun Telecaller', 'Kavya Telecaller', 'Tara Telecaller']);
+      });
+
+      it('a name+phone Meta export splits evenly, in turn, and the turn carries over to the API', async () => {
+        const before = await distribution();
+        const phones = Array.from({ length: 9 }, (_, i) => String(9000082001 + i));
+        const res = await http().post('/api/v1/leads/import').set(as(admin)).field('defaultSource', 'META')
+          .attach('file', csvOf('E2E RR', phones), 'e2e-rr.csv').expect(200);
+        expect(res.body.created).toBe(9);
+        expect(res.body.ignoredColumns).toEqual([]);
+        expect(res.body.assignments.map((a: { count: number }) => a.count)).toEqual([3, 3, 3]);
+        // In turn: rows 1-3 go to three different people, starting with whoever was next.
+        const order = res.body.createdRows.map((r: { assignedTo: string }) => r.assignedTo);
+        expect(order[0]).toBe(before.nextUp.fullName);
+        expect(new Set(order.slice(0, 3)).size).toBe(3);
+        expect(order.slice(3, 6)).toEqual(order.slice(0, 3));
+
+        const db = await prisma();
+        const imported = await db.lead.findFirstOrThrow({ where: { name: 'E2E RR 1' } });
+        expect(imported).toMatchObject({ source: 'META', productInterest: null, phone: '+919000082001', autoAssigned: true });
+
+        // The next lead, from the API, continues the same rotation.
+        const key = (await http().post('/api/v1/api-keys').set(as(admin)).send({ name: 'E2E Rotation' }).expect(201)).body.key;
+        const api = await http().post('/api/v1/public/leads').set('X-API-Key', key)
+          .send({ name: 'E2E RR Api', phone: '9000082010' }).expect(201);
+        expect(api.body.assignedTo).toBe(order[0]);
+
+        const after = await distribution();
+        expect(after.total - before.total).toBe(10);
+        for (const m of after.members) {
+          const was = before.members.find((b: { id: string }) => b.id === m.id)!;
+          expect([3, 4]).toContain(m.leads - was.leads);
+        }
+      });
+
+      it('duplicates use no turn; a switched-off telecaller is skipped; reassigning by hand clears the flag', async () => {
+        const off = members[0];
+        await http().patch(`/api/v1/lead-assignment/members/${off.id}`).set(as(admin)).send({ enabled: false }).expect(200);
+        try {
+          const phones = ['9000082101', '9000082102', '9000082101', '9840012345', '9000082103', '9000082104'];
+          const res = await http().post('/api/v1/leads/import').set(as(admin))
+            .attach('file', csvOf('E2E Off', phones), 'e2e-off.csv').expect(200);
+          expect(res.body.created).toBe(4);
+          expect(res.body.duplicates).toHaveLength(2);
+          expect(res.body.assignments.map((a: { userId: string }) => a.userId)).not.toContain(off.id);
+          expect(res.body.assignments.map((a: { count: number }) => a.count)).toEqual([2, 2]);
+          expect((await distribution()).nextUp.id).not.toBe(off.id);
+        } finally {
+          await http().patch(`/api/v1/lead-assignment/members/${off.id}`).set(as(admin)).send({ enabled: true }).expect(200);
+        }
+        // Back on: they've waited longest, so they're next.
+        expect((await distribution()).nextUp.id).toBe(off.id);
+
+        const db = await prisma();
+        const lead = await db.lead.findFirstOrThrow({ where: { name: 'E2E Off 1' } });
+        const salesUser = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
+        await http().patch(`/api/v1/leads/${lead.id}`).set(as(admin)).send({ assignedToId: salesUser.id }).expect(200);
+        expect((await db.lead.findUniqueOrThrow({ where: { id: lead.id } })).autoAssigned).toBe(false);
+      });
+
+      it('reads Meta\'s own download (UTF-16, tab-separated) and refuses non-members and non-admins', async () => {
+        const tsv = 'id\tcreated_time\tad_name\tfull_name\tphone_number\n' +
+          'l:1\t2026-10-28T09:00:00+0530\tSump offer\tE2E Tsv Lead\tp:+919000082201\n';
+        const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(tsv, 'utf16le')]);
+        const res = await http().post('/api/v1/leads/import').set(as(admin)).attach('file', utf16, 'e2e-meta-export.csv').expect(200);
+        expect(res.body.created).toBe(1);
+        expect(res.body.ignoredColumns).toEqual(['id', 'created_time', 'ad_name']);
+
+        // The factory supervisor is in neither rotation (telecallers or sales).
+        const supervisor = await (await prisma()).user.findUniqueOrThrow({ where: { email: 'supervisor@precon.local' } });
+        const notMember = await http().patch(`/api/v1/lead-assignment/members/${supervisor.id}`).set(as(admin)).send({ enabled: true }).expect(400);
+        expect(notMember.body.message).toMatch(/leads.auto_assign/);
+        await http().get('/api/v1/lead-assignment').set(as(sales)).expect(403);
+        await http().get('/api/v1/lead-assignment').set(as(telecaller)).expect(403);
+      });
+    });
+  });
+
+  describe('Telecaller → sales workflow: calls, callbacks, qualify, check-ins, dashboards', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    let sales: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const inHours = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+    const created: string[] = [];
+    let salesTeam: { id: string; fullName: string; autoAssignEnabled: boolean }[] = [];
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    const userByEmail = async (email: string) => (await prisma()).user.findUniqueOrThrow({ where: { email } });
+    /** A fresh lead assigned to Tara, as if the round-robin gave it to her. */
+    async function taraLead(name: string, phone: string) {
+      const taraUser = await userByEmail('telecaller@precon.local');
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name, phone, source: 'META', assignedToId: taraUser.id }).expect(201);
+      created.push(res.body.id);
+      return res.body.id as string;
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+      salesTeam = (await http().get('/api/v1/lead-assignment').set(as(admin)).expect(200)).body.sales.members;
+      for (const m of salesTeam) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: true }).expect(200);
+    });
+
+    afterAll(async () => {
+      for (const m of salesTeam) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: m.autoAssignEnabled });
+      const db = await prisma();
+      await db.siteVisit.deleteMany({ where: { notes: { startsWith: 'E2E' } } });
+      await db.lead.deleteMany({ where: { id: { in: created } } });
+    });
+
+    it('the sales rotation is the two salespeople, and it can be switched off and on', async () => {
+      expect(salesTeam.map((m) => m.fullName).sort()).toEqual(['Priya Sales', 'Suresh Sales']);
+      const off = salesTeam[0];
+      await http().patch(`/api/v1/lead-assignment/members/${off.id}`).set(as(admin)).send({ enabled: false }).expect(200);
+      const team = (await http().get('/api/v1/sales-team').set(as(tara)).expect(200)).body;
+      expect(team.members.find((m: { id: string }) => m.id === off.id).inRotation).toBe(false);
+      expect(team.nextUp.id).not.toBe(off.id);
+      await http().patch(`/api/v1/lead-assignment/members/${off.id}`).set(as(admin)).send({ enabled: true }).expect(200);
+    });
+
+    it('log call: records it, moves New → Contacted, sets and reschedules the callback, rejects bad input', async () => {
+      const id = await taraLead('E2E Flow Call', '9000084001');
+      const db = await prisma();
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'NO_ANSWER', nextCallbackAt: inHours(1) }).expect(201);
+      expect((await db.lead.findUniqueOrThrow({ where: { id } })).status).toBe('CONTACTED');
+      expect(await db.callLog.count({ where: { leadId: id } })).toBe(1);
+      const pending = await db.followUp.findMany({ where: { leadId: id, completedAt: null } });
+      expect(pending).toHaveLength(1);
+
+      // Move the callback: the same follow-up is rescheduled, not duplicated.
+      const moved = await http().put(`/api/v1/leads/${id}/next-callback`).set(as(tara)).send({ scheduledAt: inHours(48) }).expect(200);
+      expect(moved.body.id).toBe(pending[0].id);
+      expect(await db.followUp.count({ where: { leadId: id, completedAt: null } })).toBe(1);
+      await http().put(`/api/v1/leads/${id}/next-callback`).set(as(tara)).send({ scheduledAt: inHours(-1) }).expect(400);
+
+      // On the workbench, in the right bucket.
+      let bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
+      expect(bench.items.find((i: { id: string }) => i.id === id).bucket).toBe('later');
+
+      // A call with no new callback completes the old one: "called, no callback set".
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'CALL_BACK', note: 'E2E busy now' }).expect(201);
+      const done = await db.followUp.findUniqueOrThrow({ where: { id: pending[0].id } });
+      expect(done.completedAt).not.toBeNull();
+      expect(done.outcome).toBe('CALL_BACK');
+      bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
+      const item = bench.items.find((i: { id: string }) => i.id === id);
+      expect(item).toMatchObject({ bucket: 'no_next_step', callCount: 2 });
+      expect(item.lastCall.outcome).toBe('CALL_BACK');
+
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'NO_ANSWER', nextCallbackAt: inHours(-2) }).expect(400);
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'WRONG_NUMBER', nextCallbackAt: inHours(2) }).expect(400);
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'MAYBE' }).expect(400);
+      // Another telecaller can't touch Tara's lead.
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(kavya)).send({ outcome: 'NO_ANSWER' }).expect(404);
+
+      const history = (await http().get(`/api/v1/leads/${id}/calls`).set(as(tara)).expect(200)).body;
+      expect(history.map((c: { outcome: string }) => c.outcome)).toEqual(['CALL_BACK', 'NO_ANSWER']);
+      expect(history[0].caller.fullName).toBe('Tara Telecaller');
+    });
+
+    it('a never-called lead is "new" on the workbench; "not interested" closes it as Lost and it leaves the list', async () => {
+      const id = await taraLead('E2E Flow Lost', '9000084002');
+      let bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
+      expect(bench.items.find((i: { id: string }) => i.id === id).bucket).toBe('new');
+      const before = bench.counts.callsToday;
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'NOT_INTERESTED' }).expect(201);
+      const lead = await (await prisma()).lead.findUniqueOrThrow({ where: { id } });
+      expect(lead.status).toBe('LOST');
+      expect(lead.closedAt).not.toBeNull();
+      bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
+      expect(bench.items.find((i: { id: string }) => i.id === id)).toBeUndefined();
+      expect(bench.counts.callsToday).toBe(before + 1);
+    });
+
+    it('qualify: fills details, hands to sales by round-robin (or a chosen person), closes the callback, adds a sales follow-up', async () => {
+      const db = await prisma();
+      const first = await taraLead('E2E Flow Qualify A', '9000084003');
+      const second = await taraLead('E2E Flow Qualify B', '9000084004');
+      await http().post(`/api/v1/leads/${first}/calls`).set(as(tara)).send({ outcome: 'INTERESTED', nextCallbackAt: inHours(3) }).expect(201);
+
+      const a = await http().post(`/api/v1/leads/${first}/qualify`).set(as(tara)).send({
+        productInterest: 'SUMP', sumpSizeLitres: 10000, city: 'Erode', notes: 'E2E wants it in 3 weeks', salesFollowUpAt: inHours(20),
+      }).expect(200);
+      expect(a.body).toMatchObject({ status: 'QUALIFIED', roundRobin: true });
+      const lead = await db.lead.findUniqueOrThrow({ where: { id: first }, include: { assignedTo: { include: { role: true } } } });
+      const taraUser = await userByEmail('telecaller@precon.local');
+      expect(lead).toMatchObject({ status: 'QUALIFIED', productInterest: 'SUMP', sumpSizeLitres: 10000, city: 'Erode', qualifiedById: taraUser.id, telecallerId: taraUser.id });
+      expect(lead.assignedTo?.role.key).toBe('sales');
+      expect(lead.notes).toMatch(/Qualified by Tara Telecaller.*E2E wants it in 3 weeks/s);
+      // Tara's callback is closed; the salesperson has the new follow-up.
+      const pending = await db.followUp.findMany({ where: { leadId: first, completedAt: null } });
+      expect(pending).toHaveLength(1);
+      expect(pending[0].note).toMatch(/Qualified lead from Tara/);
+
+      // It left Tara's worklist and scope.
+      const bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
+      expect(bench.items.find((i: { id: string }) => i.id === first)).toBeUndefined();
+      await http().get(`/api/v1/leads/${first}`).set(as(tara)).expect(404);
+
+      // The next one goes to the other salesperson.
+      const b = await http().post(`/api/v1/leads/${second}/qualify`).set(as(tara)).send({ productInterest: 'MICROBES' }).expect(200);
+      expect(b.body.handedTo.id).not.toBe(a.body.handedTo.id);
+
+      // Can't qualify twice, can't hand to a non-salesperson, microbes have no size.
+      await http().post(`/api/v1/leads/${first}/qualify`).set(as(admin)).send({ productInterest: 'SUMP' }).expect(400);
+      const third = await taraLead('E2E Flow Qualify C', '9000084005');
+      const kavyaUser = await userByEmail('telecaller2@precon.local');
+      await http().post(`/api/v1/leads/${third}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: kavyaUser.id }).expect(400);
+      await http().post(`/api/v1/leads/${third}/qualify`).set(as(tara)).send({ productInterest: 'MICROBES', sumpSizeLitres: 5000 }).expect(400);
+      // A chosen salesperson.
+      const suresh = await userByEmail('sales@precon.local');
+      const c = await http().post(`/api/v1/leads/${third}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh.id }).expect(200);
+      expect(c.body).toMatchObject({ roundRobin: false, handedTo: { id: suresh.id } });
+
+      // It shows on Suresh's sales dashboard as a qualified lead from Tara.
+      const dash = (await http().get('/api/v1/dashboards/sales').set(as(sales)).expect(200)).body;
+      const card = dash.open.find((l: { id: string }) => l.id === third);
+      expect(card).toMatchObject({ status: 'QUALIFIED', qualifiedBy: { fullName: 'Tara Telecaller' } });
+    });
+
+    it('GPS check-in: sales stores one reading on their lead; shown on their dashboard and the master map', async () => {
+      const id = await taraLead('E2E Flow Visit', '9000084006');
+      const suresh = await userByEmail('sales@precon.local');
+      await http().post(`/api/v1/leads/${id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh.id }).expect(200);
+
+      const res = await http().post('/api/v1/check-ins').set(as(sales))
+        .send({ latitude: 11.0168, longitude: 76.9558, accuracyMeters: 15, leadId: id, note: 'E2E at site' }).expect(201);
+      expect(res.body).toMatchObject({ latitude: 11.0168, longitude: 76.9558, accuracyMeters: 15, lead: { id }, person: { id: suresh.id } });
+      expect(new Date(res.body.checkedInAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
+
+      const mine = (await http().get('/api/v1/check-ins/mine').set(as(sales)).expect(200)).body;
+      expect(mine[0].id).toBe(res.body.id);
+      const dash = (await http().get('/api/v1/dashboards/sales').set(as(sales)).expect(200)).body;
+      expect(dash.visits.map((v: { id: string }) => v.id)).toContain(res.body.id);
+      const master = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      expect(master.visits.map((v: { id: string }) => v.id)).toContain(res.body.id);
+
+      await http().post('/api/v1/check-ins').set(as(sales)).send({ latitude: 200, longitude: 76.9 }).expect(400);
+      await http().post('/api/v1/check-ins').set(as(sales)).send({ longitude: 76.9 }).expect(400);
+      // Not one of Suresh's leads -> 404; telecallers can't check in at all.
+      const other = await taraLead('E2E Flow Not Mine', '9000084007');
+      await http().post('/api/v1/check-ins').set(as(sales)).send({ latitude: 11, longitude: 77, leadId: other, note: 'E2E x' }).expect(404);
+      await http().post('/api/v1/check-ins').set(as(tara)).send({ latitude: 11, longitude: 77 }).expect(403);
+    });
+
+    it('dashboards are role-scoped; the master scorecards count the calls just logged', async () => {
+      await http().get('/api/v1/dashboards/master').set(as(tara)).expect(403);
+      await http().get('/api/v1/dashboards/master').set(as(sales)).expect(403);
+      const before = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      expect(before.telecallers.map((t: { fullName: string }) => t.fullName).sort()).toEqual(['Arjun Telecaller', 'Kavya Telecaller', 'Tara Telecaller']);
+      expect(before.sales.map((t: { fullName: string }) => t.fullName).sort()).toEqual(['Priya Sales', 'Suresh Sales']);
+
+      const id = await taraLead('E2E Flow Score', '9000084008');
+      const notCalledBefore = before.telecallers.find((t: { fullName: string }) => t.fullName === 'Tara Telecaller');
+      let after = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      let row = after.telecallers.find((t: { fullName: string }) => t.fullName === 'Tara Telecaller');
+      expect(row.notCalled).toBe(notCalledBefore.notCalled + 1);
+      expect(after.flags.some((f: { person: string; message: string }) => f.person === 'Tara Telecaller' && /not called/.test(f.message))).toBe(true);
+
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'NO_ANSWER', nextCallbackAt: inHours(1) }).expect(201);
+      after = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      row = after.telecallers.find((t: { fullName: string }) => t.fullName === 'Tara Telecaller');
+      expect(row.callsToday).toBe(notCalledBefore.callsToday + 1);
+      expect(row.notCalled).toBe(notCalledBefore.notCalled);
+    });
+  });
 });
+

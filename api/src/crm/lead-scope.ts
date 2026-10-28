@@ -30,6 +30,8 @@ export const LEAD_SELECT = {
   sumpSizeLitres: true,
   status: true,
   notes: true,
+  sourceDetail: true,
+  autoAssigned: true,
   closedAt: true,
   createdAt: true,
   updatedAt: true,

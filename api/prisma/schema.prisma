@@ -79,6 +79,10 @@ model User {
   fullName             String             @map("full_name")
   phone                String?
   isActive             Boolean            @default(true) @map("is_active")
+  // Round-robin lead assignment: admin's on/off switch (only matters with the
+  // leads.auto_assign tag) and when this user last received an auto-assigned lead.
+  autoAssignEnabled    Boolean            @default(true) @map("auto_assign_enabled")
+  lastAutoAssignedAt   DateTime?          @map("last_auto_assigned_at")
   roleId               String             @map("role_id") @db.Uuid
   role                 Role               @relation(fields: [roleId], references: [id])
   permissionOverrides  UserPermission[]
@@ -106,6 +110,10 @@ model User {
   allowances           Allowance[]        @relation("AllowanceEmployee")
   submittedAllowances  Allowance[]        @relation("AllowanceSubmitter")
   decidedAllowances    Allowance[]        @relation("AllowanceDecider")
+  createdApiKeys       ApiKey[]           @relation("ApiKeyCreator")
+  workedLeads          Lead[]             @relation("LeadTelecaller")
+  qualifiedLeads       Lead[]             @relation("LeadQualifier")
+  callLogs             CallLog[]          @relation("CallLogCaller")
   lastLoginAt          DateTime?          @map("last_login_at")
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
@@ -137,6 +145,7 @@ enum LeadSource {
   WEBSITE
   REFERRAL
   OTHER
+  API // created by an external system through the public API
 }
 
 // The two product types the business makes (see CLAUDE.md "Products").
@@ -155,6 +164,16 @@ enum LeadStatus {
   LOST
 }
 
+// What happened on a telecaller's call (the call log, #11).
+enum CallOutcome {
+  NO_ANSWER
+  BUSY
+  CALL_BACK // spoke, asked to be called later
+  INTERESTED
+  NOT_INTERESTED
+  WRONG_NUMBER
+}
+
 enum FollowUpOutcome {
   CONNECTED
   NO_ANSWER
@@ -166,30 +185,51 @@ enum FollowUpOutcome {
 }
 
 model Lead {
-  id              String          @id @default(uuid()) @db.Uuid
+  id              String           @id @default(uuid()) @db.Uuid
   name            String
   phone           String
   email           String?
   city            String?
   source          LeadSource
-  productInterest ProductInterest @map("product_interest")
+  // Null = not known yet (e.g. a Meta lead with just name and phone); the telecaller fills it in.
+  productInterest ProductInterest? @map("product_interest")
   // Sump size the customer is interested in, if known (litres). Null for microbes.
-  sumpSizeLitres  Int?            @map("sump_size_litres")
-  status          LeadStatus      @default(NEW)
+  sumpSizeLitres  Int?             @map("sump_size_litres")
+  status          LeadStatus       @default(NEW)
   notes           String?
+  // Where it came from in more detail, e.g. "Import: march-leads.xlsx",
+  // "API key: Website form", "Meta lead form 123 (leadgen 456)".
+  sourceDetail    String?          @map("source_detail")
+  // Id in the system it came from ("meta:leadgen:456", "api:<key>:<id>"), so a
+  // re-sent submission is recognised instead of creating a second lead.
+  externalRef     String?          @unique @map("external_ref")
   // Null = unassigned; only users with leads.read_all can see those.
-  assignedToId    String?         @map("assigned_to_id") @db.Uuid
-  assignedTo      User?           @relation("LeadAssignee", fields: [assignedToId], references: [id])
-  createdById     String          @map("created_by_id") @db.Uuid
-  createdBy       User            @relation("LeadCreator", fields: [createdById], references: [id])
+  assignedToId    String?          @map("assigned_to_id") @db.Uuid
+  assignedTo      User?            @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  // True when the round-robin picked the assignee (import, API, Meta); cleared on manual reassignment.
+  autoAssigned    Boolean          @default(false) @map("auto_assigned")
+  // The telecaller who received and worked the lead. Kept after it is handed to
+  // sales, so telecaller scorecards (received, qualified, conversion) stay right.
+  telecallerId    String?          @map("telecaller_id") @db.Uuid
+  telecaller      User?            @relation("LeadTelecaller", fields: [telecallerId], references: [id])
+  // Set when a telecaller qualifies the lead and hands it to sales.
+  qualifiedAt     DateTime?        @map("qualified_at")
+  qualifiedById   String?          @map("qualified_by_id") @db.Uuid
+  qualifiedBy     User?            @relation("LeadQualifier", fields: [qualifiedById], references: [id])
+  calls           CallLog[]
+  siteVisits      SiteVisit[]
+  createdById     String           @map("created_by_id") @db.Uuid
+  createdBy       User             @relation("LeadCreator", fields: [createdById], references: [id])
   // Set when the lead enters WON / LOST, cleared if it is reopened.
-  closedAt        DateTime?       @map("closed_at")
+  closedAt        DateTime?        @map("closed_at")
   followUps       FollowUp[]
   salesOrder      SalesOrder?
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   @@index([assignedToId, status])
+  @@index([createdAt])
+  @@index([telecallerId, createdAt])
   @@index([status, closedAt])
   @@index([phone])
   @@map("leads")
@@ -531,6 +571,13 @@ model SiteVisit {
   // Optional link when the visit is about an installed/installing order.
   installationId String?        @map("installation_id") @db.Uuid
   installation   Installation?  @relation(fields: [installationId], references: [id])
+  // Sales "I'm at site" check-in: one GPS reading from the browser, never tracking.
+  leadId         String?        @map("lead_id") @db.Uuid
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  latitude       Float?
+  longitude      Float?
+  accuracyMeters Int?           @map("accuracy_meters")
+  checkedInAt    DateTime?      @map("checked_in_at")
   tags           SiteVisitTag[]
   allowances     Allowance[]
   createdById    String         @map("created_by_id") @db.Uuid
@@ -539,7 +586,24 @@ model SiteVisit {
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
   @@index([visitDate])
+  @@index([personId, checkedInAt])
   @@map("site_visits")
+}
+
+// One call a telecaller (or salesperson) made to a lead, with its outcome.
+model CallLog {
+  id       String      @id @default(uuid()) @db.Uuid
+  leadId   String      @map("lead_id") @db.Uuid
+  lead     Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  callerId String      @map("caller_id") @db.Uuid
+  caller   User        @relation("CallLogCaller", fields: [callerId], references: [id])
+  outcome  CallOutcome
+  note     String?
+  calledAt DateTime    @default(now()) @map("called_at")
+
+  @@index([callerId, calledAt])
+  @@index([leadId, calledAt])
+  @@map("call_logs")
 }
 
 // ---------------------------------------------------------------------------
@@ -649,4 +713,23 @@ model Allowance {
   @@index([userId, date])
   @@index([status])
   @@map("allowances")
+}
+
+// ---------------------------------------------------------------------------
+// Public API keys (#21): let external systems create leads without a user login.
+// Only a SHA-256 hash of the key is stored; the full key is shown once.
+// ---------------------------------------------------------------------------
+
+model ApiKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String // e.g. "Website contact form"
+  prefix      String // first characters, safe to display ("precon_3f9a1c")
+  keyHash     String    @unique @map("key_hash")
+  lastUsedAt  DateTime? @map("last_used_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdById String    @map("created_by_id") @db.Uuid
+  createdBy   User      @relation("ApiKeyCreator", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("api_keys")
 }

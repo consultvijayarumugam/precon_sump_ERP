@@ -14,6 +14,7 @@ import { PrismaClient } from '../src/generated/prisma/client.js';
 
 // Child tables first is not required (CASCADE), but listing them all keeps it explicit.
 const DEMO_TABLES = [
+  'call_logs',
   'follow_ups',
   'payments',
   'stock_movements',
@@ -33,6 +34,7 @@ const DEMO_TABLES = [
   'absences',
   'leave_applications',
   'holidays',
+  'api_keys', // dev sample keys are re-created by the seed
 ];
 
 async function main() {

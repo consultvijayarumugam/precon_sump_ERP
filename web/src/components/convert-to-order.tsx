@@ -30,7 +30,7 @@ export function ConvertToOrder({ lead }: { lead: Lead }) {
   const assignees = useApi<Assignee[]>(canCreditOthers ? "/leads/assignees" : null);
 
   const [open, setOpen] = useState(false);
-  const [product, setProduct] = useState<ProductInterest>(lead.productInterest);
+  const [product, setProduct] = useState<ProductInterest>(lead.productInterest ?? "SUMP");
   // Sump size defaults to what the lead asked for; required for a sump.
   const [sizeLitres, setSizeLitres] = useState(lead.sumpSizeLitres ? String(lead.sumpSizeLitres) : "");
   const [quantity, setQuantity] = useState("1");

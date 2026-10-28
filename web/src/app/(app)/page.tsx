@@ -1,8 +1,8 @@
 "use client";
 
 import { useAuth } from "@/components/auth-provider";
-import { AdminDashboard } from "@/components/dashboards/admin-dashboard";
 import { GeneralDashboard } from "@/components/dashboards/general-dashboard";
+import { MasterDashboard } from "@/components/dashboards/master-dashboard";
 import { SalesDashboard } from "@/components/dashboards/sales-dashboard";
 import { SupervisorDashboard } from "@/components/dashboards/supervisor-dashboard";
 import { TelecallerDashboard } from "@/components/dashboards/telecaller-dashboard";
@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
   switch (user.role.key) {
     case "admin":
-      return <AdminDashboard />;
+      return <MasterDashboard />;
     case "sales":
       return <SalesDashboard />;
     case "telecaller":
