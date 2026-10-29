@@ -14,6 +14,7 @@ export const TAGS = {
   LEADS_WRITE: "leads.write",
   LEADS_QUALIFY: "leads.qualify",
   LEADS_ASSIGN: "leads.assign",
+  LEADS_AUDIT: "leads.audit",
   LEADS_AUTO_ASSIGN: "leads.auto_assign",
   FOLLOWUPS_WRITE: "followups.write",
   SALES_READ: "sales.read",

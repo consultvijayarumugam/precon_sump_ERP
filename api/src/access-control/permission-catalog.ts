@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   LEADS_WRITE: 'leads.write',
   LEADS_QUALIFY: 'leads.qualify',
   LEADS_ASSIGN: 'leads.assign',
+  LEADS_AUDIT: 'leads.audit',
   LEADS_AUTO_ASSIGN: 'leads.auto_assign',
   LEADS_RECEIVE_QUALIFIED: 'leads.receive_qualified',
   FOLLOWUPS_WRITE: 'followups.write',
@@ -123,6 +124,11 @@ export const PERMISSION_DEFINITIONS: {
     key: PERMISSIONS.LEADS_ASSIGN,
     module: 'crm',
     description: 'Assign or reassign a lead to a salesperson',
+  },
+  {
+    key: PERMISSIONS.LEADS_AUDIT,
+    module: 'crm',
+    description: "See a lead's full change history (who changed what, from and to, when)",
   },
   {
     key: PERMISSIONS.LEADS_AUTO_ASSIGN,

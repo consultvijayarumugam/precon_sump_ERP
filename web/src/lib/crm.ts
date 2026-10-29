@@ -89,7 +89,12 @@ export interface Lead {
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** After handover: the salesperson. Before: whoever works it (usually the telecaller). */
   assignedTo: UserRef | null;
+  /** The telecaller who received and worked the lead (kept after handover). */
+  telecaller: UserRef | null;
+  qualifiedAt: string | null;
+  qualifiedBy: UserRef | null;
   createdBy: UserRef;
   salesOrder: { id: string; orderNumber: number; status: "CONFIRMED" | "DELIVERED" | "CANCELLED" } | null;
 }

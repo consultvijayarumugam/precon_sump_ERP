@@ -104,11 +104,9 @@ export class CheckInDto {
   @Max(100000)
   accuracyMeters?: number;
 
-  @ApiPropertyOptional({ description: 'The lead this visit is for (one of yours)' })
-  @IsOptional()
-  @Transform(emptyToUndefined)
-  @IsUUID()
-  leadId?: string;
+  @ApiProperty({ description: 'The lead this visit is for: one of the leads assigned to you' })
+  @IsUUID('all', { message: 'Pick the lead you are visiting' })
+  leadId: string;
 
   @ApiPropertyOptional({ example: 'Measured pit, customer wants 10,000 L' })
   @IsOptional()
@@ -116,4 +114,10 @@ export class CheckInDto {
   @IsString()
   @MaxLength(2000)
   note?: string;
+}
+
+export class ChangeSalespersonDto {
+  @ApiProperty({ description: 'The salesperson to give the lead to (must hold leads.receive_qualified)' })
+  @IsUUID()
+  salesUserId: string;
 }

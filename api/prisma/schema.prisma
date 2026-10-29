@@ -739,9 +739,22 @@ model ApiKey {
   @@map("api_keys")
 }
 
-// Things done to a lead besides calls (#11): for now, a WhatsApp message started from the app.
+// The lead's change history. WHATSAPP rows are also shown to everyone on the
+// lead ("Calls & messages"); the full timeline is admin-only (leads.audit).
 enum LeadActivityType {
-  WHATSAPP
+  WHATSAPP // a WhatsApp message started from the app
+  CREATED // lead created (by hand, import, API or Meta)
+  ASSIGNED // owner changed (round-robin, by hand, salesperson re-assigned)
+  HANDED_OVER // telecaller qualified it and handed it to a salesperson
+  STATUS_CHANGED // pipeline status changed
+  FIELD_CHANGED // details edited (name, phone, product, size, city, email, source)
+  NOTES_EDITED
+  FOLLOW_UP_CREATED
+  FOLLOW_UP_RESCHEDULED
+  FOLLOW_UP_COMPLETED
+  FOLLOW_UP_REOPENED
+  CALL_LOGGED
+  SITE_VISIT
 }
 
 model LeadActivity {
@@ -755,7 +768,10 @@ model LeadActivity {
   templateId   String?          @map("template_id") @db.Uuid
   template     MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   templateName String?          @map("template_name")
+  // For WHATSAPP the message text; otherwise a one-line summary of the change.
   message      String
+  // What changed: [{ field, label, from, to }] (null when there is nothing to compare).
+  changes      Json?
   createdAt    DateTime         @default(now()) @map("created_at")
 
   @@index([leadId, createdAt])

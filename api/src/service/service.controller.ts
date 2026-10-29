@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   ParseBoolPipe,
   ParseUUIDPipe,
@@ -40,6 +41,10 @@ import { InstallationsService } from './installations.service.js';
 import { ServiceJobsService } from './service-jobs.service.js';
 import { SiteVisitsService } from './site-visits.service.js';
 import { OperationsFeature } from '../features/features.js';
+
+/** A salesperson (receives qualified leads, can't read all leads) sees only their own site visits and leads. */
+const ownVisitsOnly = (user: AuthenticatedUser) =>
+  user.permissions.includes(PERMISSIONS.LEADS_RECEIVE_QUALIFIED) && !user.permissions.includes(PERMISSIONS.LEADS_READ_ALL);
 
 @OperationsFeature()
 @ApiTags('service: installations')
@@ -272,8 +277,9 @@ export class SiteVisitsController {
 
   @Get('site-visits')
   @RequirePermissions(PERMISSIONS.SITEVISIT_READ)
-  @ApiOperation({ summary: 'Site visits; filter by tagId, personId, from/to' })
-  list(@Query() query: ListSiteVisitsQueryDto) {
+  @ApiOperation({ summary: 'Site visits; filter by tagId, personId, from/to. Salespeople see only their own.' })
+  list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListSiteVisitsQueryDto) {
+    if (ownVisitsOnly(user)) query.personId = user.id;
     return this.visits.list(query);
   }
 
@@ -286,9 +292,11 @@ export class SiteVisitsController {
 
   @Get('site-visits/:id')
   @RequirePermissions(PERMISSIONS.SITEVISIT_READ)
-  @ApiOperation({ summary: 'One site visit' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.visits.findOne(id);
+  @ApiOperation({ summary: 'One site visit (salespeople: only their own)' })
+  async findOne(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    const visit = await this.visits.findOne(id);
+    if (ownVisitsOnly(user) && visit.person.id !== user.id) throw new NotFoundException('Site visit not found');
+    return visit;
   }
 
   @Post('site-visits')

@@ -9,7 +9,7 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { CheckInsService } from './check-ins.service.js';
 import { DashboardsService } from './dashboards.service.js';
-import { CheckInDto, LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
+import { ChangeSalespersonDto, CheckInDto, LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
 import { LeadActionsService } from './lead-actions.service.js';
 
 const SCOPE = 'Only leads you can see (404 otherwise).';
@@ -18,7 +18,10 @@ const SCOPE = 'Only leads you can see (404 otherwise).';
 @ApiBearerAuth()
 @Controller()
 export class LeadActionsController {
-  constructor(private readonly actions: LeadActionsService) {}
+  constructor(
+    private readonly actions: LeadActionsService,
+    private readonly checkIns: CheckInsService,
+  ) {}
 
   @Get('sales-team')
   @RequireAnyPermission(PERMISSIONS.LEADS_QUALIFY, PERMISSIONS.LEADS_WRITE)
@@ -37,6 +40,23 @@ export class LeadActionsController {
   })
   logCall(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: LogCallDto) {
     return this.actions.logCall(user, id, dto);
+  }
+
+  @Put('leads/:id/salesperson')
+  @RequireAnyPermission(PERMISSIONS.LEADS_QUALIFY, PERMISSIONS.LEADS_ASSIGN)
+  @ApiOperation({
+    summary: 'Change the salesperson on a handed-over lead (the telecaller who handled it, or leads.assign)',
+    description: 'Only after handover (Qualified or later). Notifies the new salesperson and records it in the history.',
+  })
+  changeSalesperson(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeSalespersonDto) {
+    return this.actions.changeSalesperson(user, id, dto.salesUserId);
+  }
+
+  @Get('leads/:id/visits')
+  @RequirePermissions(PERMISSIONS.LEADS_READ)
+  @ApiOperation({ summary: 'Site visits (GPS check-ins) recorded on a lead. ' + SCOPE })
+  visits(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.checkIns.forLead(user, id);
   }
 
   @Get('leads/:id/calls')
@@ -107,11 +127,18 @@ export class CheckInsController {
   @Post()
   @RequirePermissions(PERMISSIONS.SITEVISIT_WRITE)
   @ApiOperation({
-    summary: '"I\'m at site": store one GPS reading (lat/long + time) as a site visit',
-    description: 'Point-in-time only, from the browser; no tracking. Optional leadId links it to one of your leads.',
+    summary: '"I\'m at site": store one GPS reading (lat/long + time) as a visit to one of your leads',
+    description: 'Point-in-time only, from the browser; no tracking. leadId is required and must be a lead assigned to you.',
   })
   checkIn(@CurrentUser() user: AuthenticatedUser, @Body() dto: CheckInDto) {
     return this.checkIns.checkIn(user, dto);
+  }
+
+  @Get('leads')
+  @RequirePermissions(PERMISSIONS.SITEVISIT_WRITE)
+  @ApiOperation({ summary: 'Leads you can record a visit for: only those assigned to you (not lost)' })
+  visitableLeads(@CurrentUser() user: AuthenticatedUser) {
+    return this.checkIns.visitableLeads(user);
   }
 
   @Get('mine')

@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { FollowUpItem } from "@/components/follow-up-item";
 import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
+import { LeadHistoryTimeline, LeadOwners, LeadVisits } from "@/components/lead-handover";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import {
   buttonClass,
@@ -30,7 +31,7 @@ import {
   toDateTimeLocal,
 } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
-import { CALL_OUTCOME_LABELS, CallOutcome, CLOSING_OUTCOMES } from "@/lib/workflow";
+import { CALL_OUTCOME_LABELS, CallOutcome, CheckIn, CLOSING_OUTCOMES } from "@/lib/workflow";
 
 function AddFollowUp({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
   // Default: tomorrow at 11:00.
@@ -100,25 +101,28 @@ interface MessageRow {
 
 type HistoryEntry =
   | { kind: "call"; id: string; at: string; by: string; call: CallLogRow }
-  | { kind: "whatsapp"; id: string; at: string; by: string; msg: MessageRow };
+  | { kind: "whatsapp"; id: string; at: string; by: string; msg: MessageRow }
+  | { kind: "visit"; id: string; at: string; by: string; visit: CheckIn };
 
 /** Calls logged and WhatsApp messages started on the lead, newest first. */
 function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: string }) {
   const calls = useApi<CallLogRow[]>(`/leads/${leadId}/calls?r=${refreshKey}`);
   const messages = useApi<MessageRow[]>(`/leads/${leadId}/messages?r=${refreshKey}`);
+  const visits = useApi<CheckIn[]>(`/leads/${leadId}/visits?r=${refreshKey}`);
   const entries: HistoryEntry[] | null =
-    calls.data && messages.data
+    calls.data && messages.data && visits.data
       ? [
           ...calls.data.map((c) => ({ kind: "call" as const, id: c.id, at: c.calledAt, by: c.caller.fullName, call: c })),
           ...messages.data.map((m) => ({ kind: "whatsapp" as const, id: m.id, at: m.createdAt, by: m.user.fullName, msg: m })),
+          ...visits.data.map((v) => ({ kind: "visit" as const, id: v.id, at: v.checkedInAt, by: v.person.fullName, visit: v })),
         ].sort((a, b) => b.at.localeCompare(a.at))
       : null;
   return (
     <section className="space-y-3">
       <h2 className="font-medium">
-        Calls &amp; messages{entries && entries.length > 0 && <span className="ml-1 text-neutral-500">· {entries.length}</span>}
+        Calls, messages &amp; visits{entries && entries.length > 0 && <span className="ml-1 text-neutral-500">· {entries.length}</span>}
       </h2>
-      <ErrorText error={calls.error ?? messages.error} />
+      <ErrorText error={calls.error ?? messages.error ?? visits.error} />
       {entries && entries.length === 0 && <p className="text-sm text-neutral-500">No calls or messages yet.</p>}
       {entries && entries.length > 0 && (
         <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
@@ -139,6 +143,16 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
                     {CALL_OUTCOME_LABELS[e.call.outcome]}
                   </span>
                   {e.call.note && <span className="text-neutral-600 dark:text-neutral-400"> · {e.call.note}</span>}
+                </span>
+              ) : e.kind === "visit" ? (
+                <span className="min-w-0 flex-1">
+                  <span className="mr-1.5 text-xs font-semibold uppercase tracking-wider text-orange-600">Site visit</span>
+                  <span className="font-semibold">GPS check-in</span>
+                  <span className="text-neutral-600 dark:text-neutral-400">
+                    {" "}
+                    · {e.visit.latitude.toFixed(5)}, {e.visit.longitude.toFixed(5)}
+                    {e.visit.notes && ` · ${e.visit.notes}`}
+                  </span>
                 </span>
               ) : (
                 <span className="min-w-0 flex-1">
@@ -236,10 +250,7 @@ export default function LeadDetailPage() {
             {SOURCE_LABELS[lead.source]}
             {lead.sourceDetail && <span className="text-neutral-500"> · {lead.sourceDetail}</span>}
           </Detail>
-          <Detail label="Assigned to">
-            {lead.assignedTo?.fullName ?? "Unassigned"}
-            {lead.autoAssigned && <span className="text-neutral-500"> · round-robin</span>}
-          </Detail>
+          <LeadOwners lead={lead} onChanged={reload} />
           <Detail label="Created">
             {formatDate(lead.createdAt)} by {lead.createdBy.fullName}
           </Detail>
@@ -289,6 +300,7 @@ export default function LeadDetailPage() {
       )}
 
       <ContactHistory leadId={lead.id} refreshKey={`${lead.updatedAt}-${historyVersion}`} />
+      <LeadVisits lead={lead} refreshKey={`${lead.updatedAt}-${historyVersion}`} onCheckedIn={() => setHistoryVersion((v) => v + 1)} />
 
       <section className="space-y-3">
         <h2 className="font-medium">Follow-ups</h2>
@@ -312,6 +324,8 @@ export default function LeadDetailPage() {
           </>
         )}
       </section>
+
+      <LeadHistoryTimeline leadId={lead.id} refreshKey={`${lead.updatedAt}-${historyVersion}-${lead.followUps.length}-${lead.followUps.filter((f) => f.completedAt).length}`} />
     </div>
   );
 }

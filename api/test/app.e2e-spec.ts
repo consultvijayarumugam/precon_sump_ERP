@@ -1161,10 +1161,10 @@ describe('Auth and RBAC (e2e)', () => {
       expect(pending).toHaveLength(1);
       expect(pending[0].note).toMatch(/Qualified lead from Tara/);
 
-      // It left Tara's worklist and scope.
+      // It left Tara's worklist, but she can still open it (she handled it).
       const bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
       expect(bench.items.find((i: { id: string }) => i.id === first)).toBeUndefined();
-      await http().get(`/api/v1/leads/${first}`).set(as(tara)).expect(404);
+      await http().get(`/api/v1/leads/${first}`).set(as(tara)).expect(200);
 
       // The next one goes to the other salesperson.
       const b = await http().post(`/api/v1/leads/${second}/qualify`).set(as(tara)).send({ productInterest: 'MICROBES' }).expect(200);
@@ -1627,5 +1627,215 @@ describe('Auth and RBAC (e2e)', () => {
       await http().get('/api/v1/finance/overdue-balances').set(as(tara)).expect(403);
     });
   });
-});
 
+  describe('Handover & accountability: who sees what, both edit, site visits on leads, admin history', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    let suresh: string;
+    let priya: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+    let leadId = '';
+    const ids: Record<string, string> = {};
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+      suresh = (await login('sales@precon.local')).body.accessToken;
+      priya = (await login('sales2@precon.local')).body.accessToken;
+      const db = await prisma();
+      for (const [k, email] of Object.entries({ tara: 'telecaller@precon.local', suresh: 'sales@precon.local', priya: 'sales2@precon.local', kavya: 'telecaller2@precon.local' })) {
+        ids[k] = (await db.user.findUniqueOrThrow({ where: { email } })).id;
+      }
+      // A lead the round-robin gave Tara (so she is its telecaller).
+      const res = await http().post('/api/v1/leads/import').set(as(admin))
+        .attach('file', Buffer.from('name,phone,assigned salesperson\nE2E Handover Lead,9000087001,telecaller@precon.local\n'), 'e2e-handover.csv').expect(200);
+      leadId = res.body.createdRows[0].leadId;
+      leadIds.push(leadId);
+    });
+    afterAll(async () => {
+      const db = await prisma();
+      await db.siteVisit.deleteMany({ where: { leadId: { in: leadIds } } });
+      await db.lead.deleteMany({ where: { id: { in: leadIds } } });
+    });
+
+    it('a salesperson sees only the leads assigned to them; admin sees all', async () => {
+      const list = (await http().get('/api/v1/leads?pageSize=100').set(as(suresh)).expect(200)).body;
+      expect(list.items.length).toBeGreaterThan(0);
+      expect(list.items.every((l: { assignedTo: { id: string } | null }) => l.assignedTo?.id === ids.suresh)).toBe(true);
+      // Tara's (not yet handed) lead, Priya's leads and unassigned leads are hidden from Suresh.
+      await http().get(`/api/v1/leads/${leadId}`).set(as(suresh)).expect(404);
+      const db = await prisma();
+      const priyas = await db.lead.findFirstOrThrow({ where: { assignedToId: ids.priya } });
+      await http().get(`/api/v1/leads/${priyas.id}`).set(as(suresh)).expect(404);
+      const unassigned = await db.lead.findFirst({ where: { assignedToId: null } });
+      if (unassigned) await http().get(`/api/v1/leads/${unassigned.id}`).set(as(suresh)).expect(404);
+      const all = (await http().get('/api/v1/leads?pageSize=1').set(as(admin)).expect(200)).body;
+      expect(all.total).toBeGreaterThan(list.total);
+      const dash = (await http().get('/api/v1/dashboards/sales').set(as(suresh)).expect(200)).body;
+      expect(dash.open.every((l: { id: string }) => list.items.some((m: { id: string }) => m.id === l.id))).toBe(true);
+    });
+
+    it('after handover both the telecaller and the salesperson can view and edit; others cannot', async () => {
+      await http().post(`/api/v1/leads/${leadId}/calls`).set(as(tara)).send({ outcome: 'INTERESTED' }).expect(201);
+      await http().post(`/api/v1/leads/${leadId}/qualify`).set(as(tara))
+        .send({ productInterest: 'SUMP', sumpSizeLitres: 8000, city: 'Erode', salesUserId: ids.suresh, salesFollowUpAt: new Date(Date.now() + 86_400_000).toISOString() }).expect(200);
+
+      // Both see it; another telecaller doesn't.
+      expect((await http().get(`/api/v1/leads/${leadId}`).set(as(suresh)).expect(200)).body.assignedTo.id).toBe(ids.suresh);
+      const asTara = (await http().get(`/api/v1/leads/${leadId}`).set(as(tara)).expect(200)).body;
+      expect(asTara).toMatchObject({ telecaller: { id: ids.tara }, qualifiedBy: { id: ids.tara } });
+      await http().get(`/api/v1/leads/${leadId}`).set(as(kavya)).expect(404);
+      expect((await http().get('/api/v1/leads?pageSize=100').set(as(tara)).expect(200)).body.items.map((l: { id: string }) => l.id)).toContain(leadId);
+
+      // Salesperson moves it to Quoted and edits notes -> the telecaller sees it.
+      await http().patch(`/api/v1/leads/${leadId}`).set(as(suresh)).send({ status: 'QUOTED', notes: 'E2E quote sent: 2 x 8,000 L' }).expect(200);
+      expect((await http().get(`/api/v1/leads/${leadId}`).set(as(tara)).expect(200)).body).toMatchObject({ status: 'QUOTED', notes: 'E2E quote sent: 2 x 8,000 L' });
+      // Telecaller edits notes and adds a follow-up -> the salesperson sees it.
+      await http().patch(`/api/v1/leads/${leadId}`).set(as(tara)).send({ notes: 'E2E quote sent: 2 x 8,000 L. Customer asked for a discount.' }).expect(200);
+      await http().post(`/api/v1/leads/${leadId}/follow-ups`).set(as(tara)).send({ scheduledAt: new Date(Date.now() + 2 * 86_400_000).toISOString(), note: 'E2E check discount' }).expect(201);
+      const asSuresh = (await http().get(`/api/v1/leads/${leadId}`).set(as(suresh)).expect(200)).body;
+      expect(asSuresh.notes).toMatch(/discount/);
+      expect(asSuresh.followUps.map((f: { note: string }) => f.note)).toContain('E2E check discount');
+      // Still no phone/source changes for the telecaller.
+      await http().patch(`/api/v1/leads/${leadId}`).set(as(tara)).send({ phone: '9000087999' }).expect(403);
+
+      // A telecaller's call on a handed lead doesn't tick off the salesperson's follow-ups.
+      const openBefore = await (await prisma()).followUp.count({ where: { leadId, completedAt: null } });
+      await http().post(`/api/v1/leads/${leadId}/calls`).set(as(tara)).send({ outcome: 'CALL_BACK', note: 'E2E courtesy call' }).expect(201);
+      expect(await (await prisma()).followUp.count({ where: { leadId, completedAt: null } })).toBe(openBefore);
+    });
+
+    it('the telecaller (or admin) can change the salesperson afterwards; nobody else can', async () => {
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(kavya)).send({ salesUserId: ids.priya }).expect(404);
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(suresh)).send({ salesUserId: ids.priya }).expect(403);
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.kavya }).expect(400);
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.suresh }).expect(400); // already his
+      const res = await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.priya }).expect(200);
+      expect(res.body.salesperson.id).toBe(ids.priya);
+      await http().get(`/api/v1/leads/${leadId}`).set(as(suresh)).expect(404);
+      await http().get(`/api/v1/leads/${leadId}`).set(as(priya)).expect(200);
+      const note = await (await prisma()).notification.findFirst({ where: { userId: ids.priya, leadId, type: 'LEAD_HANDED_OVER' } });
+      expect(note).not.toBeNull();
+      // Not yet handed over -> use Qualify instead.
+      const fresh = await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Not Handed', phone: '9000087002', source: 'META', assignedToId: ids.tara }).expect(201);
+      leadIds.push(fresh.body.id);
+      await http().put(`/api/v1/leads/${fresh.body.id}/salesperson`).set(as(admin)).send({ salesUserId: ids.priya }).expect(400);
+    });
+
+    it("a site visit must be for one of the salesperson's own leads, and shows on that lead", async () => {
+      const mine = (await http().get('/api/v1/check-ins/leads').set(as(priya)).expect(200)).body;
+      expect(mine.map((l: { id: string }) => l.id)).toContain(leadId);
+      const db = await prisma();
+      const ownIds = (await db.lead.findMany({ where: { assignedToId: ids.priya, status: { not: 'LOST' } }, select: { id: true } })).map((l) => l.id);
+      expect(mine.map((l: { id: string }) => l.id).sort()).toEqual(ownIds.sort());
+
+      await http().post('/api/v1/check-ins').set(as(priya)).send({ latitude: 11.34, longitude: 77.72 }).expect(400); // no lead
+      await http().post('/api/v1/check-ins').set(as(suresh)).send({ latitude: 11.34, longitude: 77.72, leadId }).expect(404); // not his
+      const visit = (await http().post('/api/v1/check-ins').set(as(priya))
+        .send({ latitude: 11.3421, longitude: 77.7172, accuracyMeters: 12, leadId, note: 'E2E measured the pit' }).expect(201)).body;
+      expect(visit.lead.id).toBe(leadId);
+
+      // On the lead for everyone connected to it.
+      for (const token of [priya, tara, admin]) {
+        const visits = (await http().get(`/api/v1/leads/${leadId}/visits`).set(as(token)).expect(200)).body;
+        expect(visits.map((v: { id: string }) => v.id)).toContain(visit.id);
+      }
+      await http().get(`/api/v1/leads/${leadId}/visits`).set(as(suresh)).expect(404);
+      // A salesperson's site-visit list holds only their own visits.
+      const list = (await http().get('/api/v1/site-visits').set(as(suresh)).expect(200)).body;
+      expect(list.every((v: { person: { id: string } }) => v.person.id === ids.suresh)).toBe(true);
+      await http().get(`/api/v1/site-visits/${visit.id}`).set(as(suresh)).expect(404);
+      await http().get(`/api/v1/site-visits/${visit.id}`).set(as(admin)).expect(200);
+    });
+
+    it('admin sees the full change history (who, what from -> to, when); telecaller and sales do not', async () => {
+      const followUp = await (await prisma()).followUp.findFirstOrThrow({ where: { leadId, completedAt: null, note: 'E2E check discount' } });
+      await http().post(`/api/v1/follow-ups/${followUp.id}/complete`).set(as(priya)).send({ outcome: 'CONNECTED' }).expect(200);
+      const tpl = (await http().get('/api/v1/message-templates').set(as(priya)).expect(200)).body[0];
+      await http().post(`/api/v1/leads/${leadId}/whatsapp`).set(as(priya)).send({ templateId: tpl.id }).expect(201);
+
+      for (const token of [tara, priya, suresh]) await http().get(`/api/v1/leads/${leadId}/history`).set(as(token)).expect(403);
+      const history = (await http().get(`/api/v1/leads/${leadId}/history`).set(as(admin)).expect(200)).body as {
+        type: string; message: string; createdAt: string; user: { fullName: string }; changes: { field: string; from: string | null; to: string | null }[] | null;
+      }[];
+      const types = history.map((h) => h.type);
+      for (const t of ['CREATED', 'ASSIGNED', 'CALL_LOGGED', 'HANDED_OVER', 'FOLLOW_UP_CREATED', 'STATUS_CHANGED', 'NOTES_EDITED', 'FOLLOW_UP_COMPLETED', 'SITE_VISIT', 'WHATSAPP']) {
+        expect(types).toContain(t);
+      }
+      const byType = (t: string) => history.filter((h) => h.type === t);
+      expect(byType('HANDED_OVER')[0]).toMatchObject({ user: { fullName: 'Tara Telecaller' }, message: 'Qualified and handed to Suresh Sales' });
+      expect(byType('HANDED_OVER')[0].changes).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'status', from: 'CONTACTED', to: 'QUALIFIED' })]));
+      expect(byType('STATUS_CHANGED')[0]).toMatchObject({ user: { fullName: 'Suresh Sales' }, changes: [{ field: 'status', from: 'QUALIFIED', to: 'QUOTED' }] });
+      const salespersonChange = byType('ASSIGNED').find((h) => h.message.startsWith('Salesperson changed'));
+      expect(salespersonChange).toMatchObject({ user: { fullName: 'Tara Telecaller' }, changes: [{ from: 'Suresh Sales', to: 'Priya Sales' }] });
+      const notes = byType('NOTES_EDITED');
+      expect(notes.map((n) => n.user.fullName).sort()).toEqual(['Suresh Sales', 'Tara Telecaller']);
+      expect(notes.find((n) => n.user.fullName === 'Tara Telecaller')!.changes![0]).toMatchObject({ from: 'E2E quote sent: 2 x 8,000 L', to: expect.stringMatching(/discount/) });
+      expect(byType('FOLLOW_UP_COMPLETED')[0]).toMatchObject({ user: { fullName: 'Priya Sales' } });
+      expect(byType('SITE_VISIT')[0].message).toMatch(/GPS 11\.34210, 77\.71720, ±12 m.*E2E measured the pit/);
+      // Newest first, every entry has who and when.
+      const times = history.map((h) => h.createdAt);
+      expect(times).toEqual([...times].sort().reverse());
+      expect(history.every((h) => h.user.fullName && h.createdAt)).toBe(true);
+
+      // Everyone else still gets just calls and WhatsApp messages, not the audit trail.
+      const messages = (await http().get(`/api/v1/leads/${leadId}/messages`).set(as(tara)).expect(200)).body;
+      expect(messages.every((m: { type: string }) => m.type === 'WHATSAPP')).toBe(true);
+    });
+
+    it("follow-up lists hold each person's own work: the salesperson's, not the telecaller's or another salesperson's", async () => {
+      const pendingIds = async (token: string) =>
+        (await http().get('/api/v1/follow-ups?state=pending').set(as(token)).expect(200)).body
+          .filter((f: { lead: { id: string } }) => f.lead.id === leadId)
+          .map((f: { id: string }) => f.id);
+      const open = await (await prisma()).followUp.findMany({ where: { leadId, completedAt: null }, select: { id: true } });
+      expect(open.length).toBeGreaterThan(0);
+      expect((await pendingIds(priya)).sort()).toEqual(open.map((f) => f.id).sort()); // the lead is Priya's now
+      expect(await pendingIds(tara)).toEqual([]); // handed over: not on Tara's own list...
+      expect(await pendingIds(suresh)).toEqual([]); // ...nor on the previous salesperson's
+      // ...but Tara still sees them on the lead itself.
+      const asTara = (await http().get(`/api/v1/leads/${leadId}`).set(as(tara)).expect(200)).body;
+      expect(asTara.followUps.filter((f: { completedAt: string | null }) => !f.completedAt).length).toBe(open.length);
+    });
+
+    it('admin can change the salesperson too; field edits and follow-up moves/reopens are in the history', async () => {
+      // Admin moves the lead back to Suresh.
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(admin)).send({ salesUserId: ids.suresh }).expect(200);
+      await http().get(`/api/v1/leads/${leadId}`).set(as(priya)).expect(404);
+      await http().get(`/api/v1/leads/${leadId}`).set(as(suresh)).expect(200);
+
+      // Telecaller edits a field; the salesperson moves one follow-up and reopens a done one.
+      await http().patch(`/api/v1/leads/${leadId}`).set(as(tara)).send({ city: 'Salem' }).expect(200);
+      const db = await prisma();
+      const open = await db.followUp.findFirstOrThrow({ where: { leadId, completedAt: null }, orderBy: { scheduledAt: 'asc' } });
+      const newTime = new Date(Date.now() + 3 * 86_400_000);
+      await http().patch(`/api/v1/follow-ups/${open.id}`).set(as(suresh)).send({ scheduledAt: newTime.toISOString() }).expect(200);
+      const done = await db.followUp.findFirstOrThrow({ where: { leadId, note: 'E2E check discount' } });
+      await http().post(`/api/v1/follow-ups/${done.id}/reopen`).set(as(suresh)).expect(200);
+
+      await http().get(`/api/v1/leads/${leadId}/history`).set(as(suresh)).expect(403);
+      const history = (await http().get(`/api/v1/leads/${leadId}/history`).set(as(admin)).expect(200)).body as {
+        type: string; message: string; user: { fullName: string }; changes: { field: string; from: string | null; to: string | null }[] | null;
+      }[];
+      const adminChange = history.find((h) => h.type === 'ASSIGNED' && h.user.fullName === 'Asha Admin' && h.message.startsWith('Salesperson changed'));
+      expect(adminChange?.changes).toEqual([expect.objectContaining({ from: 'Priya Sales', to: 'Suresh Sales' })]);
+      const field = history.find((h) => h.type === 'FIELD_CHANGED');
+      expect(field).toMatchObject({ user: { fullName: 'Tara Telecaller' }, message: 'City: Erode → Salem' });
+      expect(field?.changes).toEqual([expect.objectContaining({ field: 'city', from: 'Erode', to: 'Salem' })]);
+      const moved = history.find((h) => h.type === 'FOLLOW_UP_RESCHEDULED');
+      expect(moved?.user.fullName).toBe('Suresh Sales');
+      expect(moved?.changes).toEqual([expect.objectContaining({ field: 'scheduledAt', from: open.scheduledAt.toISOString(), to: newTime.toISOString() })]);
+      const reopened = history.find((h) => h.type === 'FOLLOW_UP_REOPENED');
+      expect(reopened).toMatchObject({ user: { fullName: 'Suresh Sales' }, changes: [{ field: 'outcome', from: 'CONNECTED', to: null }] });
+    });
+  });
+});

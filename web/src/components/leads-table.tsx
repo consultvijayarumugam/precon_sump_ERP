@@ -18,7 +18,8 @@ import { formatDate, formatDateTime, LeadListItem, productInterestLabel, SOURCE_
 /** Lead list used by the Leads and Won pages. `variant="won"` shows the close date. */
 export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; variant?: "all" | "won" }) {
   const { can } = useAuth();
-  const showOwner = can(TAGS.LEADS_READ_ALL);
+  // Admins see every owner; telecallers see who has the leads they handed over.
+  const showOwner = can(TAGS.LEADS_READ_ALL) || can(TAGS.LEADS_QUALIFY);
   const [now] = useState(() => Date.now()); // fixed per render pass so rows agree
 
   if (leads.length === 0) return <p className="text-sm text-neutral-500">No leads match.</p>;

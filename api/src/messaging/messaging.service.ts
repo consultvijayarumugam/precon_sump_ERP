@@ -109,7 +109,7 @@ export class MessagingService {
     const lead = await this.prisma.lead.count({ where: { AND: [{ id: leadId }, leadScope(user)] } });
     if (!lead) throw new NotFoundException('Lead not found');
     return this.prisma.leadActivity.findMany({
-      where: { leadId },
+      where: { leadId, type: 'WHATSAPP' }, // the rest of the history is the admin-only timeline
       orderBy: { createdAt: 'desc' },
       take: 100,
       select: { id: true, type: true, templateName: true, message: true, createdAt: true, user: { select: { id: true, fullName: true } } },

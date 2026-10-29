@@ -10,6 +10,7 @@ import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { notifyLeadAssigned } from '../notifications/notify.js';
+import { describe, diff, recordActivity, STATUS_WORDS } from './lead-history.js';
 import { CreateLeadDto, ListLeadsQueryDto, UpdateLeadDto } from './dto/lead.dto.js';
 import {
   canAssignLeads,
@@ -126,21 +127,43 @@ export class LeadsService {
         assignedToId,
         createdById: user.id,
       },
-      select: { id: true },
+      select: { id: true, assignedTo: { select: { fullName: true } } },
     });
+    await recordActivity(this.prisma, { leadId: lead.id, userId: user.id, type: 'CREATED', summary: `Lead created by hand (${STATUS_WORDS[status]})` });
     if (assignedToId) {
+      await recordActivity(this.prisma, {
+        leadId: lead.id,
+        userId: user.id,
+        type: 'ASSIGNED',
+        summary: `Assigned to ${lead.assignedTo?.fullName}`,
+        changes: [{ field: 'assignedTo', label: 'Assigned to', from: null, to: lead.assignedTo?.fullName ?? null }],
+      });
       await notifyLeadAssigned(this.prisma, { userId: assignedToId, leadId: lead.id, leadName: dto.name, actorId: user.id, how: `Assigned by ${user.fullName}` });
     }
     return this.findOne(user, lead.id);
   }
 
   async update(user: AuthenticatedUser, id: string, dto: UpdateLeadDto) {
-    // leads.qualify without leads.write: only your own leads, and not their phone or source
+    // leads.qualify without leads.write (telecallers): leads they're connected to
+    // (assigned, or worked before handing to sales), but not their phone or source
     // (the phone is what duplicate checks match on; the source records where the lead came from).
     const qualifyOnly = !user.permissions.includes(PERMISSIONS.LEADS_WRITE);
     const existing = await this.prisma.lead.findFirst({
-      where: { AND: [{ id }, leadScope(user), qualifyOnly ? { assignedToId: user.id } : {}] },
-      select: { status: true, assignedToId: true, phone: true, source: true, salesOrder: { select: { status: true } } },
+      where: { AND: [{ id }, leadScope(user)] },
+      select: {
+        status: true,
+        assignedToId: true,
+        assignedTo: { select: { fullName: true } },
+        name: true,
+        phone: true,
+        email: true,
+        city: true,
+        source: true,
+        productInterest: true,
+        sumpSizeLitres: true,
+        notes: true,
+        salesOrder: { select: { status: true } },
+      },
     });
     if (!existing) throw new NotFoundException('Lead not found');
     if (qualifyOnly && dto.phone !== undefined && dto.phone !== existing.phone) {
@@ -190,7 +213,44 @@ export class LeadsService {
       else if (wasClosed) data.closedAt = null; // reopened
     }
 
-    const updated = await this.prisma.lead.update({ where: { id }, data, select: { name: true } });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const after = await tx.lead.update({ where: { id }, data, select: { name: true, assignedTo: { select: { fullName: true } } } });
+      // History: one entry per kind of change, with from -> to.
+      const fields = diff(existing, {
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        city: data.city,
+        source: data.source,
+        productInterest: data.productInterest,
+        sumpSizeLitres: data.sumpSizeLitres,
+      });
+      if (fields.length) await recordActivity(tx, { leadId: id, userId: user.id, type: 'FIELD_CHANGED', summary: describe(fields), changes: fields });
+      const notes = diff(existing, { notes: data.notes });
+      if (notes.length) await recordActivity(tx, { leadId: id, userId: user.id, type: 'NOTES_EDITED', summary: 'Notes edited', changes: notes });
+      if (data.status && data.status !== existing.status) {
+        const to = data.status as LeadStatus;
+        await recordActivity(tx, {
+          leadId: id,
+          userId: user.id,
+          type: 'STATUS_CHANGED',
+          summary: `Status: ${STATUS_WORDS[existing.status]} → ${STATUS_WORDS[to]}`,
+          changes: [{ field: 'status', label: 'Status', from: existing.status, to }],
+        });
+      }
+      if (data.assignedToId !== undefined) {
+        const from = existing.assignedTo?.fullName ?? null;
+        const toName = after.assignedTo?.fullName ?? null;
+        await recordActivity(tx, {
+          leadId: id,
+          userId: user.id,
+          type: 'ASSIGNED',
+          summary: `Assigned to ${toName ?? 'nobody'}${from ? ` (was ${from})` : ''}`,
+          changes: [{ field: 'assignedTo', label: 'Assigned to', from, to: toName }],
+        });
+      }
+      return after;
+    });
     if (typeof data.assignedToId === 'string') {
       await notifyLeadAssigned(this.prisma, { userId: data.assignedToId, leadId: id, leadName: updated.name, actorId: user.id, how: `Assigned by ${user.fullName}` });
     }
@@ -200,6 +260,26 @@ export class LeadsService {
       where: { AND: [{ id }, leadScope(user)] },
     });
     return visible ? this.findOne(user, id) : { id, movedOutOfScope: true };
+  }
+
+  /** The lead's full change history, newest first (admin-only: leads.audit). */
+  async history(user: AuthenticatedUser, id: string) {
+    const lead = await this.prisma.lead.count({ where: { AND: [{ id }, leadScope(user)] } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    return this.prisma.leadActivity.findMany({
+      where: { leadId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      select: {
+        id: true,
+        type: true,
+        message: true,
+        templateName: true,
+        changes: true,
+        createdAt: true,
+        user: { select: { id: true, fullName: true, role: { select: { name: true } } } },
+      },
+    });
   }
 
   /** Active users who can work leads (hold leads.read), for the assign dropdown. */

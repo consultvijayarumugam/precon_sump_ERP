@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { CheckInButton } from "@/components/check-in";
 import { SiteVisitForm } from "@/components/site-visit-form";
-import { buttonClass, ErrorText, NoAccess, PageHeader, secondaryButtonClass, TagChip } from "@/components/ui";
+import { buttonClass, ErrorText, NoAccess, PageHeader, panelClass, secondaryButtonClass, TagChip } from "@/components/ui";
 import { apiPost, queryString } from "@/lib/api";
 import { formatDateOnly } from "@/lib/finance";
 import { SiteVisit, SiteVisitTag } from "@/lib/service";
@@ -13,7 +14,7 @@ import { useApi } from "@/lib/use-api";
 
 /** Site visits (#18) with tag filters. */
 export default function SiteVisitsPage() {
-  const { can } = useAuth();
+  const { can, operations } = useAuth();
   const canRead = can(TAGS.SITEVISIT_READ);
   const [tagId, setTagId] = useState("");
   const [adding, setAdding] = useState(false);
@@ -28,7 +29,8 @@ export default function SiteVisitsPage() {
         action={
           <div className="flex gap-2">
             {can(TAGS.SITEVISIT_MANAGE_TAGS) && <Link href="/site-visits/tags" className={secondaryButtonClass}>Manage tags</Link>}
-            {can(TAGS.SITEVISIT_WRITE) && !adding && (
+            {/* The free-form visit (not tied to a lead) belongs to the operations modules. */}
+            {operations && can(TAGS.SITEVISIT_WRITE) && !adding && (
               <button className={buttonClass} onClick={() => setAdding(true)}>
                 Record visit
               </button>
@@ -36,6 +38,12 @@ export default function SiteVisitsPage() {
           </div>
         }
       />
+      {can(TAGS.SITEVISIT_WRITE) && (
+        <section className={`${panelClass} mb-6 p-4`}>
+          <h2 className="mb-2 font-semibold">Check in at a lead&apos;s site</h2>
+          <CheckInButton onCheckedIn={() => visits.reload()} />
+        </section>
+      )}
       {adding && (
         <div className="mb-6">
           <SiteVisitForm

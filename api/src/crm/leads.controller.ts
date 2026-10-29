@@ -55,6 +55,16 @@ export class LeadsController {
     return this.leads.listAssignees();
   }
 
+  @Get(':id/history')
+  @RequirePermissions(PERMISSIONS.LEADS_AUDIT)
+  @ApiOperation({
+    summary: "A lead's full change history (admin): who changed what, from and to, when",
+    description: 'Status, assignment and handover, field and notes edits, follow-ups, calls, WhatsApp, site visits.',
+  })
+  history(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.leads.history(user, id);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.LEADS_READ)
   @ApiOperation({ summary: 'One lead with all its follow-ups', description: SCOPE_NOTE })

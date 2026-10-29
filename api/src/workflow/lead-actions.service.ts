@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { leadScope } from '../crm/lead-scope.js';
 import { CallOutcome, FollowUpOutcome, LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
+import { recordActivity, STATUS_WORDS, when } from '../crm/lead-history.js';
 import { notifyLeadHandedOver } from '../notifications/notify.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
@@ -46,8 +47,8 @@ export class LeadActionsService {
   ) {}
 
   /**
-   * Records a call. Any pending callback on the lead counts as done (with this
-   * outcome); a new one can be set in the same step. A first call moves New to
+   * Records a call. If you own the lead, its pending callback counts as done
+   * (with this outcome); a new one can be set in the same step. A first call moves New to
    * Contacted; "not interested" and "wrong number" close the lead as Lost.
    */
   async logCall(user: AuthenticatedUser, leadId: string, dto: LogCallDto) {
@@ -62,10 +63,14 @@ export class LeadActionsService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.callLog.create({ data: { leadId, callerId: user.id, outcome: dto.outcome, note: dto.note || null, calledAt: now } });
-      await tx.followUp.updateMany({
-        where: { leadId, completedAt: null },
-        data: { completedAt: now, outcome: FOLLOW_UP_OUTCOME[dto.outcome] },
-      });
+      // Only the lead's current owner closes its open follow-ups by calling: a telecaller
+      // calling a lead they already handed to sales mustn't tick off the salesperson's.
+      if (lead.assignedToId === user.id) {
+        await tx.followUp.updateMany({
+          where: { leadId, completedAt: null },
+          data: { completedAt: now, outcome: FOLLOW_UP_OUTCOME[dto.outcome] },
+        });
+      }
       if (dto.nextCallbackAt) {
         await tx.followUp.create({
           data: { leadId, scheduledAt: dto.nextCallbackAt, note: dto.note ? `Callback: ${dto.note}` : 'Callback', createdById: user.id },
@@ -74,6 +79,19 @@ export class LeadActionsService {
       if (status && status !== lead.status) {
         await tx.lead.update({ where: { id: leadId }, data: { status, closedAt: status === 'LOST' ? now : undefined } });
       }
+      const parts = [`Call: ${OUTCOME_TEXT[dto.outcome]}`];
+      if (dto.note) parts.push(dto.note);
+      if (dto.nextCallbackAt) parts.push(`next callback ${when(dto.nextCallbackAt)}`);
+      const changed = status && status !== lead.status;
+      if (changed) parts.push(`status ${STATUS_WORDS[lead.status]} → ${STATUS_WORDS[status]}`);
+      await recordActivity(tx, {
+        leadId,
+        userId: user.id,
+        type: 'CALL_LOGGED',
+        summary: parts.join(' · '),
+        changes: changed ? [{ field: 'status', label: 'Status', from: lead.status, to: status }] : undefined,
+        at: now,
+      });
     });
     return { leadId, status: status ?? lead.status, outcome: dto.outcome };
   }
@@ -85,19 +103,28 @@ export class LeadActionsService {
     const pending = await this.prisma.followUp.findFirst({
       where: { leadId, completedAt: null },
       orderBy: { scheduledAt: 'asc' },
-      select: { id: true },
+      select: { id: true, scheduledAt: true },
     });
-    const followUp = pending
-      ? await this.prisma.followUp.update({
-          where: { id: pending.id },
-          data: { scheduledAt: dto.scheduledAt, note: dto.note || undefined },
-          select: { id: true, scheduledAt: true, note: true },
-        })
-      : await this.prisma.followUp.create({
-          data: { leadId, scheduledAt: dto.scheduledAt, note: dto.note || 'Callback', createdById: user.id },
-          select: { id: true, scheduledAt: true, note: true },
-        });
-    return followUp;
+    return this.prisma.$transaction(async (tx) => {
+      const followUp = pending
+        ? await tx.followUp.update({
+            where: { id: pending.id },
+            data: { scheduledAt: dto.scheduledAt, note: dto.note || undefined },
+            select: { id: true, scheduledAt: true, note: true },
+          })
+        : await tx.followUp.create({
+            data: { leadId, scheduledAt: dto.scheduledAt, note: dto.note || 'Callback', createdById: user.id },
+            select: { id: true, scheduledAt: true, note: true },
+          });
+      await recordActivity(tx, {
+        leadId,
+        userId: user.id,
+        type: pending ? 'FOLLOW_UP_RESCHEDULED' : 'FOLLOW_UP_CREATED',
+        summary: pending ? `Callback moved: ${when(pending.scheduledAt)} → ${when(dto.scheduledAt)}` : `Callback set for ${when(dto.scheduledAt)}`,
+        changes: [{ field: 'scheduledAt', label: 'Due', from: pending?.scheduledAt.toISOString() ?? null, to: dto.scheduledAt.toISOString() }],
+      });
+      return followUp;
+    });
   }
 
   /** Salespeople who can receive qualified leads, and who the round-robin would pick next. */
@@ -168,9 +195,72 @@ export class LeadActionsService {
         },
       });
       const leadName = (await tx.lead.findUniqueOrThrow({ where: { id: leadId }, select: { name: true } })).name;
+      const size = dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null;
+      await recordActivity(tx, {
+        leadId,
+        userId: user.id,
+        type: 'HANDED_OVER',
+        summary: `Qualified and handed to ${sales.fullName}${picked ? ' (round-robin)' : ''}`,
+        changes: [
+          { field: 'status', label: 'Status', from: lead.status, to: 'QUALIFIED' },
+          { field: 'assignedTo', label: 'Salesperson', from: null, to: sales.fullName },
+          { field: 'productInterest', label: 'Product', from: lead.productInterest, to: dto.productInterest },
+          ...(size !== lead.sumpSizeLitres ? [{ field: 'sumpSizeLitres', label: 'Sump size', from: lead.sumpSizeLitres === null ? null : String(lead.sumpSizeLitres), to: size === null ? null : String(size) }] : []),
+          ...(dto.city !== undefined && (dto.city || null) !== lead.city ? [{ field: 'city', label: 'City', from: lead.city, to: dto.city || null }] : []),
+          ...(dto.notes ? [{ field: 'notes', label: 'Handover note', from: null, to: dto.notes }] : []),
+        ],
+        at: now,
+      });
+      if (dto.salesFollowUpAt) {
+        await recordActivity(tx, {
+          leadId,
+          userId: user.id,
+          type: 'FOLLOW_UP_CREATED',
+          summary: `Follow-up for ${sales.fullName} set for ${when(dto.salesFollowUpAt)}`,
+          changes: [{ field: 'scheduledAt', label: 'Due', from: null, to: dto.salesFollowUpAt.toISOString() }],
+          at: now,
+        });
+      }
       await notifyLeadHandedOver(tx, { userId: sales.id, leadId, leadName, fromName: user.fullName, actorId: user.id });
       return { leadId, status: 'QUALIFIED' as const, handedTo: sales, roundRobin: Boolean(picked) };
     });
+  }
+
+  /**
+   * After handover, change which salesperson has the lead. Allowed for the
+   * telecaller who worked it (leads.qualify) and for anyone with leads.assign.
+   * The new salesperson must be able to receive qualified leads.
+   */
+  async changeSalesperson(user: AuthenticatedUser, leadId: string, salesUserId: string) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { AND: [{ id: leadId }, leadScope(user)] },
+      select: { id: true, name: true, status: true, qualifiedAt: true, telecallerId: true, assignedToId: true, assignedTo: { select: { fullName: true } } },
+    });
+    if (!lead) throw new NotFoundException('Lead not found');
+    const canAssign = user.permissions.includes(PERMISSIONS.LEADS_ASSIGN);
+    if (!canAssign && lead.telecallerId !== user.id) {
+      throw new ForbiddenException('Only the telecaller who handled this lead (or an admin) can change its salesperson');
+    }
+    if (!lead.qualifiedAt || TELECALLER_STAGES.includes(lead.status)) {
+      throw new BadRequestException('This lead has not been handed to sales yet; use Qualify to hand it over');
+    }
+    const team = await this.assignment.members(ROTATIONS.sales);
+    const target = team.find((m) => m.id === salesUserId);
+    if (!target) throw new BadRequestException(`That person can't receive qualified leads (needs the ${PERMISSIONS.LEADS_RECEIVE_QUALIFIED} tag)`);
+    if (target.id === lead.assignedToId) throw new BadRequestException(`${target.fullName} already has this lead`);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lead.update({ where: { id: leadId }, data: { assignedToId: target.id, autoAssigned: false } });
+      await recordActivity(tx, {
+        leadId,
+        userId: user.id,
+        type: 'ASSIGNED',
+        summary: `Salesperson changed: ${lead.assignedTo?.fullName ?? 'nobody'} → ${target.fullName}`,
+        changes: [{ field: 'assignedTo', label: 'Salesperson', from: lead.assignedTo?.fullName ?? null, to: target.fullName }],
+      });
+      await notifyLeadHandedOver(tx, { userId: target.id, leadId, leadName: lead.name, fromName: user.fullName, actorId: user.id });
+    });
+    return { leadId, salesperson: { id: target.id, fullName: target.fullName } };
   }
 
   /** Every call logged on a lead, newest first. */
@@ -190,7 +280,7 @@ export class LeadActionsService {
     const where: Prisma.LeadWhereInput = { AND: [{ id: leadId }, leadScope(user), ownOnly ? { assignedToId: user.id } : {}] };
     const lead = await this.prisma.lead.findFirst({
       where,
-      select: { id: true, status: true, notes: true, telecallerId: true },
+      select: { id: true, status: true, notes: true, telecallerId: true, assignedToId: true, productInterest: true, sumpSizeLitres: true, city: true },
     });
     if (!lead) throw new NotFoundException('Lead not found');
     return lead;

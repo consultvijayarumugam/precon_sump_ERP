@@ -186,7 +186,7 @@ export function SalesDashboard() {
                 Check in at a site
               </h3>
               {can(TAGS.SITEVISIT_WRITE) ? (
-                <CheckInButton leads={data?.open ?? []} onCheckedIn={reload} />
+                <CheckInButton onCheckedIn={reload} />
               ) : (
                 <p className="text-sm text-neutral-500">You can view visits but not check in.</p>
               )}

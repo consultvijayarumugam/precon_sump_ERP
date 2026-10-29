@@ -206,6 +206,7 @@ Then restart the API (`npm run start:dev`). The web app reads the setting from t
 | `leads.write` | Create leads and edit leads you can see (details, notes, pipeline status) |
 | `leads.qualify` | Telecaller preset. Update leads **assigned to you** after a call: name, email, city, product, size, notes and pipeline status. Phone and source stay locked (the phone is what duplicate checks match on); no creating, importing or reassigning |
 | `leads.assign` | Choose or change who a lead is assigned to; see Admin → Lead assignment and switch telecallers in or out of the rotation |
+| `leads.audit` | Admin. See a lead's full change history |
 | `reports.view` | Sales and telecaller presets. Reports page with your own numbers, and exports of them |
 | `reports.view_all` | Admin. Reports for everyone (revenue still needs `sales.read_all` or `finance.dashboard`) |
 | `templates.manage` | Admin. Create and edit the WhatsApp message templates |
@@ -213,6 +214,10 @@ Then restart the API (`npm run start:dev`). The web app reads the setting from t
 | `leads.auto_assign` | Puts the holder in the round-robin for incoming leads (telecaller preset). Not given to admin: admin manages the rotation, it doesn't receive leads |
 | `followups.write` | Schedule, reschedule and complete follow-ups on leads you can see |
 
+- **Who sees which leads** (by tags, not role names):
+  - `leads.read_all` (admin): every lead.
+  - Telecallers (`leads.auto_assign`): leads assigned to them **plus leads they worked and handed to a salesperson**, which they can still open and edit (status, notes, follow-ups, calls; not phone or source).
+  - Everyone else, i.e. salespeople: **only leads assigned to them**. Not other salespeople's, not unassigned ones. The same goes for their dashboard, follow-ups and site-visit list.
 - Admin sees all leads because they hold `leads.read_all`, not because of their role name.
 - A salesperson's lead is auto-assigned to them, and they can't reassign it.
 - A lead outside your scope returns 404, not 403, so its ID can't be probed.
@@ -433,10 +438,24 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 - **Log call** (`followups.write`): outcome No answer, Busy, Call back later, Interested, Not interested or Wrong number, with an optional note and next callback. Logging a call completes the lead's open callback. A first call moves New → Contacted; **Not interested** and **Wrong number** close the lead as Lost (it leaves the worklist).
 - **Callbacks** are ordinary follow-ups, so they show on Follow-ups and the Calendar too. "Set/Change callback" moves the open one instead of adding another.
 - **Qualify** (`leads.qualify` on your own leads, or `leads.write`): product (required), sump size, city and notes; status becomes Qualified and the lead is **handed to sales**: the next salesperson in the sales round-robin (holders of `leads.receive_qualified` who are switched on), or one the telecaller picks. The telecaller's callbacks close, an optional "when should sales call" follow-up goes on the salesperson's list, and the notes record who qualified it. The lead leaves the telecaller's worklist; who received and qualified it is kept for the scorecards.
+- **Change the salesperson afterwards:** on a handed-over lead, the telecaller who handled it (or an admin) can click **Change** next to "Salesperson". The new salesperson must be able to receive qualified leads and is notified; the old one loses access.
+- **After handover both can work the lead:** the salesperson owns it (their dashboard, follow-ups, reminders); the telecaller still sees it in their Leads list and can open and edit it. Each sees the other's updates on the lead page. A telecaller's call on a handed lead doesn't close the salesperson's follow-ups.
 - **Sales rotation:** Admin → Lead assignment has a second table, "Salespeople receiving qualified leads", with the same on/off switch and "next" marker as the telecallers.
 - **Call history** of every lead (who, when, outcome, note) is on the lead page.
-- **GPS check-in** ("I'm at site", `sitevisit.write`): the browser reads the location **once** when the button is pressed and stores latitude, longitude, accuracy and time on a site visit, optionally linked to one of your leads. No tracking. Maps are OpenStreetMap with Leaflet (no Google, no API key). Browsers only share location on a secure page: it works on `http://localhost:3001` on the Mac and on HTTPS later, but **not on the LAN address** (`http://192.168.x.x`); there the button says so.
+- **GPS check-in** ("I'm at site", `sitevisit.write`): the browser reads the location **once** when the button is pressed and stores latitude, longitude, accuracy and time on a site visit **for a lead**. You must pick the lead, and the list holds only the leads assigned to you (not lost). It's on the sales dashboard, the Site visits page, and the lead's own page. The visit shows on that lead ("Calls, messages & visits", plus a Site visits section with a map) for everyone connected to it, and in its change history. No tracking. Maps are OpenStreetMap with Leaflet (no Google, no API key). Browsers only share location on a secure page: it works on `http://localhost:3001` on the Mac and on HTTPS later, but **not on the LAN address** (`http://192.168.x.x`); there the button says so.
 - **Sidebar:** telecallers and sales see Dashboard, Leads, Follow-ups, Calendar (sales also Won and Site visits) and their own leave/allowances. The Finance section needs `finance.dashboard`, so it is off their screens; stock and service need their own tags. Pages and APIs are unchanged.
+
+## Lead change history (admin only)
+
+- Every meaningful change on a lead is recorded with **who**, **what** (from → to where it applies) and **when**:
+  - lead created (by hand, import, API, Meta);
+  - assignment and round-robin; handover to a salesperson; salesperson changed;
+  - status changes; field edits (name, phone, email, city, source, product, size); notes edits;
+  - follow-ups created, moved, completed (with outcome) and reopened;
+  - calls logged (with outcome and any status change); WhatsApp messages started; site visits (GPS, accuracy, note).
+- Entries are written in the same database transaction as the change, so the history can't miss one or show one that didn't happen.
+- **Admin sees it** as a timeline at the bottom of the lead page ("Change history · Admin only"), newest first, with a "Show all" button past 25 entries. This needs the `leads.audit` tag (admin preset).
+- **Telecallers and salespeople don't see the timeline.** They see the lead's current state, its calls, WhatsApp messages, site visits and follow-ups (`GET /leads/:id/history` answers 403).
 
 ## WhatsApp quick-contact
 
@@ -496,10 +515,14 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?}`. Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
 | GET    | `/leads/:id/calls`       | `leads.read`           | The lead's call history, newest first |
+| GET    | `/leads/:id/history`     | `leads.audit`          | Full change history (admin): `[{type, message, changes[{field, label, from, to}], createdAt, user}]`, newest first |
+| GET    | `/leads/:id/visits`      | `leads.read`           | Site visits (GPS check-ins) recorded on the lead |
+| PUT    | `/leads/:id/salesperson` | `leads.qualify` (the lead's telecaller) or `leads.assign` | `{salesUserId}`: change the salesperson on a handed-over lead |
+| GET    | `/check-ins/leads`       | `sitevisit.write`      | Leads you can record a visit for (assigned to you, not lost) |
 | PUT    | `/leads/:id/next-callback` | `followups.write`    | `{scheduledAt, note?}`: move the open callback, or add one (must be in the future) |
 | POST   | `/leads/:id/qualify`     | `leads.qualify` or `leads.write` | `{productInterest, sumpSizeLitres?, city?, notes?, salesUserId?, salesFollowUpAt?}` → `{status, handedTo, roundRobin}`. Only New/Contacted leads |
 | GET    | `/sales-team`            | `leads.qualify` or `leads.write` | Salespeople who can receive qualified leads, and who is next |
-| POST   | `/check-ins`             | `sitevisit.write`      | `{latitude, longitude, accuracyMeters?, leadId?, note?}`: one GPS reading stored as a site visit |
+| POST   | `/check-ins`             | `sitevisit.write`      | `{latitude, longitude, accuracyMeters?, leadId, note?}`: one GPS reading stored as a visit to `leadId`, which must be one of your assigned leads (404 otherwise) |
 | GET    | `/check-ins/mine`        | `sitevisit.read`       | Your recent check-ins with location |
 | GET    | `/dashboards/telecaller` | `leads.read`           | Workbench: counts and your worklist in call order |
 | GET    | `/dashboards/sales`      | `leads.read`           | Your pipeline, follow-ups due, revenue this month (with `sales.read`), check-ins |

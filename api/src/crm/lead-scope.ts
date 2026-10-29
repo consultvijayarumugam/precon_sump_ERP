@@ -4,14 +4,25 @@ import type { Prisma } from '../generated/prisma/client.js';
 
 /**
  * Which leads a user may see or touch. Driven by tags, not role names:
- *   leads.read_all -> every lead (including unassigned)
- *   otherwise      -> only leads assigned to them
- * Follow-ups inherit the scope of their lead.
+ *   leads.read_all     -> every lead (including unassigned)
+ *   leads.auto_assign  -> leads assigned to them, plus leads they worked as the
+ *                         telecaller (still theirs to see and edit after they
+ *                         hand them to a salesperson)
+ *   otherwise          -> only leads assigned to them (a salesperson sees only
+ *                         the leads handed to them)
+ * Follow-ups, calls and site visits inherit the scope of their lead.
  */
 export function leadScope(user: AuthenticatedUser): Prisma.LeadWhereInput {
-  return user.permissions.includes(PERMISSIONS.LEADS_READ_ALL)
-    ? {}
-    : { assignedToId: user.id };
+  if (user.permissions.includes(PERMISSIONS.LEADS_READ_ALL)) return {};
+  if (user.permissions.includes(PERMISSIONS.LEADS_AUTO_ASSIGN)) {
+    return { OR: [{ assignedToId: user.id }, { telecallerId: user.id }] };
+  }
+  return { assignedToId: user.id };
+}
+
+/** Leads the user is responsible for right now (their own follow-up list, calendar, reminders). */
+export function ownedLeads(user: AuthenticatedUser): Prisma.LeadWhereInput {
+  return user.permissions.includes(PERMISSIONS.LEADS_READ_ALL) ? {} : { assignedToId: user.id };
 }
 
 export function canAssignLeads(user: AuthenticatedUser): boolean {
@@ -36,6 +47,10 @@ export const LEAD_SELECT = {
   createdAt: true,
   updatedAt: true,
   assignedTo: { select: { id: true, fullName: true } },
+  // The telecaller who worked it, and the handover (who qualified it, when).
+  telecaller: { select: { id: true, fullName: true } },
+  qualifiedAt: true,
+  qualifiedBy: { select: { id: true, fullName: true } },
   createdBy: { select: { id: true, fullName: true } },
   salesOrder: { select: { id: true, orderNumber: true, status: true } },
 } satisfies Prisma.LeadSelect;

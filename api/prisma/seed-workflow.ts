@@ -329,9 +329,107 @@ export async function seedWorkflow(prisma: PrismaClient) {
     }
   }
 
+  // --- 4e. Change history (admin timeline), rebuilt from everything seeded above ---
+  const audited = await seedLeadHistory(prisma, adminLeadOwner);
+
   // --- 5. Sales round-robin starts with Suresh ---
   await prisma.user.update({ where: { id: sales.sales }, data: { lastAutoAssignedAt: new Date(now - 2 * DAY), autoAssignEnabled: true } });
   await prisma.user.update({ where: { id: sales.sales2 }, data: { lastAutoAssignedAt: new Date(now - DAY), autoAssignEnabled: true } });
 
-  console.log(`Seeded the telecaller/sales workflow: ${calls} call logs, ${salesLeads.length} sales leads attributed, ${visits} GPS check-ins, ${messages} WhatsApp messages, ${history} older leads for the reports, ${notes} notifications.`);
+  console.log(`Seeded the telecaller/sales workflow: ${calls} call logs, ${salesLeads.length} sales leads attributed, ${visits} GPS check-ins, ${messages} WhatsApp messages, ${history} older leads for the reports, ${notes} notifications, ${audited} history entries.`);
 }
+
+const STATUS_WORDS: Record<string, string> = { NEW: 'New', CONTACTED: 'Contacted', QUALIFIED: 'Qualified', QUOTED: 'Quoted', WON: 'Won', LOST: 'Lost' };
+const OUTCOME_WORDS: Record<string, string> = {
+  NO_ANSWER: 'No answer', BUSY: 'Busy', CALL_BACK: 'Call back later', INTERESTED: 'Interested', NOT_INTERESTED: 'Not interested', WRONG_NUMBER: 'Wrong number',
+  CONNECTED: 'Connected', QUOTE_SENT: 'Quote sent', OTHER: 'Other',
+};
+
+/**
+ * Writes each demo lead's history the way the app records it live: arrival,
+ * assignment, calls, handover, follow-ups, site visits, closing. One lead
+ * (Green Valley Apartments) gets extra edits for a rich timeline.
+ */
+async function seedLeadHistory(prisma: PrismaClient, adminId: string) {
+  const leads = await prisma.lead.findMany({
+    select: {
+      id: true, name: true, status: true, source: true, sourceDetail: true, createdAt: true, createdById: true, closedAt: true,
+      productInterest: true, sumpSizeLitres: true, qualifiedAt: true, qualifiedById: true, telecallerId: true,
+      telecaller: { select: { fullName: true } }, assignedTo: { select: { id: true, fullName: true } },
+      calls: { select: { outcome: true, note: true, calledAt: true, callerId: true } },
+      followUps: { select: { scheduledAt: true, note: true, createdAt: true, createdById: true, completedAt: true, outcome: true } },
+      siteVisits: { where: { latitude: { not: null } }, select: { latitude: true, longitude: true, accuracyMeters: true, notes: true, checkedInAt: true, personId: true } },
+    },
+  });
+  type Row = { leadId: string; userId: string; type: string; message: string; changes?: object; createdAt: Date };
+  const rows: Row[] = [];
+  const t = (d: Date) => d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+  for (const l of leads) {
+    rows.push({ leadId: l.id, userId: l.createdById, type: 'CREATED', message: l.sourceDetail ? `Lead arrived: ${l.sourceDetail}` : 'Lead created by hand', createdAt: l.createdAt });
+    const firstOwner = l.telecaller?.fullName ?? (l.qualifiedAt ? null : l.assignedTo?.fullName);
+    if (firstOwner) {
+      rows.push({
+        leadId: l.id, userId: l.createdById, type: 'ASSIGNED', message: `Assigned to ${firstOwner}${l.telecallerId ? ' (round-robin)' : ''}`,
+        changes: [{ field: 'assignedTo', label: 'Assigned to', from: null, to: firstOwner }], createdAt: new Date(l.createdAt.getTime() + 1000),
+      });
+    }
+    for (const c of l.calls) {
+      rows.push({ leadId: l.id, userId: c.callerId, type: 'CALL_LOGGED', message: `Call: ${OUTCOME_WORDS[c.outcome]}${c.note ? ` · ${c.note}` : ''}`, createdAt: c.calledAt });
+    }
+    if (l.qualifiedAt && l.qualifiedById && l.assignedTo) {
+      rows.push({
+        leadId: l.id, userId: l.qualifiedById, type: 'HANDED_OVER', message: `Qualified and handed to ${l.assignedTo.fullName}`,
+        changes: [
+          { field: 'status', label: 'Status', from: 'CONTACTED', to: 'QUALIFIED' },
+          { field: 'assignedTo', label: 'Salesperson', from: null, to: l.assignedTo.fullName },
+          ...(l.productInterest ? [{ field: 'productInterest', label: 'Product', from: null, to: l.productInterest }] : []),
+          ...(l.sumpSizeLitres ? [{ field: 'sumpSizeLitres', label: 'Sump size', from: null, to: String(l.sumpSizeLitres) }] : []),
+        ],
+        createdAt: l.qualifiedAt,
+      });
+    }
+    for (const f of l.followUps) {
+      rows.push({ leadId: l.id, userId: f.createdById, type: 'FOLLOW_UP_CREATED', message: `Follow-up set for ${t(f.scheduledAt)}${f.note ? `: ${f.note}` : ''}`, createdAt: f.createdAt });
+      if (f.completedAt && f.outcome) {
+        rows.push({ leadId: l.id, userId: l.assignedTo?.id ?? f.createdById, type: 'FOLLOW_UP_COMPLETED', message: `Follow-up (due ${t(f.scheduledAt)}) done: ${OUTCOME_WORDS[f.outcome]}`, createdAt: f.completedAt });
+      }
+    }
+    for (const v of l.siteVisits) {
+      rows.push({
+        leadId: l.id, userId: v.personId, type: 'SITE_VISIT',
+        message: `Site visit (GPS ${v.latitude!.toFixed(5)}, ${v.longitude!.toFixed(5)}${v.accuracyMeters !== null ? `, ±${v.accuracyMeters} m` : ''})${v.notes ? ` · ${v.notes}` : ''}`,
+        createdAt: v.checkedInAt!,
+      });
+    }
+    if (l.closedAt && (l.status === 'WON' || l.status === 'LOST') && l.calls.every((c) => !['NOT_INTERESTED', 'WRONG_NUMBER'].includes(c.outcome))) {
+      const from = l.qualifiedAt ? 'QUOTED' : 'CONTACTED';
+      rows.push({
+        leadId: l.id, userId: l.assignedTo?.id ?? adminId, type: 'STATUS_CHANGED', message: `Status: ${STATUS_WORDS[from]} → ${STATUS_WORDS[l.status]}`,
+        changes: [{ field: 'status', label: 'Status', from, to: l.status }], createdAt: l.closedAt,
+      });
+    }
+  }
+
+  // A rich timeline on one lead: edits by the salesperson and the telecaller, a re-assignment, notes.
+  const rich = leads.find((l) => l.name === 'Green Valley Apartments');
+  if (rich?.assignedTo && rich.telecallerId) {
+    const priya = await prisma.user.findUniqueOrThrow({ where: { email: 'sales2@precon.local' }, select: { id: true, fullName: true } });
+    const base = (rich.qualifiedAt ?? rich.createdAt).getTime();
+    const at = (h: number) => new Date(Math.min(Date.now() - 60_000, base + h * 3_600_000));
+    rows.push(
+      { leadId: rich.id, userId: adminId, type: 'ASSIGNED', message: `Salesperson changed: ${priya.fullName} → ${rich.assignedTo.fullName}`,
+        changes: [{ field: 'assignedTo', label: 'Salesperson', from: priya.fullName, to: rich.assignedTo.fullName }], createdAt: at(2) },
+      { leadId: rich.id, userId: rich.telecallerId, type: 'FIELD_CHANGED', message: 'Sump size: 15000 → 20000; City: Coimbatore North → Coimbatore',
+        changes: [{ field: 'sumpSizeLitres', label: 'Sump size', from: '15000', to: '20000' }, { field: 'city', label: 'City', from: 'Coimbatore North', to: 'Coimbatore' }], createdAt: at(5) },
+      { leadId: rich.id, userId: rich.assignedTo.id, type: 'STATUS_CHANGED', message: 'Status: Qualified → Quoted',
+        changes: [{ field: 'status', label: 'Status', from: 'QUALIFIED', to: 'QUOTED' }], createdAt: at(30) },
+      { leadId: rich.id, userId: rich.assignedTo.id, type: 'NOTES_EDITED', message: 'Notes edited',
+        changes: [{ field: 'notes', label: 'Notes', from: 'Association secretary: Mr. Prakash. Two 20,000 L sumps.', to: 'Association secretary: Mr. Prakash. Two 20,000 L sumps. Quote sent: committee meets on Saturday.' }], createdAt: at(31) },
+      { leadId: rich.id, userId: rich.telecallerId, type: 'CALL_LOGGED', message: 'Call: Interested · Secretary confirms the committee liked the quote', createdAt: at(50) },
+    );
+  }
+  rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  await prisma.leadActivity.createMany({ data: rows.map((r) => ({ ...r, type: r.type as never, changes: r.changes as never })) });
+  return rows.length;
+}
+
