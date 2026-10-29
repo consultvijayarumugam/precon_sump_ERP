@@ -18,13 +18,28 @@ export function businessPeriods(now: Date = new Date()) {
   const mondayOffset = (day.getUTCDay() + 6) % 7; // Mon = 0 ... Sun = 6
   const monday = new Date(day.getTime() - mondayOffset * 86_400_000).toISOString().slice(0, 10);
   const monthStartDay = `${today.slice(0, 7)}-01`;
+  const weekStart = businessDayRange(monday).start;
+  const monthStart = businessDayRange(monthStartDay).start;
+  // The month before, for "vs last month" (same day count, capped at that month's end).
+  const prevMonthFirst = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth() - 1, 1));
+  const prevMonthLast = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), 0));
+  const dayOfMonth = day.getUTCDate();
+  const prevSameDay = new Date(Date.UTC(prevMonthFirst.getUTCFullYear(), prevMonthFirst.getUTCMonth(), Math.min(dayOfMonth, prevMonthLast.getUTCDate())));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
   return {
     now,
     today,
     todayStart,
     todayEnd,
-    weekStart: businessDayRange(monday).start,
-    monthStart: businessDayRange(monthStartDay).start,
+    weekStart,
+    monthStart,
     monthStartDate: new Date(`${monthStartDay}T00:00:00Z`),
+    // Comparison periods: yesterday, last week and last month (as instants and DATE values).
+    yesterdayStart: businessDayRange(iso(new Date(day.getTime() - 86_400_000))).start,
+    prevWeekStart: new Date(weekStart.getTime() - 7 * 86_400_000),
+    prevMonthStart: businessDayRange(iso(prevMonthFirst)).start,
+    prevMonthStartDate: prevMonthFirst,
+    /** Last month's same day-of-month (capped), as a DATE: "last month to date" ends here. */
+    prevMonthSameDayDate: prevSameDay,
   };
 }

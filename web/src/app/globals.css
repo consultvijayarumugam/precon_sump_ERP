@@ -9,6 +9,30 @@
 :root {
   --background: #f4f6fb;
   --foreground: #1e2433;
+
+  /*
+   * Precon Sump water palette (CEO dashboard + brand). Deep, solid blues with
+   * one bright aqua accent: "Strong, Reliable, Built to Last". Red stays
+   * reserved for genuinely urgent items.
+   */
+  --ps-navy-950: #071a33; /* hero band, deepest ink */
+  --ps-navy-900: #0b2545;
+  --ps-ocean-700: #0f4c81; /* hero gradient end */
+  --ps-blue-600: #2557eb; /* brand blue: primary marks, links */
+  --ps-aqua-500: #0ea5e9; /* bright accent: highlights, "today" */
+  --ps-tint-50: #eaf2fe; /* soft blue wash behind numbers */
+  --ps-card: #ffffff;
+  --ps-line: #e3e8f0; /* hairlines and grid */
+  --ps-ink: #0f1b2d;
+  --ps-ink-2: #4a5568;
+  --ps-ink-3: #8a94a6;
+  /* Pipeline funnel: one blue, light to dark (validated ordinal ramp, lightest step 2.11:1 on white). */
+  --ps-stage-1: #86b6ef;
+  --ps-stage-2: #3987e5;
+  --ps-stage-3: #1c5cab;
+  --ps-stage-4: #0d366b;
+  --ps-mark: #2557eb; /* single-series bars (3:1+ on white) */
+  --ps-mark-muted: #c9d7ef; /* comparison / previous period */
 }
 
 @theme inline {
@@ -37,6 +61,19 @@
   :root {
     --background: #0c1020;
     --foreground: #e6e8ec;
+    --ps-card: #111a2e;
+    --ps-line: #22304a;
+    --ps-tint-50: #12264a;
+    --ps-ink: #eef2f8;
+    --ps-ink-2: #b4bfd2;
+    --ps-ink-3: #7d8aa3;
+    /* Dark funnel: same hue stepped for the navy surface (validated, darkest step 2.95:1). */
+    --ps-stage-1: #9ec5f4;
+    --ps-stage-2: #5598e7;
+    --ps-stage-3: #2a78d6;
+    --ps-stage-4: #1f63bd;
+    --ps-mark: #4f8bff;
+    --ps-mark-muted: #2b3a58;
   }
 }
 

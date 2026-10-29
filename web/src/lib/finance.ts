@@ -149,6 +149,18 @@ const inr = new Intl.NumberFormat("en-IN", {
 /** "125000.00" -> "₹1,25,000" */
 export const formatINR = (amount: string | number) => inr.format(Number(amount));
 
+/**
+ * Indian short form for headline amounts: ₹5.03 L (lakh = 1,00,000),
+ * ₹1.20 Cr (crore = 1,00,00,000); under a lakh it's the full amount (₹83,000).
+ */
+export function formatINRShort(amount: string | number): string {
+  const n = Number(amount);
+  const abs = Math.abs(n);
+  if (abs >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`;
+  if (abs >= 1e5) return `₹${(n / 1e5).toFixed(2)} L`;
+  return inr.format(n);
+}
+
 const dateOnlyFormat = new Intl.DateTimeFormat("en-IN", {
   day: "numeric",
   month: "short",

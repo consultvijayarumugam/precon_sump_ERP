@@ -14,10 +14,11 @@ interface Summary {
 }
 
 /** The daily "my reminders" card: what's overdue and due today, and what's new for you today. */
-export function MyReminders() {
+export function MyReminders({ hideWhenEmpty = false }: { hideWhenEmpty?: boolean }) {
   const { data } = useApi<Summary>("/notifications/summary");
   if (!data) return null;
   const nothing = data.overdue.length + data.dueToday.length + data.assignedToday + data.handedToday === 0;
+  if (nothing && hideWhenEmpty) return null;
   const items = [...data.overdue.map((f) => ({ ...f, late: true })), ...data.dueToday.map((f) => ({ ...f, late: false }))];
 
   return (

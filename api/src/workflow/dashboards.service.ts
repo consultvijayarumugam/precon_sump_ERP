@@ -5,7 +5,7 @@ import { money } from '../finance/finance-utils.js';
 import { LeadStatus, Prisma, SalesOrderStatus } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { businessPeriods } from './business-periods.js';
+import { businessDate, businessPeriods } from './business-periods.js';
 import { CheckInsService } from './check-ins.service.js';
 import { TELECALLER_STAGES } from './lead-actions.service.js';
 
@@ -275,6 +275,105 @@ export class DashboardsService {
       sales: salesRows,
       flags,
       visits,
+      overview: await this.ceoOverview(p, {
+        callsToday: telecallerRows.reduce((n, r) => n + r.callsToday, 0),
+        revenueMonth,
+        wonMonth: salesRows.reduce((n, r) => n + r.wonMonth, 0),
+      }),
+    };
+  }
+
+  /**
+   * The owner's morning view: lead flow (today / week vs last week, by source,
+   * last 14 days), team activity (vs yesterday), pipeline by stage and revenue
+   * (month to date vs the same days last month). Read-only counts.
+   */
+  private async ceoOverview(p: ReturnType<typeof businessPeriods>, already: { callsToday: number; revenueMonth: number; wonMonth: number }) {
+    const DAY = 86_400_000;
+    const sinceYesterday = { gte: p.yesterdayStart, lt: p.todayStart };
+    // Yesterday up to this time of day: a fair comparison for a day still in progress.
+    const yesterdaySoFar = { gte: p.yesterdayStart, lte: new Date(p.now.getTime() - DAY) };
+    const weekSoFar = { gte: p.weekStart, lte: p.now };
+    // Last week up to the same moment, so a Tuesday morning compares with last Tuesday morning.
+    const lastWeekSoFar = { gte: p.prevWeekStart, lte: new Date(p.now.getTime() - 7 * DAY) };
+    const trendFrom = new Date(p.todayStart.getTime() - 13 * DAY);
+    const lastMonthSameSpan = { gte: p.prevMonthStart, lte: new Date(p.prevMonthStart.getTime() + (p.now.getTime() - p.monthStart.getTime())) };
+
+    const [
+      todayLeads, yesterdayLeads, weekLeads, lastWeekLeads, sourcesWeek, sourcesLastWeek, recent,
+      callsYesterday, callsYesterdaySoFar, workedToday, workedYesterday, dueMonth, doneMonth,
+      byStage, qualifiedYesterday, wonLastMonth, revenueLastMonth, revenueLastMonthFull,
+    ] = await Promise.all([
+      this.prisma.lead.count({ where: { createdAt: { gte: p.todayStart, lt: p.todayEnd } } }),
+      this.prisma.lead.count({ where: { createdAt: sinceYesterday } }),
+      this.prisma.lead.count({ where: { createdAt: weekSoFar } }),
+      this.prisma.lead.count({ where: { createdAt: lastWeekSoFar } }),
+      this.prisma.lead.groupBy({ by: ['source'], where: { createdAt: weekSoFar }, _count: { _all: true } }),
+      this.prisma.lead.groupBy({ by: ['source'], where: { createdAt: lastWeekSoFar }, _count: { _all: true } }),
+      this.prisma.lead.findMany({ where: { createdAt: { gte: trendFrom, lt: p.todayEnd } }, select: { createdAt: true } }),
+      this.prisma.callLog.count({ where: { calledAt: sinceYesterday } }),
+      this.prisma.callLog.count({ where: { calledAt: yesterdaySoFar } }),
+      this.prisma.callLog.groupBy({ by: ['leadId'], where: { calledAt: { gte: p.todayStart } } }),
+      this.prisma.callLog.groupBy({ by: ['leadId'], where: { calledAt: sinceYesterday } }),
+      this.prisma.followUp.count({ where: { scheduledAt: { gte: p.monthStart, lt: p.now }, lead: { assignedToId: { not: null } } } }),
+      this.prisma.followUp.count({ where: { scheduledAt: { gte: p.monthStart, lt: p.now }, completedAt: { not: null }, lead: { assignedToId: { not: null } } } }),
+      this.prisma.lead.groupBy({ by: ['status'], where: { status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] } }, _count: { _all: true } }),
+      this.prisma.lead.count({ where: { qualifiedAt: sinceYesterday } }),
+      this.prisma.lead.count({ where: { status: 'WON', closedAt: lastMonthSameSpan } }),
+      this.prisma.salesOrder.aggregate({
+        where: { status: { not: SalesOrderStatus.CANCELLED }, orderDate: { gte: p.prevMonthStartDate, lte: p.prevMonthSameDayDate } },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.salesOrder.aggregate({
+        where: { status: { not: SalesOrderStatus.CANCELLED }, orderDate: { gte: p.prevMonthStartDate, lt: p.monthStartDate } },
+        _sum: { totalAmount: true },
+      }),
+    ]);
+
+    // Leads per business day for the last 14 days (oldest first), zero-filled.
+    const days = Array.from({ length: 14 }, (_, i) => businessDate(new Date(p.todayStart.getTime() - (13 - i) * DAY + 12 * 3_600_000)));
+    const perDay = new Map(days.map((d) => [d, 0]));
+    for (const l of recent) {
+      const d = businessDate(l.createdAt);
+      if (perDay.has(d)) perDay.set(d, perDay.get(d)! + 1);
+    }
+    const count = (rows: { source: string; _count: { _all: number } }[], source: string) => rows.find((r) => r.source === source)?._count._all ?? 0;
+    const sources = [...new Set([...sourcesWeek, ...sourcesLastWeek].map((r) => r.source))]
+      .map((source) => ({ source, thisWeek: count(sourcesWeek, source), lastWeek: count(sourcesLastWeek, source) }))
+      .sort((a, b) => b.thisWeek - a.thisWeek || b.lastWeek - a.lastWeek);
+    const stage = (s: string) => byStage.find((g) => g.status === s)?._count._all ?? 0;
+
+    return {
+      leadFlow: {
+        today: todayLeads,
+        yesterday: yesterdayLeads,
+        thisWeek: weekLeads,
+        lastWeekSameTime: lastWeekLeads,
+        bySource: sources,
+        daily: days.map((date) => ({ date, leads: perDay.get(date) ?? 0 })),
+      },
+      activity: {
+        callsToday: already.callsToday,
+        callsYesterday,
+        callsYesterdaySoFar,
+        leadsWorkedToday: workedToday.length,
+        leadsWorkedYesterday: workedYesterday.length,
+        followUpsDueMonth: dueMonth,
+        followUpsDoneMonth: doneMonth,
+        followUpCompliance: dueMonth ? doneMonth / dueMonth : null,
+      },
+      pipeline: {
+        active: stage('NEW') + stage('CONTACTED') + stage('QUALIFIED') + stage('QUOTED'),
+        stages: (['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] as const).map((status) => ({ status, leads: stage(status) })),
+        qualifiedYesterday,
+      },
+      revenue: {
+        monthToDate: already.revenueMonth.toFixed(2),
+        lastMonthSameDays: money(revenueLastMonth._sum.totalAmount),
+        lastMonthTotal: money(revenueLastMonthFull._sum.totalAmount),
+        wonMonthToDate: already.wonMonth,
+        wonLastMonthSameDays: wonLastMonth,
+      },
     };
   }
 

@@ -160,6 +160,40 @@ export interface MasterDashboardData {
   }[];
   flags: Flag[];
   visits: CheckIn[];
+  /** The owner's morning view (CEO dashboard). */
+  overview: {
+    leadFlow: {
+      today: number;
+      yesterday: number;
+      thisWeek: number;
+      lastWeekSameTime: number;
+      bySource: { source: LeadSource; thisWeek: number; lastWeek: number }[];
+      daily: { date: string; leads: number }[];
+    };
+    activity: {
+      callsToday: number;
+      callsYesterday: number;
+      /** Yesterday up to the same time of day. */
+      callsYesterdaySoFar: number;
+      leadsWorkedToday: number;
+      leadsWorkedYesterday: number;
+      followUpsDueMonth: number;
+      followUpsDoneMonth: number;
+      followUpCompliance: number | null;
+    };
+    pipeline: {
+      active: number;
+      stages: { status: "NEW" | "CONTACTED" | "QUALIFIED" | "QUOTED"; leads: number }[];
+      qualifiedYesterday: number;
+    };
+    revenue: {
+      monthToDate: string;
+      lastMonthSameDays: string;
+      lastMonthTotal: string;
+      wonMonthToDate: number;
+      wonLastMonthSameDays: number;
+    };
+  };
 }
 
 export const percent = (rate: number | null) => (rate === null ? "–" : `${Math.round(rate * 100)}%`);

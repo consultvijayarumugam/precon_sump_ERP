@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Precon ERP",
+  title: "Precon Sump",
   description: "Precon ERP dashboard",
 };
 

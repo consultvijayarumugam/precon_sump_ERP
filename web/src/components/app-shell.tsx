@@ -144,11 +144,11 @@ function activeHref(pathname: string): string | undefined {
 
 const COLLAPSE_KEY = "precon.sidebarCollapsed";
 
-/** "Precon ERP" wordmark: three stacked concrete blocks + the name. */
+/** "Precon Sump" wordmark: three stacked concrete blocks (the precast tank) + the name, in the water palette. */
 function Logo({ compact }: { compact?: boolean }) {
   return (
-    <Link href="/" className="flex items-center gap-2.5" aria-label="Precon ERP home">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 shadow-sm">
+    <Link href="/" className="flex items-center gap-2.5" aria-label="Precon Sump home">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[var(--ps-aqua-500)] to-[var(--ps-blue-600)] shadow-sm">
         <svg viewBox="0 0 20 20" className="size-5" aria-hidden>
           <rect x="3" y="3" width="14" height="4" rx="1" fill="white" />
           <rect x="3" y="8.5" width="9" height="4" rx="1" fill="white" opacity="0.85" />
@@ -158,7 +158,7 @@ function Logo({ compact }: { compact?: boolean }) {
       </span>
       {!compact && (
         <span className="text-[15px] leading-none tracking-tight text-white">
-          <span className="font-semibold">Precon</span> <span className="font-light text-brand-300">ERP</span>
+          <span className="font-semibold">Precon</span> <span className="font-light text-sky-300">Sump</span>
         </span>
       )}
     </Link>
@@ -373,7 +373,7 @@ function Shell({ children }: { children: ReactNode }) {
           <Menu className="size-5" />
         </button>
         <span className="text-[15px] font-semibold tracking-tight">
-          Precon <span className="font-light text-brand-600 dark:text-brand-300">ERP</span>
+          Precon <span className="font-light text-[var(--ps-blue-600)] dark:text-sky-300">Sump</span>
         </span>
         <span className="ml-auto">
           <NotificationBell />

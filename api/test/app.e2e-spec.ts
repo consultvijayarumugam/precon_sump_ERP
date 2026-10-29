@@ -1212,6 +1212,39 @@ describe('Auth and RBAC (e2e)', () => {
       await http().post('/api/v1/check-ins').set(as(tara)).send({ latitude: 11, longitude: 77 }).expect(403);
     });
 
+    it("the owner's overview (CEO dashboard) adds up and moves with new leads and calls", async () => {
+      const db = await prisma();
+      const get = async () => (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      const before = await get();
+      const o = before.overview;
+      // Shapes and internal consistency.
+      expect(o.leadFlow.daily).toHaveLength(14);
+      expect(o.pipeline.stages.map((s: { status: string }) => s.status)).toEqual(['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED']);
+      expect(o.pipeline.active).toBe(o.pipeline.stages.reduce((n: number, s: { leads: number }) => n + s.leads, 0));
+      expect(o.pipeline.active).toBe(await db.lead.count({ where: { status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] } } }));
+      expect(o.leadFlow.thisWeek).toBe(o.leadFlow.bySource.reduce((n: number, s: { thisWeek: number }) => n + s.thisWeek, 0));
+      expect(o.leadFlow.daily.at(-1).leads).toBe(o.leadFlow.today);
+      expect(Number(o.revenue.monthToDate)).toBeCloseTo(Number(before.team.revenueMonth), 2);
+      expect(o.activity.followUpCompliance === null || (o.activity.followUpCompliance >= 0 && o.activity.followUpCompliance <= 1)).toBe(true);
+
+      // A new lead today and a call on it move the right numbers.
+      const id = await taraLead('E2E Flow Overview', '9000084020');
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'NO_ANSWER', nextCallbackAt: inHours(2) }).expect(201);
+      const after = (await get()).overview;
+      expect(after.leadFlow.today).toBe(o.leadFlow.today + 1);
+      expect(after.leadFlow.thisWeek).toBe(o.leadFlow.thisWeek + 1);
+      expect(after.leadFlow.daily.at(-1).leads).toBe(o.leadFlow.daily.at(-1).leads + 1);
+      const meta = (x: typeof o) => x.leadFlow.bySource.find((r: { source: string }) => r.source === 'META')?.thisWeek ?? 0;
+      expect(meta(after)).toBe(meta(o) + 1);
+      expect(after.activity.callsToday).toBe(o.activity.callsToday + 1);
+      expect(after.activity.leadsWorkedToday).toBe(o.activity.leadsWorkedToday + 1);
+      expect(after.pipeline.stages.find((s: { status: string }) => s.status === 'CONTACTED').leads).toBe(
+        o.pipeline.stages.find((s: { status: string }) => s.status === 'CONTACTED').leads + 1,
+      );
+      // Only admin (leads.read_all + leads.assign) gets it.
+      await http().get('/api/v1/dashboards/master').set(as(sales)).expect(403);
+    });
+
     it('dashboards are role-scoped; the master scorecards count the calls just logged', async () => {
       await http().get('/api/v1/dashboards/master').set(as(tara)).expect(403);
       await http().get('/api/v1/dashboards/master').set(as(sales)).expect(403);
