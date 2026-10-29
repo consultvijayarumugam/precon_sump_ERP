@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { IsDateOnly } from '../../finance/dto/common.dto.js';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEmail,
@@ -120,6 +121,16 @@ export class ListLeadsQueryDto {
   @IsOptional()
   @IsUUID()
   assignedToId?: string;
+
+  @ApiPropertyOptional({ example: '2026-09-01', description: 'Won on or after this day (closedAt, business time zone)' })
+  @IsOptional()
+  @IsDateOnly()
+  wonFrom?: string;
+
+  @ApiPropertyOptional({ example: '2026-09-30', description: 'Won on or before this day (inclusive)' })
+  @IsOptional()
+  @IsDateOnly()
+  wonTo?: string;
 
   @ApiPropertyOptional({ description: 'Matches name, phone or city' })
   @IsOptional()

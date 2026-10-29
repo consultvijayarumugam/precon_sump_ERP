@@ -9,7 +9,7 @@ import {
   UpdateFollowUpDto,
 } from './dto/follow-up.dto.js';
 import { diff, recordActivity, when } from './lead-history.js';
-import { FOLLOW_UP_SELECT, leadScope, ownedLeads } from './lead-scope.js';
+import { dayRangeFilter, FOLLOW_UP_SELECT, leadScope, ownedLeads } from './lead-scope.js';
 
 const OUTCOME_WORDS: Record<FollowUpOutcome, string> = {
   CONNECTED: 'Connected',
@@ -59,6 +59,8 @@ export class FollowUpsService {
           query.assignedTo === 'me' ? { lead: { assignedToId: user.id } } : {},
           query.state ? stateFilter[query.state] : {},
           { scheduledAt: { gte: query.from, lt: query.to } },
+          // Calendar-day range (business time zone), e.g. "this week" on the Follow-ups page.
+          { scheduledAt: dayRangeFilter(query.fromDate, query.toDate) },
         ],
       },
       // Completed ones newest first; everything else in the order they're due.

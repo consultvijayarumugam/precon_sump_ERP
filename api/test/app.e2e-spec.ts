@@ -1871,4 +1871,109 @@ describe('Auth and RBAC (e2e)', () => {
       expect(reopened).toMatchObject({ user: { fullName: 'Suresh Sales' }, changes: [{ field: 'outcome', from: 'CONNECTED', to: null }] });
     });
   });
+
+  describe('Date filters on Won and Follow-ups (narrow what each user can already see)', () => {
+    let admin: string;
+    let suresh: string;
+    let priya: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+    const ids: Record<string, string> = {};
+    const lead: Record<string, string> = {};
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      suresh = (await login('sales@precon.local')).body.accessToken;
+      priya = (await login('sales2@precon.local')).body.accessToken;
+      const db = await prisma();
+      const adminId = (await db.user.findUniqueOrThrow({ where: { email: 'admin@precon.local' } })).id;
+      ids.suresh = (await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } })).id;
+      ids.priya = (await db.user.findUniqueOrThrow({ where: { email: 'sales2@precon.local' } })).id;
+      // Won leads in 2025 (far from the demo data). Times are UTC; India is UTC+5:30.
+      const won = [
+        { key: 'sureshMar', name: 'E2E Won Suresh Mar 10', owner: ids.suresh, closedAt: '2025-03-10T06:00:00Z', source: 'META' },
+        { key: 'sureshMarEnd', name: 'E2E Won Suresh Mar 31 late', owner: ids.suresh, closedAt: '2025-03-31T18:00:00Z', source: 'REFERRAL' }, // 23:30 IST, 31 Mar
+        { key: 'sureshApr', name: 'E2E Won Suresh Apr 1 early', owner: ids.suresh, closedAt: '2025-03-31T18:40:00Z', source: 'META' }, // 00:10 IST, 1 Apr
+        { key: 'priyaMar', name: 'E2E Won Priya Mar 20', owner: ids.priya, closedAt: '2025-03-20T06:00:00Z', source: 'META' },
+      ] as const;
+      for (const [i, w] of won.entries()) {
+        const l = await db.lead.create({
+          data: { name: w.name, phone: `90000880${10 + i}`, source: w.source, status: 'WON', closedAt: new Date(w.closedAt), assignedToId: w.owner, createdById: adminId },
+        });
+        lead[w.key] = l.id;
+        leadIds.push(l.id);
+      }
+      // Follow-ups due in May 2031 on one lead each.
+      const fu = [
+        { lead: lead.sureshMar, at: '2031-05-05T04:30:00Z', note: 'E2E FU Suresh Mon' }, // Mon 5 May, 10:00 IST
+        { lead: lead.sureshMar, at: '2031-05-11T17:00:00Z', note: 'E2E FU Suresh Sun late' }, // Sun 11 May, 22:30 IST
+        { lead: lead.sureshMar, at: '2031-05-11T18:40:00Z', note: 'E2E FU Suresh next Mon' }, // Mon 12 May, 00:10 IST
+        { lead: lead.priyaMar, at: '2031-05-06T04:30:00Z', note: 'E2E FU Priya Tue' },
+      ];
+      for (const f of fu) await db.followUp.create({ data: { leadId: f.lead, scheduledAt: new Date(f.at), note: f.note, createdById: adminId } });
+    });
+    afterAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { id: { in: leadIds } } });
+    });
+
+    const won = async (token: string, q: string) => (await http().get(`/api/v1/leads?status=WON&pageSize=100&${q}`).set(as(token)).expect(200)).body;
+
+    it('Won: a month range counts only that month (inclusive at both ends) and only the user’s own', async () => {
+      const mine = await won(suresh, 'wonFrom=2025-03-01&wonTo=2025-03-31');
+      expect(mine.items.map((l: { name: string }) => l.name)).toEqual(['E2E Won Suresh Mar 31 late', 'E2E Won Suresh Mar 10']); // newest win first
+      expect(mine.total).toBe(2);
+      // Admin sees Priya's too, still sorted by win date.
+      const all = await won(admin, 'wonFrom=2025-03-01&wonTo=2025-03-31');
+      expect(all.items.map((l: { name: string }) => l.name)).toEqual(['E2E Won Suresh Mar 31 late', 'E2E Won Priya Mar 20', 'E2E Won Suresh Mar 10']);
+      expect(all.total).toBe(3);
+      // 00:10 on 1 April (India time) belongs to April.
+      const april = await won(admin, 'wonFrom=2025-04-01&wonTo=2025-04-30');
+      expect(april.items.map((l: { name: string }) => l.name)).toEqual(['E2E Won Suresh Apr 1 early']);
+      // A single day.
+      expect((await won(admin, 'wonFrom=2025-03-31&wonTo=2025-03-31')).total).toBe(1);
+      // Priya never sees Suresh's.
+      expect((await won(priya, 'wonFrom=2025-03-01&wonTo=2025-04-30')).items.map((l: { name: string }) => l.name)).toEqual(['E2E Won Priya Mar 20']);
+    });
+
+    it('Won: the date filter combines with source, product, salesperson and search; bad ranges are refused', async () => {
+      expect((await won(admin, 'wonFrom=2025-03-01&wonTo=2025-03-31&source=META')).total).toBe(2);
+      expect((await won(admin, 'wonFrom=2025-03-01&wonTo=2025-03-31&assignedToId=' + ids.priya)).total).toBe(1);
+      expect((await won(admin, 'wonFrom=2025-03-01&wonTo=2025-03-31&search=Mar%2031')).total).toBe(1);
+      expect((await won(admin, 'wonFrom=2025-03-01&wonTo=2025-03-31&productInterest=MICROBES')).total).toBe(0);
+      // Open-ended ranges work too.
+      expect((await won(admin, 'wonFrom=2025-03-15&wonTo=2025-04-30')).total).toBe(3);
+      const unfiltered = await won(admin, '');
+      expect(unfiltered.total).toBeGreaterThanOrEqual(4);
+      await http().get('/api/v1/leads?status=WON&wonFrom=2025-04-01&wonTo=2025-03-01').set(as(admin)).expect(400);
+      await http().get('/api/v1/leads?status=WON&wonFrom=2025-13-01').set(as(admin)).expect(400);
+    });
+
+    it('Follow-ups: a week range (Mon-Sun, India time) on each tab, only the user’s own, combined with "only mine"', async () => {
+      const notes = async (token: string, q: string) =>
+        (await http().get(`/api/v1/follow-ups?${q}`).set(as(token)).expect(200)).body
+          .map((f: { note: string }) => f.note)
+          .filter((n: string) => n?.startsWith('E2E FU'));
+      const week = 'fromDate=2031-05-05&toDate=2031-05-11';
+      expect(await notes(suresh, `state=upcoming&${week}`)).toEqual(['E2E FU Suresh Mon', 'E2E FU Suresh Sun late']); // due-date order
+      expect(await notes(admin, `state=upcoming&${week}`)).toEqual(['E2E FU Suresh Mon', 'E2E FU Priya Tue', 'E2E FU Suresh Sun late']);
+      expect(await notes(priya, `state=upcoming&${week}`)).toEqual(['E2E FU Priya Tue']);
+      expect(await notes(admin, `state=upcoming&${week}&assignedTo=me`)).toEqual([]);
+      expect(await notes(suresh, 'state=upcoming&fromDate=2031-05-12&toDate=2031-05-18')).toEqual(['E2E FU Suresh next Mon']);
+      expect(await notes(suresh, `state=overdue&${week}`)).toEqual([]);
+
+      // Completing one moves it from Upcoming to Completed within the same range.
+      const fu = await (await prisma()).followUp.findFirstOrThrow({ where: { note: 'E2E FU Suresh Mon' } });
+      await http().post(`/api/v1/follow-ups/${fu.id}/complete`).set(as(suresh)).send({ outcome: 'CONNECTED' }).expect(200);
+      expect(await notes(suresh, `state=upcoming&${week}`)).toEqual(['E2E FU Suresh Sun late']);
+      expect(await notes(suresh, `state=completed&${week}`)).toEqual(['E2E FU Suresh Mon']);
+      await http().get('/api/v1/follow-ups?fromDate=2031-05-11&toDate=2031-05-05').set(as(suresh)).expect(400);
+    });
+  });
 });
+

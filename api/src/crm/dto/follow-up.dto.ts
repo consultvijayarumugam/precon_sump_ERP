@@ -8,6 +8,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { IsDateOnly } from '../../finance/dto/common.dto.js';
 import { FollowUpOutcome } from '../../generated/prisma/client.js';
 
 export class CreateFollowUpDto {
@@ -61,6 +62,16 @@ export class ListFollowUpsQueryDto {
   @IsOptional()
   @IsIn(FOLLOW_UP_STATES)
   state?: FollowUpState;
+
+  @ApiPropertyOptional({ example: '2026-10-27', description: 'Follow-ups due on or after this day (business time zone)' })
+  @IsOptional()
+  @IsDateOnly()
+  fromDate?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-02', description: 'Follow-ups due on or before this day (inclusive)' })
+  @IsOptional()
+  @IsDateOnly()
+  toDate?: string;
 
   @ApiPropertyOptional({ description: 'scheduledAt >= from (ISO date-time)' })
   @IsOptional()

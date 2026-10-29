@@ -16,6 +16,7 @@ import {
   canAssignLeads,
   FOLLOW_UP_SELECT,
   LEAD_SELECT,
+  dayRangeFilter,
   leadScope,
 } from './lead-scope.js';
 
@@ -37,6 +38,8 @@ export class LeadsService {
           source: query.source,
           productInterest: query.productInterest,
           assignedToId: query.assignedToId,
+          // "Won on" date range (narrows what the user can already see).
+          closedAt: dayRangeFilter(query.wonFrom, query.wonTo),
         },
         query.search
           ? {

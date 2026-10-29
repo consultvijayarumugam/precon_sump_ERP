@@ -445,6 +445,15 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 - **GPS check-in** ("I'm at site", `sitevisit.write`): the browser reads the location **once** when the button is pressed and stores latitude, longitude, accuracy and time on a site visit **for a lead**. You must pick the lead, and the list holds only the leads assigned to you (not lost). It's on the sales dashboard, the Site visits page, and the lead's own page. The visit shows on that lead ("Calls, messages & visits", plus a Site visits section with a map) for everyone connected to it, and in its change history. No tracking. Maps are OpenStreetMap with Leaflet (no Google, no API key). Browsers only share location on a secure page: it works on `http://localhost:3001` on the Mac and on HTTPS later, but **not on the LAN address** (`http://192.168.x.x`); there the button says so.
 - **Sidebar:** telecallers and sales see Dashboard, Leads, Follow-ups, Calendar (sales also Won and Site visits) and their own leave/allowances. The Finance section needs `finance.dashboard`, so it is off their screens; stock and service need their own tags. Pages and APIs are unchanged.
 
+## Date filters (Won and Follow-ups)
+
+- **Won** filters by the date each lead was won; **Follow-ups** by the date each follow-up is due.
+- **Presets:** Today, This week (Monday to Sunday), This month, Last month, This year, and All time (the default). Or pick a custom **From / To** range, which overrides the presets. Either end can be left open.
+- **Display:** the bar shows what's active ("Showing: Last month (1 Sept - 30 Sept 2026)") with a count of matching records ("4 won leads", "7 overdue follow-ups"). **Clear (all time)** resets it.
+- **Narrowing only:** the filter narrows what you can already see, so a salesperson still sees only their own and admin sees all. It combines with the other filters (Follow-ups' Overdue / Upcoming / Completed tabs and "Only my leads"; the API's status, source, product, salesperson and search on leads). Won stays sorted newest win first, and follow-ups by due date.
+- **Days** are calendar days in the business time zone, so 00:10 on 1 April belongs to April. Both ends are inclusive.
+- **Export:** these two pages have no export. The Reports page has its own date range and CSV / Excel export.
+
 ## Lead change history (admin only)
 
 - Every meaningful change on a lead is recorded with **who**, **what** (from → to where it applies) and **when**:
@@ -505,7 +514,7 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. |
 | GET    | `/roles`                 | `permissions.read`     | Roles with default tags and user counts |
 | GET    | `/permissions`           | `permissions.read`     | Full tag catalog |
-| GET    | `/leads`                 | `leads.read`           | List leads in your scope. Filters: `status`, `source`, `productInterest`, `assignedToId`, `search` (name/phone/city), `page`, `pageSize`. `status=WON` = closed/won view, newest win first |
+| GET    | `/leads`                 | `leads.read`           | List leads in your scope. Filters: `status`, `source`, `productInterest`, `assignedToId`, `search` (name/phone/city), `wonFrom` / `wonTo` (YYYY-MM-DD, won-on date, inclusive), `page`, `pageSize`. `status=WON` = closed/won view, newest win first |
 | GET    | `/leads/summary`         | `leads.read`           | Dashboard counts: leads by status, open leads, overdue and upcoming follow-ups |
 | GET    | `/leads/assignees`       | `leads.assign`         | Active users who hold `leads.read` (assign dropdown) |
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
@@ -549,7 +558,7 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | POST   | `/public/leads`          | **API key** (`X-API-Key`) | Create a lead from an external system. See "Getting leads in" |
 | GET    | `/webhooks/meta`         | public (verify token)  | Meta webhook verification (`hub.challenge`) |
 | POST   | `/webhooks/meta`         | public (Meta signature) | Meta Lead Ads `leadgen` notifications |
-| GET    | `/follow-ups`            | `leads.read`           | Follow-ups in your scope. `state=pending\|overdue\|upcoming\|completed`, `from`/`to` (ISO, for the calendar), `assignedTo=me` |
+| GET    | `/follow-ups`            | `leads.read`           | Follow-ups in your scope. `state=pending\|overdue\|upcoming\|completed`, `from`/`to` (ISO, for the calendar), `fromDate`/`toDate` (YYYY-MM-DD due date, inclusive), `assignedTo=me` |
 | POST   | `/leads/:leadId/follow-ups` | `followups.write`   | Schedule: `{scheduledAt, note?}` |
 | PATCH  | `/follow-ups/:id`        | `followups.write`      | Reschedule or edit the note |
 | POST   | `/follow-ups/:id/complete` | `followups.write`    | Record the outcome: `{outcome, note?}` |
@@ -645,8 +654,8 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/leads/new` | `leads.write` | Create a lead. The salesperson picker appears only with `leads.assign` |
 | `/leads/:id` | `leads.read` | Details, edit, pipeline buttons, follow-ups (schedule and record outcome) |
 | `/leads/import` | `leads.write` | Download the template or the 30-lead sample, upload .csv/.xlsx (Meta exports as is), see created, duplicate and failed rows and who got how many |
-| `/leads/won` | `leads.read` | Closed/won leads with win date |
-| `/follow-ups` | `leads.read` | Overdue, upcoming and completed tabs |
+| `/leads/won` | `leads.read` | Closed/won leads with win date, with date presets / custom range and a count |
+| `/follow-ups` | `leads.read` | Overdue, upcoming and completed tabs, with date presets / custom range and a count |
 | `/calendar` | `leads.read` | Month calendar of *your* follow-ups. Users with `leads.read_all` can switch to everyone's |
 | `/orders` | `sales.read` | Sales orders. Balances and overdue flags appear with `payments.read`. Convert a lead to an order from a won lead's page |
 | `/orders/:id` | `sales.read` | Order details, edit, mark delivered (`stock.write`), cancel, payments (`payments.read`/`payments.write`) |

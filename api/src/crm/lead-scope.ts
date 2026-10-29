@@ -1,6 +1,8 @@
+import { BadRequestException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { businessDayRange } from '../intake/lead-assignment.service.js';
 
 /**
  * Which leads a user may see or touch. Driven by tags, not role names:
@@ -64,3 +66,16 @@ export const FOLLOW_UP_SELECT = {
   createdAt: true,
   createdBy: { select: { id: true, fullName: true } },
 } satisfies Prisma.FollowUpSelect;
+
+/**
+ * A from/to pair of business days (YYYY-MM-DD, both inclusive) as a filter on
+ * an instant column. Either end may be left open. 400 if "to" is before "from".
+ */
+export function dayRangeFilter(from?: string, to?: string): { gte?: Date; lt?: Date } | undefined {
+  if (!from && !to) return undefined;
+  if (from && to && to < from) throw new BadRequestException('The end date is before the start date');
+  return {
+    gte: from ? businessDayRange(from).start : undefined,
+    lt: to ? businessDayRange(to).end : undefined,
+  };
+}
