@@ -5,3 +5,6 @@ dist/
 .DS_Store
 api/src/generated/
 *.tsbuildinfo
+
+# Uploaded file-library files (brochures, images)
+api/storage/

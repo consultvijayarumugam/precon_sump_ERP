@@ -466,6 +466,18 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 - **Admin sees it** as a timeline at the bottom of the lead page ("Change history · Admin only"), newest first, with a "Show all" button past 25 entries. This needs the `leads.audit` tag (admin preset).
 - **Telecallers and salespeople don't see the timeline.** They see the lead's current state, its calls, WhatsApp messages, site visits and follow-ups (`GET /leads/:id/history` answers 403).
 
+## Pipeline stages (Admin → Pipeline stages, tag `pipeline.manage`)
+
+The pipeline is `New → [middle stages] → Won / Lost`. **New, Won and Lost are protected**: they can't be renamed, moved, switched off or deleted, because revenue, the Won list, won counts and closing a lead depend on them. The **middle** (seeded as Contacted, Qualified, Quoted) is admin-defined: add, rename, reorder (only within the middle), switch on/off, and delete.
+
+- Each stage counts as a fixed phase (the lead's `status`) the rest of the app runs on. Middle stages before the **handover stage** count as CONTACTED (telecaller side), the handover stage as QUALIFIED, the ones after it as QUOTED (sales side). Reordering recomputes this, and the leads in a moved stage follow.
+- **Handover by identity**: "Qualify & hand over" always moves leads into the stage flagged `isHandover` (seeded: Qualified), whatever it's called or wherever it sits. It can be renamed and moved but not switched off or deleted.
+- A lead's first call moves it from New into the first active telecaller-side stage; closing call outcomes move it to Lost.
+- **Deleting**: only a stage with zero leads can be deleted. One with leads returns 409 and the page offers **switch off** instead: it disappears from stage pickers for new moves, while its leads and their history stay. Funnels and reports still list a switched-off stage while it holds leads, marked "(off)".
+- Lead pages (Move in pipeline), the lead form, the Leads filter, dashboards (CEO funnel, sales board, pipeline strip) and the Pipeline report all read this list, in admin order.
+- History records stage changes by name (`Stage: Qualified → Site visit done`).
+- The stage setup lives in `pipeline_stages` and survives `db:reset-demo`. A DB trigger keeps `leads.stage_id` consistent with `status` for any writer that only sets status (seed, imports, older API clients sending `{status}`).
+
 ## WhatsApp quick-contact
 
 - A green **WhatsApp** button sits next to the phone on the telecaller workbench and on every lead page. It opens a picker of the admin's **message templates** (plus "open chat without a message").
@@ -477,6 +489,17 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
   - **Delete** asks to confirm; past messages keep the template's name. Deleting or switching off the last template people can pick gives an extra warning, and the page shows a banner if none is switched on.
   - **The picker** shows only switched-on templates, by order number then name.
 - **Placeholders:** `{name}`, `{first_name}`, `{city}`, `{product}` (e.g. "Sump · 10,000 L"), `{my_name}` (the sender), `{company}` (`COMPANY_NAME` in `api/.env`, default "Precon"). Any case and spacing work (`{ Name }`); a misspelt placeholder is left visible so it gets noticed.
+
+## File library: brochures & images as WhatsApp links (Admin → Files, tag `files.manage`)
+
+WhatsApp's free `wa.me` links can only carry text, so files go out as **links inside the message**.
+
+- **Admin** uploads, renames, re-categorises and deletes files. Allowed: **PDF, JPG, PNG**, up to **10 MB** each; no videos for now. The type is checked from the file's contents, not its name, so a renamed HTML or script file is refused. Categories: Brochure, Price list, Product image, Spec sheet, Warranty, Other.
+- **Staff** (anyone with `leads.read`) see the library inside the WhatsApp picker: tick up to 5 files, then pick a template (or "Send just the file links"). Each file is added as a `Title: <link>` line under the message.
+- **Public links** look like `/api/v1/f/<32-char random token>/<readable-name>.pdf`. They open without logging in, so a customer can tap them in WhatsApp. The token is the secret; renaming a file keeps its link. Deleting a file kills the link (including in messages already sent), but lead history keeps its name.
+- **Logged on the lead**: the WhatsApp entry in "Calls, messages & visits" (and admin's change history) shows "Shared:" with each file sent.
+- **Storage**: files are saved on the API server in `FILE_STORAGE_DIR` (default `api/storage/library`, git-ignored). Back it up with the database. Demo resets keep the library; `db:seed` adds a sample brochure PDF and product photo if they're missing.
+- **Link address**: set `PUBLIC_FILE_BASE_URL` in `api/.env` to the public site customers can reach (e.g. `https://crm.example.com`; the web app forwards `/api/v1`). If it's unset, links use the address the staff member is on. That's fine for testing (`http://192.168.31.50:3001/...` opens on phones on the same Wi-Fi), but a customer elsewhere can't open a `localhost` or LAN link.
 
 ## Reports & export
 
@@ -519,7 +542,7 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | GET    | `/leads/assignees`       | `leads.assign`         | Active users who hold `leads.read` (assign dropdown) |
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
 | POST   | `/leads`                 | `leads.write`          | Create: `{name, phone, source, productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. `assignedToId` for someone else needs `leads.assign` |
-| PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline. Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
+| PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline with `{stageId}` (an active stage; `{status}` still works and picks that phase's stage). Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
 | GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
 | POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?}`. Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
@@ -536,12 +559,23 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | GET    | `/dashboards/telecaller` | `leads.read`           | Workbench: counts and your worklist in call order |
 | GET    | `/dashboards/sales`      | `leads.read`           | Your pipeline, follow-ups due, revenue this month (with `sales.read`), check-ins |
 | GET    | `/dashboards/master`     | `leads.read_all` + `leads.assign` | Scorecards, accountability flags, today's split, site-visit map |
+| GET    | `/files`                 | `leads.read`           | The file library, each with its public `url`, `kind` (pdf/image) and category |
+| GET    | `/files/categories`      | `leads.read`           | File categories |
+| POST   | `/files`                 | `files.manage`         | multipart: `file` (PDF/JPG/PNG, max 10 MB; 400 wrong type, 413 too big), `title`, `category?` |
+| PATCH  | `/files/:id`             | `files.manage`         | `{title?, category?}`; the link stays the same |
+| DELETE | `/files/:id`             | `files.manage`         | Deletes the file and its link (history keeps the name) |
+| GET    | `/f/:token[/:name]`      | public                 | The file itself, inline (what customers open from WhatsApp) |
+| GET    | `/pipeline-stages`       | `leads.read`           | All stages in order with lead counts (`kind` ENTRY/MIDDLE/WON/LOST, `phase`, `isHandover`, `isActive`) |
+| POST   | `/pipeline-stages`       | `pipeline.manage`      | `{name, afterStageId?}`: add a middle stage (409 duplicate name, 400 after Won/Lost) |
+| PATCH  | `/pipeline-stages/:id`   | `pipeline.manage`      | `{name?, isActive?}` (400 for protected stages, or switching off the handover stage) |
+| PUT    | `/pipeline-stages/order` | `pipeline.manage`      | `{ids}`: every middle stage exactly once; phases and leads follow |
+| DELETE | `/pipeline-stages/:id`   | `pipeline.manage`      | 204 if empty; 409 "switch it off instead" if it has leads |
 | GET    | `/message-templates`     | `leads.read`           | Active WhatsApp templates (`?all=true` with `templates.manage` includes switched-off ones) |
 | GET    | `/message-templates/placeholders` | `leads.read`  | Placeholders and what they fill in |
 | POST   | `/message-templates`     | `templates.manage`     | `{name, body, sortOrder?, isActive?}` (409 if the name exists) |
 | PATCH  | `/message-templates/:id` | `templates.manage`     | Edit, reorder, switch off |
 | DELETE | `/message-templates/:id` | `templates.manage`     | Delete (past messages keep its name) |
-| POST   | `/leads/:id/whatsapp`    | `leads.read`           | `{templateId?, message?}` → `{url, message, phone}`; logs the message on the lead. 400 if the number can't be used |
+| POST   | `/leads/:id/whatsapp`    | `leads.read`           | `{templateId?, message?, fileIds?}` → `{url, message, phone, files}`; each file adds a `Title: <link>` line; logs the message (and shared files) on the lead. 400 if the number can't be used |
 | GET    | `/leads/:id/messages`    | `leads.read`           | WhatsApp messages started on the lead |
 | GET    | `/reports`               | `reports.view` or `reports.view_all` | Reports you can open, and your scope (`all` / `own`) |
 | GET    | `/reports/:key`          | `reports.view` or `reports.view_all` | `from`, `to` (YYYY-MM-DD), optional `format=csv\|xlsx`. Keys: `leads-by-source`, `telecallers`, `pipeline`, `revenue`, `follow-ups` |
@@ -663,6 +697,8 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** and **Edit** (pick a role, which previews the preset's tags), activate or deactivate, reset password. "View tags" needs `permissions.read` |
 | `/admin/permissions` | `permissions.read` | Grid of each role's preset tags |
 | `/reports` | `reports.view` or `reports.view_all` | Five reports with date presets, each exportable to CSV and Excel; badge shows "Everyone's data" or "Your own data" |
+| `/admin/files` | `files.manage` | File library: upload (PDF/JPG/PNG ≤ 10 MB), title, category, open/copy link, rename, delete |
+| `/admin/pipeline-stages` | `pipeline.manage` | Pipeline stages: add after, rename, up/down, active toggle, delete-or-switch-off, with warnings |
 | `/admin/message-templates` | `templates.manage` | WhatsApp templates: create, edit, order, switch off, delete; placeholder list and live preview |
 | `/admin/overview` | `finance.dashboard` | Business overview: the former admin dashboard (money, operations, people) |
 | `/admin/lead-assignment` | `leads.assign` | A day's leads and their split across the telecallers (Even ✓ check), who is next, and on/off switches for both rotations (telecallers; salespeople receiving qualified leads). "Their leads →" opens the leads list filtered to that person |

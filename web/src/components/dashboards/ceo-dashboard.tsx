@@ -255,21 +255,30 @@ function SourceBars({ rows }: { rows: { source: keyof typeof SOURCE_LABELS; this
   );
 }
 
-const STAGE_LABELS = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", QUOTED: "Quoted" } as const;
+/**
+ * Colour for stage i of n: one blue, light to dark, from a validated ordinal
+ * ramp (4 or 5 steps). Past 5 stages the bars share steps; the stage name next
+ * to each bar is what identifies it.
+ */
+function stageColor(i: number, n: number) {
+  if (n <= 4) return `var(--ps-stage-${n === 1 ? 4 : Math.round((i * 3) / (n - 1)) + 1})`;
+  return `var(--ps-ramp5-${Math.round((i * 4) / (n - 1)) + 1})`;
+}
 
-/** Active pipeline as a stepped funnel: one blue, darker as leads move closer to a sale. */
-function Funnel({ stages }: { stages: { status: keyof typeof STAGE_LABELS; leads: number }[] }) {
+/** Open pipeline as a stepped funnel in the admin-defined stage order, darker as leads move closer to a sale. */
+function Funnel({ stages }: { stages: { id: string; name: string; isActive: boolean; isHandover: boolean; leads: number }[] }) {
   const max = Math.max(1, ...stages.map((s) => s.leads));
   const total = stages.reduce((n, s) => n + s.leads, 0);
   return (
     <ol className="space-y-2.5">
       {stages.map((s, i) => (
-        <li key={s.status} className="grid grid-cols-[5.5rem_1fr_3.5rem] items-center gap-3 text-sm">
-          <Link href={`/leads?status=${s.status}`} className="font-medium text-[var(--ps-ink)] hover:underline">
-            {STAGE_LABELS[s.status]}
+        <li key={s.id} className="grid grid-cols-[minmax(5.5rem,8rem)_1fr_3.5rem] items-center gap-3 text-sm">
+          <Link href={`/leads?stageId=${s.id}`} className="truncate font-medium text-[var(--ps-ink)] hover:underline" title={s.name}>
+            {s.name}
+            {!s.isActive && <span className="text-xs font-normal text-[var(--ps-ink-3)]"> (off)</span>}
           </Link>
           <span className="h-7 rounded-md bg-[var(--ps-tint-50)]">
-            <span className="block h-full rounded-md" style={{ width: `${Math.max(4, (s.leads / max) * 100)}%`, background: `var(--ps-stage-${i + 1})` }} />
+            <span className="block h-full rounded-md" style={{ width: `${Math.max(4, (s.leads / max) * 100)}%`, background: stageColor(i, stages.length) }} />
           </span>
           <span className="text-right tabular-nums">
             <span className="font-semibold text-[var(--ps-ink)]">{s.leads}</span>

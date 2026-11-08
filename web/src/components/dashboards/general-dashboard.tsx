@@ -20,7 +20,6 @@ import {
   CrmSummary,
   FollowUpWithLead,
   formatDate,
-  LEAD_STATUSES,
   LeadListItem,
   Paginated,
   productInterestLabel,
@@ -28,6 +27,7 @@ import {
 import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
+import { PipelineStrip } from "./shared";
 
 function Tile({
   label,
@@ -120,22 +120,7 @@ export function GeneralDashboard() {
             <Tile label="Overdue follow-ups" value={summary.data.overdueFollowUps} href="/follow-ups" icon={TriangleAlert} tone="alert" />
             <Tile label="Upcoming follow-ups" value={summary.data.upcomingFollowUps} href="/follow-ups" icon={CalendarClock} module="home" />
           </div>
-          <div className={`${panelClass} flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-sm`}>
-            <span className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider ${MODULES.crm.text}`}>
-              <span className={`size-2 rounded-full ${MODULES.crm.dot}`} aria-hidden />
-              Pipeline
-            </span>
-            {LEAD_STATUSES.map((st) => (
-              <Link
-                key={st}
-                href={st === "WON" ? "/leads/won" : `/leads?status=${st}`}
-                className="flex items-center gap-2 hover:text-brand-700 dark:hover:text-brand-300"
-              >
-                <StatusBadge status={st} />
-                <span className="font-semibold tabular-nums">{summary.data!.leadsByStatus[st]}</span>
-              </Link>
-            ))}
-          </div>
+          <PipelineStrip summary={summary.data} />
         </section>
       )}
 
@@ -212,7 +197,7 @@ export function GeneralDashboard() {
                       {productInterestLabel(lead)} · {formatDate(lead.createdAt)}
                     </span>
                   </div>
-                  <StatusBadge status={lead.status} />
+                  <StatusBadge status={lead.status} stage={lead.stage} />
                 </li>
               ))}
             </ul>

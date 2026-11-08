@@ -93,8 +93,9 @@ const LEAD_TONES: Record<LeadStatus, Tone> = {
   WON: "green",
   LOST: "neutral",
 };
-export function StatusBadge({ status }: { status: LeadStatus }) {
-  return <Badge tone={LEAD_TONES[status]}>{STATUS_LABELS[status]}</Badge>;
+/** A lead's pipeline stage: the admin-defined stage name, coloured by the phase it counts as. */
+export function StatusBadge({ status, stage }: { status: LeadStatus; stage?: { name: string; phase?: LeadStatus } | null }) {
+  return <Badge tone={LEAD_TONES[stage?.phase ?? status]}>{stage?.name ?? STATUS_LABELS[status]}</Badge>;
 }
 
 const ORDER_TONES: Record<OrderStatus, Tone> = { CONFIRMED: "amber", DELIVERED: "green", CANCELLED: "neutral" };

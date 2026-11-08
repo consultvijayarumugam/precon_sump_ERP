@@ -77,7 +77,7 @@ export class CheckInsService {
       where: { assignedToId: user.id, status: { not: 'LOST' } },
       orderBy: [{ status: 'asc' }, { name: 'asc' }],
       take: 300,
-      select: { id: true, name: true, city: true, status: true },
+      select: { id: true, name: true, city: true, status: true, stage: { select: { name: true } } },
     });
   }
 

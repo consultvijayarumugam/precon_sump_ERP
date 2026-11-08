@@ -73,6 +73,7 @@ model UserPermission {
 }
 
 model User {
+  libraryFiles         LibraryFile[]      @relation("LibraryFileUploader")
   id                   String             @id @default(uuid()) @db.Uuid
   email                String             @unique
   passwordHash         String             @map("password_hash")
@@ -198,6 +199,11 @@ model Lead {
   // Sump size the customer is interested in, if known (litres). Null for microbes.
   sumpSizeLitres  Int?             @map("sump_size_litres")
   status          LeadStatus       @default(NEW)
+  // The configurable pipeline stage people see and move (admin-managed). `status`
+  // above stays the fixed phase all logic runs on; a database trigger keeps the
+  // two consistent (see the pipeline_stages migration).
+  stageId         String?          @map("stage_id") @db.Uuid
+  stage           PipelineStage?   @relation(fields: [stageId], references: [id])
   notes           String?
   // Where it came from in more detail, e.g. "Import: march-leads.xlsx",
   // "API key: Website form", "Meta lead form 123 (leadgen 456)".
@@ -234,6 +240,7 @@ model Lead {
   @@index([assignedToId, status])
   @@index([createdAt])
   @@index([telecallerId, createdAt])
+  @@index([stageId])
   @@index([status, closedAt])
   @@index([phone])
   @@map("leads")
@@ -772,6 +779,8 @@ model LeadActivity {
   message      String
   // What changed: [{ field, label, from, to }] (null when there is nothing to compare).
   changes      Json?
+  // WHATSAPP only: library files shared as links, snapshot [{ id, title, category, kind, url }].
+  attachments  Json?
   createdAt    DateTime         @default(now()) @map("created_at")
 
   @@index([leadId, createdAt])
@@ -818,4 +827,65 @@ model Notification {
   @@unique([userId, followUpId])
   @@index([userId, readAt, createdAt])
   @@map("notifications")
+}
+
+// Pipeline stages (admin-managed). New, Won and Lost are protected; the middle
+// stages can be added, renamed, reordered and switched off. `phase` is the fixed
+// LeadStatus each stage counts as: stages before the handover stage are
+// CONTACTED (telecaller side), the handover stage is QUALIFIED, stages after it
+// are QUOTED (sales side). It is recomputed whenever the middle is reordered.
+enum StageKind {
+  ENTRY // "New": always first
+  MIDDLE
+  WON // terminal: drives revenue, the Won list
+  LOST // terminal: ends the lead
+}
+
+model PipelineStage {
+  id         String     @id @default(uuid()) @db.Uuid
+  // Stable identity ("NEW", "QUALIFIED", "custom-site-visit-done"); never changes on rename.
+  key        String     @unique
+  name       String     @unique
+  kind       StageKind
+  phase      LeadStatus
+  // Where telecallers hand leads to sales (qualify). Exactly one, a middle stage.
+  isHandover Boolean    @default(false) @map("is_handover")
+  position   Int
+  isActive   Boolean    @default(true) @map("is_active")
+  leads      Lead[]
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  @@index([position])
+  @@map("pipeline_stages")
+}
+
+enum FileCategory {
+  BROCHURE
+  PRICE_LIST
+  PRODUCT_IMAGE
+  SPEC_SHEET
+  WARRANTY
+  OTHER
+}
+
+// Shared file library (brochures, price lists, product photos). Staff attach
+// them to WhatsApp messages as links; the file is served publicly at
+// /api/v1/f/<token>, so the token is long and random (unguessable).
+model LibraryFile {
+  id           String       @id @default(uuid()) @db.Uuid
+  token        String       @unique
+  title        String
+  category     FileCategory @default(OTHER)
+  mimeType     String       @map("mime_type")
+  sizeBytes    Int          @map("size_bytes")
+  originalName String       @map("original_name")
+  // Name on disk inside FILE_STORAGE_DIR (token + extension).
+  storedName   String       @map("stored_name")
+  uploadedById String?      @map("uploaded_by_id") @db.Uuid
+  uploadedBy   User?        @relation("LibraryFileUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  @@index([category, title])
+  @@map("library_files")
 }

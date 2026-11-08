@@ -160,7 +160,7 @@ export function FollowUpItem({ followUp, onChange }: { followUp: FollowUp | Foll
             <a href={`tel:${lead.phone}`} className="text-neutral-500">
               {lead.phone}
             </a>
-            <StatusBadge status={lead.status} />
+            <StatusBadge status={lead.status} stage={lead.stage} />
             {can(TAGS.LEADS_READ_ALL) && (
               <span className="text-xs text-neutral-500">{lead.assignedTo?.fullName ?? "Unassigned"}</span>
             )}

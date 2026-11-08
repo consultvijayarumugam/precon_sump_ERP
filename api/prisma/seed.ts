@@ -25,6 +25,7 @@ import { seedHr } from './seed-hr.js';
 import { seedDevApiKeys } from './seed-dev-api-keys.js';
 import { seedWorkflow } from './seed-workflow.js';
 import { seedMessageTemplates } from './seed-templates.js';
+import { seedLibraryFiles } from './seed-files.js';
 
 const DEMO_USERS: { email: string; fullName: string; phone: string; role: RoleKey }[] = [
   { email: 'admin@precon.local', fullName: 'Asha Admin', phone: '9000000001', role: ROLES.ADMIN },
@@ -126,6 +127,9 @@ async function main() {
 
     // 7b. WhatsApp message templates (admin edits them later)
     await seedMessageTemplates(prisma);
+
+    // 7c. Sample brochure + product image for the file library (WhatsApp links)
+    await seedLibraryFiles(prisma);
 
     // 8. Telecaller → sales workflow: call logs, handovers, GPS check-ins (needs the leads above)
     await seedWorkflow(prisma);

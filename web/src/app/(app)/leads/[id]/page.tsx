@@ -9,6 +9,9 @@ import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
 import { LeadHistoryTimeline, LeadOwners, LeadVisits } from "@/components/lead-handover";
 import { WhatsAppButton } from "@/components/whatsapp-button";
+import { pickableStages, useStages } from "@/lib/stages";
+import { SharedFiles } from "@/components/shared-files";
+import type { SharedFile } from "@/lib/files";
 import {
   buttonClass,
   ErrorText,
@@ -21,12 +24,9 @@ import { apiPatch, apiPost } from "@/lib/api";
 import {
   formatDate,
   formatDateTime,
-  LEAD_STATUSES,
   LeadDetail,
-  LeadStatus,
   productInterestLabel,
   SOURCE_LABELS,
-  STATUS_LABELS,
   TAGS,
   toDateTimeLocal,
 } from "@/lib/crm";
@@ -95,6 +95,7 @@ interface MessageRow {
   id: string;
   templateName: string | null;
   message: string;
+  attachments: SharedFile[] | null;
   createdAt: string;
   user: { id: string; fullName: string };
 }
@@ -158,7 +159,8 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
                 <span className="min-w-0 flex-1">
                   <span className="mr-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-600">WhatsApp</span>
                   <span className="font-semibold">{e.msg.templateName ?? "Chat opened"}</span>
-                  {e.msg.message && <span className="mt-0.5 block text-neutral-600 dark:text-neutral-400">{e.msg.message}</span>}
+                  {e.msg.message && <span className="mt-0.5 block whitespace-pre-line break-words text-neutral-600 dark:text-neutral-400">{e.msg.message}</span>}
+                  <SharedFiles files={e.msg.attachments} />
                 </span>
               )}
               <span className="text-xs text-neutral-500">
@@ -177,6 +179,7 @@ export default function LeadDetailPage() {
   const router = useRouter();
   const { can, operations } = useAuth();
   const { data: lead, error, reload } = useApi<LeadDetail>(can(TAGS.LEADS_READ) ? `/leads/${id}` : null);
+  const stages = useStages(can(TAGS.LEADS_READ));
   const [editing, setEditing] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -188,10 +191,10 @@ export default function LeadDetailPage() {
   // Telecallers qualify their own leads with leads.qualify; the scope check is on the server.
   const canWrite = can(TAGS.LEADS_WRITE) || can(TAGS.LEADS_QUALIFY);
 
-  async function changeStatus(status: LeadStatus) {
+  async function changeStage(stageId: string) {
     setStatusError(null);
     try {
-      await apiPatch(`/leads/${id}`, { status });
+      await apiPatch(`/leads/${id}`, { stageId });
       reload();
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Could not change status");
@@ -209,7 +212,7 @@ export default function LeadDetailPage() {
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{lead.name}</h1>
-          <StatusBadge status={lead.status} />
+          <StatusBadge status={lead.status} stage={lead.stage} />
           {canWrite && !editing && (
             <button className={secondaryButtonCompactClass} onClick={() => setEditing(true)}>
               Edit
@@ -284,16 +287,23 @@ export default function LeadDetailPage() {
         <section>
           <h2 className="mb-2 font-medium">Move in pipeline</h2>
           <div className="flex flex-wrap gap-2">
-            {LEAD_STATUSES.map((s) => (
-              <button
-                key={s}
-                disabled={s === lead.status}
-                onClick={() => changeStatus(s)}
-                className={`${secondaryButtonCompactClass} ${s === lead.status ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
-              >
-                {STATUS_LABELS[s]}
-              </button>
-            ))}
+            {/* The admin-defined stages in order (switched-off ones only if the lead is in one). */}
+            {pickableStages(stages.data, lead.stage?.id).map((s) => {
+              const current = s.id === lead.stage?.id;
+              return (
+                <button
+                  key={s.id}
+                  disabled={current}
+                  aria-current={current ? "step" : undefined}
+                  onClick={() => changeStage(s.id)}
+                  className={`${secondaryButtonCompactClass} ${current ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
+                  title={s.isActive ? undefined : "Switched off by admin; leads can stay here but no new moves"}
+                >
+                  {s.name}
+                  {!s.isActive && " (off)"}
+                </button>
+              );
+            })}
           </div>
           <ErrorText error={statusError} />
         </section>

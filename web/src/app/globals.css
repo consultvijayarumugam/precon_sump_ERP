@@ -31,6 +31,12 @@
   --ps-stage-2: #3987e5;
   --ps-stage-3: #1c5cab;
   --ps-stage-4: #0d366b;
+  /* Five-stage version of the same ramp, for when admin adds a stage (validated; past 5 stages, bars share steps and labels identify them). */
+  --ps-ramp5-1: #86b6ef;
+  --ps-ramp5-2: #5598e7;
+  --ps-ramp5-3: #2a78d6;
+  --ps-ramp5-4: #184f95;
+  --ps-ramp5-5: #0d366b;
   --ps-mark: #2557eb; /* single-series bars (3:1+ on white) */
   --ps-mark-muted: #c9d7ef; /* comparison / previous period */
 }
@@ -72,6 +78,11 @@
     --ps-stage-2: #5598e7;
     --ps-stage-3: #2a78d6;
     --ps-stage-4: #1f63bd;
+    --ps-ramp5-1: #cde2fb;
+    --ps-ramp5-2: #9ec5f4;
+    --ps-ramp5-3: #6da7ec;
+    --ps-ramp5-4: #2a78d6;
+    --ps-ramp5-5: #1f63bd;
     --ps-mark: #4f8bff;
     --ps-mark-muted: #2b3a58;
   }

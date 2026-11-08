@@ -27,6 +27,8 @@ import { formatDateTime, formatLitres, LeadDetail, LeadStatus, PRODUCT_LABELS, P
 import { TAGS } from "@/lib/tags";
 import { useAction, useApi } from "@/lib/use-api";
 import { CheckIn } from "@/lib/workflow";
+import { SharedFiles } from "@/components/shared-files";
+import type { SharedFile } from "@/lib/files";
 
 /** "Salesperson: X · Telecaller: Y" once handed over; otherwise "Assigned to". */
 export function LeadOwners({ lead, onChanged }: { lead: LeadDetail; onChanged: () => void }) {
@@ -149,6 +151,7 @@ interface HistoryEntry {
   type: string;
   message: string;
   templateName: string | null;
+  attachments?: SharedFile[] | null;
   changes: { field: string; label: string; from: string | null; to: string | null }[] | null;
   createdAt: string;
   user: { id: string; fullName: string; role: { name: string } };
@@ -158,7 +161,7 @@ const TYPE_LOOK: Record<string, { icon: LucideIcon; tone: string; label: string 
   CREATED: { icon: CircleDot, tone: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300", label: "Created" },
   ASSIGNED: { icon: UserPlus, tone: "bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300", label: "Assignment" },
   HANDED_OVER: { icon: Sparkles, tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300", label: "Handed to sales" },
-  STATUS_CHANGED: { icon: ArrowRightLeft, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300", label: "Status" },
+  STATUS_CHANGED: { icon: ArrowRightLeft, tone: "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300", label: "Stage" },
   FIELD_CHANGED: { icon: PencilLine, tone: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300", label: "Details edited" },
   NOTES_EDITED: { icon: StickyNote, tone: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300", label: "Notes" },
   FOLLOW_UP_CREATED: { icon: CalendarPlus, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300", label: "Follow-up" },
@@ -222,9 +225,10 @@ export function LeadHistoryTimeline({ leadId, refreshKey }: { leadId: string; re
                       {formatDateTime(e.createdAt)}
                     </time>
                   </div>
-                  <p className="text-neutral-700 dark:text-neutral-300">
+                  <p className="whitespace-pre-line break-words text-neutral-700 dark:text-neutral-300">
                     {e.type === "WHATSAPP" ? `${e.templateName ?? "Chat opened"}: ${e.message}` : e.message}
                   </p>
+                  {e.type === "WHATSAPP" && <SharedFiles files={e.attachments} />}
                   {/* The one-line summary already says it for most entries; spell out the details for handovers and notes. */}
                   {e.changes && e.changes.length > 0 && (e.type === "HANDED_OVER" || e.type === "NOTES_EDITED") && (
                     <ul className="mt-1 space-y-0.5 text-xs">

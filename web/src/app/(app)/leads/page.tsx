@@ -17,7 +17,6 @@ import {
 import { queryString } from "@/lib/api";
 import {
   LEAD_SOURCES,
-  LEAD_STATUSES,
   LeadListItem,
   Paginated,
   PRODUCT_INTERESTS,
@@ -26,6 +25,7 @@ import {
   STATUS_LABELS,
   TAGS,
 } from "@/lib/crm";
+import { useStages } from "@/lib/stages";
 import { useApi } from "@/lib/use-api";
 
 const PAGE_SIZE = 25;
@@ -39,6 +39,7 @@ function LeadsView() {
 
   const filters = {
     status: params.get("status") ?? "",
+    stageId: params.get("stageId") ?? "",
     source: params.get("source") ?? "",
     productInterest: params.get("productInterest") ?? "",
     assignedToId: params.get("assignedToId") ?? "",
@@ -62,6 +63,7 @@ function LeadsView() {
 
   const canAssign = can(TAGS.LEADS_ASSIGN);
   const assignees = useApi<{ id: string; fullName: string; role: { name: string } }[]>(canAssign ? "/leads/assignees" : null);
+  const stages = useStages();
   const { data, error } = useApi<Paginated<LeadListItem>>(
     `/leads${queryString({ ...filters, pageSize: PAGE_SIZE })}`,
   );
@@ -88,11 +90,21 @@ function LeadsView() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
         />
-        <select className={inputClass} value={filters.status} onChange={(e) => setFilter("status", e.target.value)}>
-          <option value="">All statuses</option>
-          {LEAD_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
+        <select
+          className={inputClass}
+          value={filters.stageId}
+          onChange={(e) => {
+            // Picking a stage replaces an older ?status= filter from a link.
+            const next = { ...filters, stageId: e.target.value, status: "", page: 1 };
+            router.replace(`${pathname}${queryString({ ...next, page: undefined })}`);
+          }}
+          aria-label="Stage"
+        >
+          <option value="">{filters.status ? `Status: ${STATUS_LABELS[filters.status as keyof typeof STATUS_LABELS] ?? filters.status}` : "All stages"}</option>
+          {stages.data?.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+              {s.isActive ? "" : " (switched off)"}
             </option>
           ))}
         </select>

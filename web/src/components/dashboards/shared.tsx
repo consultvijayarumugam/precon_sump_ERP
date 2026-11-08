@@ -10,10 +10,11 @@ import { useAuth } from "@/components/auth-provider";
 import { FollowUpItem } from "@/components/follow-up-item";
 import { ErrorText, panelClass, StatusBadge } from "@/components/ui";
 import { queryString } from "@/lib/api";
-import { CrmSummary, dayKey, FollowUpWithLead, formatTime, LEAD_STATUSES } from "@/lib/crm";
+import { CrmSummary, dayKey, FollowUpWithLead, formatTime } from "@/lib/crm";
 import { Product } from "@/lib/finance";
 import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
+import { useStages } from "@/lib/stages";
 import { useApi } from "@/lib/use-api";
 
 const longDate = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -112,24 +113,27 @@ export function EmptyNote({ children }: { children: ReactNode }) {
   return <p className={`${panelClass} px-4 py-6 text-center text-sm text-neutral-500`}>{children}</p>;
 }
 
-/** Lead counts by stage, each linking to the filtered list. */
+/** Lead counts per admin-defined stage (in pipeline order), each linking to the filtered list. */
 export function PipelineStrip({ summary }: { summary: CrmSummary }) {
+  const stages = useStages();
   return (
     <div className={`${panelClass} flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-sm`}>
       <span className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider ${MODULES.crm.text}`}>
         <span className={`size-2 rounded-full ${MODULES.crm.dot}`} aria-hidden />
         Pipeline
       </span>
-      {LEAD_STATUSES.map((st) => (
-        <Link
-          key={st}
-          href={st === "WON" ? "/leads/won" : `/leads?status=${st}`}
-          className="flex items-center gap-2 hover:text-brand-700 dark:hover:text-brand-300"
-        >
-          <StatusBadge status={st} />
-          <span className="font-semibold tabular-nums">{summary.leadsByStatus[st]}</span>
-        </Link>
-      ))}
+      {stages.data
+        ?.filter((st) => st.isActive || (summary.leadsByStage[st.id] ?? 0) > 0)
+        .map((st) => (
+          <Link
+            key={st.id}
+            href={st.kind === "WON" ? "/leads/won" : `/leads?stageId=${st.id}`}
+            className="flex items-center gap-2 hover:text-brand-700 dark:hover:text-brand-300"
+          >
+            <StatusBadge status={st.phase} stage={st} />
+            <span className="font-semibold tabular-nums">{summary.leadsByStage[st.id] ?? 0}</span>
+          </Link>
+        ))}
     </div>
   );
 }

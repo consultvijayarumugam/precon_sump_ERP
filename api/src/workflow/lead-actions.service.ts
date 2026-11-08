@@ -6,6 +6,7 @@ import { CallOutcome, FollowUpOutcome, LeadStatus, Prisma } from '../generated/p
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
 import { recordActivity, STATUS_WORDS, when } from '../crm/lead-history.js';
 import { notifyLeadHandedOver } from '../notifications/notify.js';
+import { StagesService } from '../pipeline/stages.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
 
@@ -44,6 +45,7 @@ export class LeadActionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assignment: LeadAssignmentService,
+    private readonly stages: StagesService,
   ) {}
 
   /**
@@ -58,8 +60,15 @@ export class LeadActionsService {
     const closes = CLOSING_OUTCOMES.includes(dto.outcome);
     if (closes && dto.nextCallbackAt) throw new BadRequestException(`"${OUTCOME_TEXT[dto.outcome]}" closes the lead, so no callback is needed`);
 
-    const status: LeadStatus | undefined =
-      closes && lead.status !== 'WON' ? 'LOST' : lead.status === 'NEW' ? 'CONTACTED' : undefined;
+    // Stage move: "not interested"/"wrong number" close it as Lost; a first call moves
+    // New into the first active telecaller-side stage (if the admin has one switched on).
+    const toStage =
+      closes && lead.status !== 'WON'
+        ? await this.stages.byKind('LOST')
+        : lead.status === 'NEW'
+          ? await this.stages.firstTelecallerStage()
+          : null;
+    const status: LeadStatus | undefined = toStage?.phase;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.callLog.create({ data: { leadId, callerId: user.id, outcome: dto.outcome, note: dto.note || null, calledAt: now } });
@@ -76,24 +85,26 @@ export class LeadActionsService {
           data: { leadId, scheduledAt: dto.nextCallbackAt, note: dto.note ? `Callback: ${dto.note}` : 'Callback', createdById: user.id },
         });
       }
-      if (status && status !== lead.status) {
-        await tx.lead.update({ where: { id: leadId }, data: { status, closedAt: status === 'LOST' ? now : undefined } });
+      if (toStage && toStage.id !== lead.stageId) {
+        await tx.lead.update({ where: { id: leadId }, data: { status: toStage.phase, stageId: toStage.id, closedAt: toStage.phase === 'LOST' ? now : undefined } });
       }
       const parts = [`Call: ${OUTCOME_TEXT[dto.outcome]}`];
       if (dto.note) parts.push(dto.note);
       if (dto.nextCallbackAt) parts.push(`next callback ${when(dto.nextCallbackAt)}`);
-      const changed = status && status !== lead.status;
-      if (changed) parts.push(`status ${STATUS_WORDS[lead.status]} → ${STATUS_WORDS[status]}`);
+      const changed = Boolean(toStage && toStage.id !== lead.stageId);
+      const fromName = lead.stage?.name ?? STATUS_WORDS[lead.status];
+      if (changed) parts.push(`stage ${fromName} → ${toStage!.name}`);
       await recordActivity(tx, {
         leadId,
         userId: user.id,
         type: 'CALL_LOGGED',
         summary: parts.join(' · '),
-        changes: changed ? [{ field: 'status', label: 'Status', from: lead.status, to: status }] : undefined,
+        changes: changed ? [{ field: 'stage', label: 'Stage', from: fromName, to: toStage!.name }] : undefined,
         at: now,
       });
     });
-    return { leadId, status: status ?? lead.status, outcome: dto.outcome };
+    const moved = Boolean(toStage && toStage.id !== lead.stageId);
+    return { leadId, status: status ?? lead.status, stage: moved ? toStage!.name : (lead.stage?.name ?? null), outcome: dto.outcome };
   }
 
   /** Sets (or moves) the lead's next callback: reschedules the earliest pending one, or adds one. */
@@ -147,7 +158,7 @@ export class LeadActionsService {
   async qualify(user: AuthenticatedUser, leadId: string, dto: QualifyLeadDto) {
     const lead = await this.leadInScope(user, leadId, { ownOnlyWithoutWrite: true });
     if (!TELECALLER_STAGES.includes(lead.status)) {
-      throw new BadRequestException(`This lead is already ${lead.status.toLowerCase()}; only New or Contacted leads can be qualified`);
+      throw new BadRequestException(`This lead is already in "${lead.stage?.name ?? lead.status}"; only leads still with a telecaller can be qualified`);
     }
     if (dto.productInterest === 'MICROBES' && dto.sumpSizeLitres) throw new BadRequestException('Microbes have no size');
     if (dto.salesFollowUpAt && dto.salesFollowUpAt <= new Date()) throw new BadRequestException('The sales follow-up must be in the future');
@@ -158,6 +169,8 @@ export class LeadActionsService {
     }
     const rotation = team.filter((m) => m.autoAssignEnabled).map((m) => m.id);
     const now = new Date();
+    // The handover stage by identity (isHandover), so renaming "Qualified" changes nothing here.
+    const handoverStage = await this.stages.handover();
 
     return this.prisma.$transaction(async (tx) => {
       const picked = dto.salesUserId ? null : await this.assignment.pickNext(tx, rotation);
@@ -181,7 +194,8 @@ export class LeadActionsService {
       await tx.lead.update({
         where: { id: leadId },
         data: {
-          status: 'QUALIFIED',
+          status: handoverStage.phase,
+          stageId: handoverStage.id,
           productInterest: dto.productInterest,
           sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
           city: dto.city === undefined ? undefined : dto.city || null,
@@ -202,7 +216,7 @@ export class LeadActionsService {
         type: 'HANDED_OVER',
         summary: `Qualified and handed to ${sales.fullName}${picked ? ' (round-robin)' : ''}`,
         changes: [
-          { field: 'status', label: 'Status', from: lead.status, to: 'QUALIFIED' },
+          { field: 'stage', label: 'Stage', from: lead.stage?.name ?? STATUS_WORDS[lead.status], to: handoverStage.name },
           { field: 'assignedTo', label: 'Salesperson', from: null, to: sales.fullName },
           { field: 'productInterest', label: 'Product', from: lead.productInterest, to: dto.productInterest },
           ...(size !== lead.sumpSizeLitres ? [{ field: 'sumpSizeLitres', label: 'Sump size', from: lead.sumpSizeLitres === null ? null : String(lead.sumpSizeLitres), to: size === null ? null : String(size) }] : []),
@@ -280,7 +294,18 @@ export class LeadActionsService {
     const where: Prisma.LeadWhereInput = { AND: [{ id: leadId }, leadScope(user), ownOnly ? { assignedToId: user.id } : {}] };
     const lead = await this.prisma.lead.findFirst({
       where,
-      select: { id: true, status: true, notes: true, telecallerId: true, assignedToId: true, productInterest: true, sumpSizeLitres: true, city: true },
+      select: {
+        id: true,
+        status: true,
+        stageId: true,
+        stage: { select: { name: true } },
+        notes: true,
+        telecallerId: true,
+        assignedToId: true,
+        productInterest: true,
+        sumpSizeLitres: true,
+        city: true,
+      },
     });
     if (!lead) throw new NotFoundException('Lead not found');
     return lead;

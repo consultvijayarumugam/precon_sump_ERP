@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
   // Keep the dev-only "N" badge away from the sidebar's bottom-left controls.
   devIndicators: { position: "bottom-right" },
   experimental: {
+    // Proxied /api/v1 request bodies are buffered up to this size. File-library
+    // uploads may be 10 MB plus form overhead; above the API's limit the API
+    // answers with a clear "larger than 10 MB" message instead of a cut-off body.
+    proxyClientMaxBodySize: "25mb",
     // The signed-in app renders client-side after a browser token check, so only
     // validate instant navigation on segments that opt in with `export const instant`.
     instantInsights: { validationLevel: "manual-warning" },

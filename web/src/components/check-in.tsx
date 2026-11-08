@@ -37,7 +37,7 @@ export const osmLink = (lat: number, lng: number) => `https://www.openstreetmap.
  * its page); otherwise you pick from the leads assigned to you.
  */
 export function CheckInButton({ leadId: fixedLeadId, onCheckedIn }: { leadId?: string; onCheckedIn: () => void }) {
-  const mine = useApi<{ id: string; name: string; city: string | null; status: LeadStatus }[]>(fixedLeadId ? null : "/check-ins/leads");
+  const mine = useApi<{ id: string; name: string; city: string | null; status: LeadStatus; stage: { name: string } | null }[]>(fixedLeadId ? null : "/check-ins/leads");
   const [chosen, setChosen] = useState("");
   const leadId = fixedLeadId ?? chosen;
   const [note, setNote] = useState("");
@@ -103,7 +103,7 @@ export function CheckInButton({ leadId: fixedLeadId, onCheckedIn }: { leadId?: s
             {mine.data?.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}
-                {l.city ? ` · ${l.city}` : ""} ({STATUS_LABELS[l.status]})
+                {l.city ? ` · ${l.city}` : ""} ({l.stage?.name ?? STATUS_LABELS[l.status]})
               </option>
             ))}
           </select>

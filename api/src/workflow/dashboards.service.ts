@@ -5,6 +5,7 @@ import { money } from '../finance/finance-utils.js';
 import { LeadStatus, Prisma, SalesOrderStatus } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { StagesService } from '../pipeline/stages.service.js';
 import { businessDate, businessPeriods } from './business-periods.js';
 import { CheckInsService } from './check-ins.service.js';
 import { TELECALLER_STAGES } from './lead-actions.service.js';
@@ -22,6 +23,7 @@ const WORKLIST_SELECT = {
   phone: true,
   city: true,
   status: true,
+  stage: { select: { id: true, name: true, phase: true, isActive: true } },
   source: true,
   sourceDetail: true,
   productInterest: true,
@@ -44,6 +46,7 @@ const SALES_LEAD_SELECT = {
   phone: true,
   city: true,
   status: true,
+  stage: { select: { id: true, name: true, phase: true, isActive: true } },
   productInterest: true,
   sumpSizeLitres: true,
   qualifiedAt: true,
@@ -64,6 +67,7 @@ export class DashboardsService {
     private readonly prisma: PrismaService,
     private readonly assignment: LeadAssignmentService,
     private readonly checkIns: CheckInsService,
+    private readonly stages: StagesService,
   ) {}
 
   // --- Telecaller workbench ------------------------------------------------------
@@ -124,7 +128,7 @@ export class DashboardsService {
   async sales(user: AuthenticatedUser) {
     const p = businessPeriods();
     const mine = { assignedToId: user.id };
-    const [byStatus, wonThisMonth, lostThisMonth, open, closedThisMonth, followUps, handedToday, revenue, visits] = await Promise.all([
+    const [byStatus, wonThisMonth, lostThisMonth, open, closedThisMonth, followUps, handedToday, revenue, visits, byStage, stageList] = await Promise.all([
       this.prisma.lead.groupBy({ by: ['status'], where: { ...mine, status: { in: SALES_STAGES } }, _count: { _all: true } }),
       this.prisma.lead.count({ where: { ...mine, status: 'WON', closedAt: { gte: p.monthStart } } }),
       this.prisma.lead.count({ where: { ...mine, status: 'LOST', closedAt: { gte: p.monthStart } } }),
@@ -154,9 +158,12 @@ export class DashboardsService {
       this.prisma.lead.count({ where: { ...mine, qualifiedAt: { gte: p.todayStart } } }),
       user.permissions.includes(PERMISSIONS.SALES_READ) ? this.revenueSince(p.monthStartDate, user.id) : Promise.resolve(null),
       this.checkIns.recent({ personId: user.id, take: 20 }),
+      this.prisma.lead.groupBy({ by: ['stageId'], where: { ...mine, status: { in: SALES_OPEN } }, _count: { _all: true } }),
+      this.stages.all(),
     ]);
 
     const stageCount = (s: LeadStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
+    const inStage = (id: string) => byStage.find((g) => g.stageId === id)?._count._all ?? 0;
     return {
       pipeline: {
         QUALIFIED: stageCount('QUALIFIED'),
@@ -166,6 +173,11 @@ export class DashboardsService {
         wonThisMonth,
         lostThisMonth,
       },
+      // The sales-side pipeline stages (admin-defined, in order), with your open leads in each.
+      // Switched-off stages only show while they still hold some of your leads.
+      stages: stageList
+        .filter((st) => st.kind === 'MIDDLE' && SALES_OPEN.includes(st.phase) && (st.isActive || inStage(st.id) > 0))
+        .map((st) => ({ id: st.id, name: st.name, isActive: st.isActive, isHandover: st.isHandover, leads: inStage(st.id) })),
       revenueThisMonth: revenue,
       handedToday,
       open: open.map(this.withNextFollowUp),
@@ -317,7 +329,7 @@ export class DashboardsService {
       this.prisma.callLog.groupBy({ by: ['leadId'], where: { calledAt: sinceYesterday } }),
       this.prisma.followUp.count({ where: { scheduledAt: { gte: p.monthStart, lt: p.now }, lead: { assignedToId: { not: null } } } }),
       this.prisma.followUp.count({ where: { scheduledAt: { gte: p.monthStart, lt: p.now }, completedAt: { not: null }, lead: { assignedToId: { not: null } } } }),
-      this.prisma.lead.groupBy({ by: ['status'], where: { status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] } }, _count: { _all: true } }),
+      this.prisma.lead.groupBy({ by: ['stageId'], where: { status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] } }, _count: { _all: true } }),
       this.prisma.lead.count({ where: { qualifiedAt: sinceYesterday } }),
       this.prisma.lead.count({ where: { status: 'WON', closedAt: lastMonthSameSpan } }),
       this.prisma.salesOrder.aggregate({
@@ -341,7 +353,12 @@ export class DashboardsService {
     const sources = [...new Set([...sourcesWeek, ...sourcesLastWeek].map((r) => r.source))]
       .map((source) => ({ source, thisWeek: count(sourcesWeek, source), lastWeek: count(sourcesLastWeek, source) }))
       .sort((a, b) => b.thisWeek - a.thisWeek || b.lastWeek - a.lastWeek);
-    const stage = (s: string) => byStage.find((g) => g.status === s)?._count._all ?? 0;
+    const stageList = await this.stages.all();
+    const inStage = (id: string) => byStage.find((g) => g.stageId === id)?._count._all ?? 0;
+    // Open stages (New + middle) in admin order; a switched-off stage shows only while it has leads.
+    const openStages = stageList
+      .filter((st) => (st.kind === 'ENTRY' || st.kind === 'MIDDLE') && (st.isActive || inStage(st.id) > 0))
+      .map((st) => ({ id: st.id, key: st.key, name: st.name, phase: st.phase, isActive: st.isActive, isHandover: st.isHandover, leads: inStage(st.id) }));
 
     return {
       leadFlow: {
@@ -363,8 +380,8 @@ export class DashboardsService {
         followUpCompliance: dueMonth ? doneMonth / dueMonth : null,
       },
       pipeline: {
-        active: stage('NEW') + stage('CONTACTED') + stage('QUALIFIED') + stage('QUOTED'),
-        stages: (['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] as const).map((status) => ({ status, leads: stage(status) })),
+        active: byStage.reduce((n, g) => n + g._count._all, 0),
+        stages: openStages,
         qualifiedYesterday,
       },
       revenue: {

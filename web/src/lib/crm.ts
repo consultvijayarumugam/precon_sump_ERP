@@ -79,6 +79,8 @@ export interface Lead {
   source: LeadSource;
   /** Null = not known yet (e.g. a Meta lead with just name and phone). */
   productInterest: ProductInterest | null;
+  /** The admin-defined pipeline stage; `status` is the fixed phase it counts as. */
+  stage: { id: string; key: string; name: string; kind: string; phase: LeadStatus; isHandover: boolean; position: number; isActive: boolean } | null;
   sumpSizeLitres: number | null;
   status: LeadStatus;
   notes: string | null;
@@ -119,6 +121,7 @@ export interface FollowUpWithLead extends FollowUp {
     name: string;
     phone: string;
     status: LeadStatus;
+    stage: { id: string; name: string; phase: LeadStatus } | null;
     productInterest: ProductInterest | null;
     sumpSizeLitres: number | null;
     assignedTo: UserRef | null;
@@ -140,6 +143,8 @@ export interface CrmSummary {
   totalLeads: number;
   openLeads: number;
   leadsByStatus: Record<LeadStatus, number>;
+  /** Leads per pipeline stage id. */
+  leadsByStage: Record<string, number>;
   overdueFollowUps: number;
   upcomingFollowUps: number;
 }

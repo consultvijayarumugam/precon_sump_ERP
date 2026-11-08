@@ -53,7 +53,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
             <Link href={`/leads/${item.id}`} className="text-base font-semibold text-neutral-900 hover:text-brand-700 dark:text-white">
               {item.name}
             </Link>
-            <StatusBadge status={item.status} />
+            <StatusBadge status={item.status} stage={item.stage} />
           </div>
           <p className="mt-0.5 text-xs text-neutral-500">
             {SOURCE_LABELS[item.source]} · arrived {ago(item.createdAt, now)}

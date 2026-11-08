@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const emptyToUndefined = ({ value }: { value: unknown }) => (value === '' || value === null ? undefined : value);
@@ -48,6 +48,13 @@ export class StartWhatsAppDto {
   @IsString()
   @MaxLength(1500)
   message?: string;
+
+  @ApiPropertyOptional({ description: 'Library files to share; each is added to the message as "Title: <link>"', type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5, { message: 'Share at most 5 files in one message' })
+  @IsUUID('all', { each: true })
+  fileIds?: string[];
 }
 
 export class ListTemplatesQueryDto {

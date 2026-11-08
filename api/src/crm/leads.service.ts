@@ -10,6 +10,7 @@ import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { notifyLeadAssigned } from '../notifications/notify.js';
+import { StagesService } from '../pipeline/stages.service.js';
 import { describe, diff, recordActivity, STATUS_WORDS } from './lead-history.js';
 import { CreateLeadDto, ListLeadsQueryDto, UpdateLeadDto } from './dto/lead.dto.js';
 import {
@@ -27,6 +28,7 @@ export class LeadsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
+    private readonly stages: StagesService,
   ) {}
 
   async list(user: AuthenticatedUser, query: ListLeadsQueryDto) {
@@ -38,6 +40,7 @@ export class LeadsService {
           source: query.source,
           productInterest: query.productInterest,
           assignedToId: query.assignedToId,
+          stageId: query.stageId,
           // "Won on" date range (narrows what the user can already see).
           closedAt: dayRangeFilter(query.wonFrom, query.wonTo),
         },
@@ -113,7 +116,12 @@ export class LeadsService {
     }
     if (assignedToId) await this.ensureAssignable(assignedToId);
 
-    const status = dto.status ?? LeadStatus.NEW;
+    const stage = dto.stageId
+      ? await this.activeStage(dto.stageId)
+      : dto.status
+        ? await this.stages.forStatus(dto.status)
+        : await this.stages.byKind('ENTRY');
+    const status = stage.phase;
     const lead = await this.prisma.lead.create({
       data: {
         name: dto.name,
@@ -125,6 +133,7 @@ export class LeadsService {
         // A size only makes sense for a sump.
         sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
         status,
+        stageId: stage.id,
         notes: dto.notes || null,
         closedAt: CLOSED_STATUSES.includes(status) ? new Date() : null,
         assignedToId,
@@ -132,7 +141,7 @@ export class LeadsService {
       },
       select: { id: true, assignedTo: { select: { fullName: true } } },
     });
-    await recordActivity(this.prisma, { leadId: lead.id, userId: user.id, type: 'CREATED', summary: `Lead created by hand (${STATUS_WORDS[status]})` });
+    await recordActivity(this.prisma, { leadId: lead.id, userId: user.id, type: 'CREATED', summary: `Lead created by hand (${stage.name})` });
     if (assignedToId) {
       await recordActivity(this.prisma, {
         leadId: lead.id,
@@ -155,6 +164,8 @@ export class LeadsService {
       where: { AND: [{ id }, leadScope(user)] },
       select: {
         status: true,
+        stageId: true,
+        stage: { select: { name: true } },
         assignedToId: true,
         assignedTo: { select: { fullName: true } },
         name: true,
@@ -175,9 +186,18 @@ export class LeadsService {
     if (qualifyOnly && dto.source !== undefined && dto.source !== existing.source) {
       throw new ForbiddenException("You can't change a lead's source; ask an admin");
     }
+    // Where the lead is moving, if anywhere: a stage (by id), or the stage for an old-style status.
+    const target =
+      dto.stageId !== undefined
+        ? dto.stageId === existing.stageId
+          ? null
+          : await this.activeStage(dto.stageId)
+        : dto.status !== undefined && dto.status !== existing.status
+          ? await this.stages.forStatus(dto.status)
+          : null;
     if (
-      dto.status &&
-      dto.status !== LeadStatus.WON &&
+      target &&
+      target.phase !== LeadStatus.WON &&
       existing.salesOrder &&
       existing.salesOrder.status !== 'CANCELLED'
     ) {
@@ -208,12 +228,13 @@ export class LeadsService {
       if (targetTags.includes(PERMISSIONS.LEADS_AUTO_ASSIGN)) data.telecallerId = dto.assignedToId;
     }
 
-    if (dto.status && dto.status !== existing.status) {
-      data.status = dto.status;
+    if (target) {
+      data.stageId = target.id;
+      data.status = target.phase;
       const wasClosed = CLOSED_STATUSES.includes(existing.status);
-      const isClosed = CLOSED_STATUSES.includes(dto.status);
-      if (isClosed) data.closedAt = new Date();
-      else if (wasClosed) data.closedAt = null; // reopened
+      const isClosed = CLOSED_STATUSES.includes(target.phase);
+      if (isClosed && target.phase !== existing.status) data.closedAt = new Date();
+      else if (wasClosed && !isClosed) data.closedAt = null; // reopened
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -231,14 +252,14 @@ export class LeadsService {
       if (fields.length) await recordActivity(tx, { leadId: id, userId: user.id, type: 'FIELD_CHANGED', summary: describe(fields), changes: fields });
       const notes = diff(existing, { notes: data.notes });
       if (notes.length) await recordActivity(tx, { leadId: id, userId: user.id, type: 'NOTES_EDITED', summary: 'Notes edited', changes: notes });
-      if (data.status && data.status !== existing.status) {
-        const to = data.status as LeadStatus;
+      if (target) {
+        const from = existing.stage?.name ?? STATUS_WORDS[existing.status];
         await recordActivity(tx, {
           leadId: id,
           userId: user.id,
           type: 'STATUS_CHANGED',
-          summary: `Status: ${STATUS_WORDS[existing.status]} → ${STATUS_WORDS[to]}`,
-          changes: [{ field: 'status', label: 'Status', from: existing.status, to }],
+          summary: `Stage: ${from} → ${target.name}`,
+          changes: [{ field: 'stage', label: 'Stage', from, to: target.name }],
         });
       }
       if (data.assignedToId !== undefined) {
@@ -279,6 +300,7 @@ export class LeadsService {
         message: true,
         templateName: true,
         changes: true,
+        attachments: true,
         createdAt: true,
         user: { select: { id: true, fullName: true, role: { select: { name: true } } } },
       },
@@ -309,7 +331,7 @@ export class LeadsService {
       lead: scope,
     };
 
-    const [byStatus, overdueFollowUps, upcomingFollowUps] = await this.prisma.$transaction([
+    const [byStatus, overdueFollowUps, upcomingFollowUps, byStage] = await this.prisma.$transaction([
       this.prisma.lead.groupBy({
         by: ['status'],
         where: scope,
@@ -322,6 +344,7 @@ export class LeadsService {
       this.prisma.followUp.count({
         where: { ...pendingInScope, scheduledAt: { gte: now } },
       }),
+      this.prisma.lead.groupBy({ by: ['stageId'], where: scope, orderBy: { stageId: 'asc' }, _count: { _all: true } }),
     ]);
 
     const leadsByStatus = Object.fromEntries(
@@ -337,9 +360,20 @@ export class LeadsService {
         .filter(([s]) => !CLOSED_STATUSES.includes(s as LeadStatus))
         .reduce((a, [, n]) => a + n, 0),
       leadsByStatus,
+      // Per pipeline stage id (the configurable stages), for pipeline strips.
+      leadsByStage: Object.fromEntries(byStage.map((r) => [r.stageId ?? 'none', (r._count as { _all: number })._all])),
       overdueFollowUps,
       upcomingFollowUps,
     };
+  }
+
+  /** A stage a lead can be moved into: it must exist and be switched on. */
+  private async activeStage(stageId: string) {
+    const stage = await this.stages.get(stageId).catch(() => {
+      throw new BadRequestException('That pipeline stage does not exist');
+    });
+    if (!stage.isActive) throw new BadRequestException(`"${stage.name}" is switched off; pick another stage`);
+    return stage;
   }
 
   private requireAssignPermission(user: AuthenticatedUser) {

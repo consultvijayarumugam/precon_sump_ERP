@@ -42,6 +42,8 @@ export const LEAD_SELECT = {
   productInterest: true,
   sumpSizeLitres: true,
   status: true,
+  // The configurable stage people see; `status` is its fixed phase.
+  stage: { select: { id: true, key: true, name: true, kind: true, phase: true, isHandover: true, position: true, isActive: true } },
   notes: true,
   sourceDetail: true,
   autoAssigned: true,

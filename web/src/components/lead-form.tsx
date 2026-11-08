@@ -6,18 +6,16 @@ import { buttonClass, ErrorText, inputClass, secondaryButtonClass } from "@/comp
 import {
   Lead,
   LEAD_SOURCES,
-  LEAD_STATUSES,
   LeadSource,
-  LeadStatus,
   formatLitres,
   PRODUCT_INTERESTS,
   PRODUCT_LABELS,
   ProductInterest,
   SOURCE_LABELS,
   SUMP_SIZES_LITRES,
-  STATUS_LABELS,
   TAGS,
 } from "@/lib/crm";
+import { pickableStages, useStages } from "@/lib/stages";
 import { useApi } from "@/lib/use-api";
 
 export interface LeadFormValues {
@@ -30,13 +28,15 @@ export interface LeadFormValues {
   productInterest: ProductInterest | "";
   /** "" = not decided yet (sumps only). */
   sumpSizeLitres: string;
-  status: LeadStatus;
+  /** Pipeline stage id; "" = the first stage (New) for a new lead. */
+  stageId: string;
   notes: string;
   assignedToId: string;
 }
 
 /** What the form submits: assignedToId is null for "unassigned", absent if the user can't assign. */
-export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId" | "sumpSizeLitres" | "productInterest"> & {
+export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId" | "sumpSizeLitres" | "productInterest" | "stageId"> & {
+  stageId?: string;
   productInterest: ProductInterest | null;
   assignedToId?: string | null;
   sumpSizeLitres: number | null;
@@ -73,6 +73,7 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
   const canAssign = can(TAGS.LEADS_ASSIGN);
   const lockContact = !can(TAGS.LEADS_WRITE);
   const assignees = useApi<Assignee[]>(canAssign ? "/leads/assignees" : null);
+  const stages = useStages();
 
   const [values, setValues] = useState<LeadFormValues>({
     name: initial?.name ?? "",
@@ -83,7 +84,7 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     // An existing lead keeps "not known yet"; a new one starts at Sump.
     productInterest: initial ? (initial.productInterest ?? "") : "SUMP",
     sumpSizeLitres: initial?.sumpSizeLitres ? String(initial.sumpSizeLitres) : "",
-    status: initial?.status ?? "NEW",
+    stageId: initial?.stage?.id ?? "",
     notes: initial?.notes ?? "",
     assignedToId: initial?.assignedTo?.id ?? "",
   });
@@ -98,9 +99,10 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const { assignedToId, sumpSizeLitres, productInterest, ...rest } = values;
+      const { assignedToId, sumpSizeLitres, productInterest, stageId, ...rest } = values;
       await onSubmit({
         ...rest,
+        stageId: stageId || undefined,
         productInterest: productInterest || null,
         // A size only applies to sumps; "" = not decided yet.
         sumpSizeLitres: values.productInterest === "SUMP" && sumpSizeLitres ? Number(sumpSizeLitres) : null,
@@ -179,13 +181,17 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
             </select>
           </Field>
         )}
-        <Field label="Status">
-          <select className={inputClass} value={values.status} onChange={(e) => set("status", e.target.value as LeadStatus)}>
-            {LEAD_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABELS[s]}
-              </option>
-            ))}
+        <Field label="Stage">
+          <select className={inputClass} value={values.stageId} onChange={(e) => set("stageId", e.target.value)}>
+            {!initial && <option value="">New (first stage)</option>}
+            {pickableStages(stages.data, initial?.stage?.id)
+              .filter((st) => initial || st.kind !== "ENTRY")
+              .map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name}
+                  {st.isActive ? "" : " (switched off)"}
+                </option>
+              ))}
           </select>
         </Field>
         {canAssign && (

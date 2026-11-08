@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, RequirePermissions } from '../access-control/access-policy.decorators.js';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { CreateTemplateDto, ListTemplatesQueryDto, StartWhatsAppDto, UpdateTemplateDto } from './dto/messaging.dto.js';
+import { publicBase } from '../files/files.service.js';
 import { MessagingService } from './messaging.service.js';
 import { PLACEHOLDERS } from './whatsapp.js';
 
@@ -58,8 +60,8 @@ export class MessagingController {
     summary: 'Start a WhatsApp message to a lead: fills the template, logs it on the lead, returns the wa.me link',
     description: 'Indian numbers get country code 91 if missing. Only leads you can see (404 otherwise).',
   })
-  start(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StartWhatsAppDto) {
-    return this.messaging.startWhatsApp(user, id, dto);
+  start(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StartWhatsAppDto, @Req() req: Request) {
+    return this.messaging.startWhatsApp(user, id, dto, publicBase(req));
   }
 
   @Get('leads/:id/messages')

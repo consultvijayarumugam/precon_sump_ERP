@@ -56,7 +56,7 @@ export function LeadsTable({ leads, variant = "all" }: { leads: LeadListItem[]; 
                 <td className={tdClass}>{SOURCE_LABELS[lead.source]}</td>
                 {variant === "all" && (
                   <td className={tdClass}>
-                    <StatusBadge status={lead.status} />
+                    <StatusBadge status={lead.status} stage={lead.stage} />
                   </td>
                 )}
                 {showOwner && (

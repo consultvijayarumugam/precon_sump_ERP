@@ -29,6 +29,7 @@ const FOLLOW_UP_WITH_LEAD_SELECT = {
       name: true,
       phone: true,
       status: true,
+      stage: { select: { id: true, name: true, phase: true } },
       productInterest: true,
       sumpSizeLitres: true,
       assignedTo: { select: { id: true, fullName: true } },

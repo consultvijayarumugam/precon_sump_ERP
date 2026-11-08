@@ -5,6 +5,7 @@ import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { LeadSource, LeadStatus, Prisma, SalesOrderStatus } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS, businessDayRange } from '../intake/lead-assignment.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { StagesService } from '../pipeline/stages.service.js';
 import { businessDate } from '../workflow/business-periods.js';
 
 export type ColumnKind = 'text' | 'number' | 'percent' | 'money';
@@ -45,14 +46,6 @@ const SOURCE_LABELS: Record<LeadSource, string> = {
   OTHER: 'Other',
   API: 'External system (API)',
 };
-const STATUS_LABELS: Record<LeadStatus, string> = {
-  NEW: 'New',
-  CONTACTED: 'Contacted',
-  QUALIFIED: 'Qualified',
-  QUOTED: 'Quoted',
-  WON: 'Won',
-  LOST: 'Lost',
-};
 const PAST_QUALIFIED: LeadStatus[] = ['QUALIFIED', 'QUOTED', 'WON'];
 const DAY = 86_400_000;
 
@@ -69,6 +62,7 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assignment: LeadAssignmentService,
+    private readonly stages: StagesService,
   ) {}
 
   /** The reports this user can open. */
@@ -234,18 +228,22 @@ export class ReportsService {
   }
 
   private async pipeline(ctx: Ctx) {
-    const groups = await this.prisma.lead.groupBy({
-      by: ['status'],
-      where: { AND: [this.ownLeads(ctx), { createdAt: { gte: ctx.start, lt: ctx.end } }] },
-      _count: { _all: true },
-    });
+    const [groups, stages] = await Promise.all([
+      this.prisma.lead.groupBy({
+        by: ['stageId'],
+        where: { AND: [this.ownLeads(ctx), { createdAt: { gte: ctx.start, lt: ctx.end } }] },
+        _count: { _all: true },
+      }),
+      this.stages.all(),
+    ]);
     const total = groups.reduce((n, g) => n + g._count._all, 0);
-    const rows = (Object.keys(STATUS_LABELS) as LeadStatus[]).map((status) => {
-      const count = groups.find((g) => g.status === status)?._count._all ?? 0;
-      return { status: STATUS_LABELS[status], leads: count, share: rate(count, total) };
-    });
+    const count = (id: string) => groups.find((g) => g.stageId === id)?._count._all ?? 0;
+    // Every stage in admin order; a switched-off stage is listed only while leads sit in it.
+    const rows = stages
+      .filter((st) => st.isActive || count(st.id) > 0)
+      .map((st) => ({ status: st.isActive ? st.name : `${st.name} (switched off)`, leads: count(st.id), share: rate(count(st.id), total) }));
     return {
-      columns: [col('status', 'Status', 'text'), col('leads', 'Leads', 'number'), col('share', 'Share', 'percent')],
+      columns: [col('status', 'Stage', 'text'), col('leads', 'Leads', 'number'), col('share', 'Share', 'percent')],
       rows,
       totals: { status: 'Total', leads: total, share: total ? 1 : null },
     };

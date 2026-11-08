@@ -14,6 +14,8 @@ export const PERMISSIONS = {
   PERMISSIONS_ASSIGN: 'permissions.assign',
   APIKEYS_MANAGE: 'apikeys.manage',
   TEMPLATES_MANAGE: 'templates.manage',
+  PIPELINE_MANAGE: 'pipeline.manage',
+  FILES_MANAGE: 'files.manage',
   REPORTS_VIEW: 'reports.view',
   REPORTS_VIEW_ALL: 'reports.view_all',
   LEADS_READ: 'leads.read',
@@ -88,6 +90,16 @@ export const PERMISSION_DEFINITIONS: {
     key: PERMISSIONS.TEMPLATES_MANAGE,
     module: 'admin',
     description: 'Create and edit the WhatsApp message templates telecallers and sales pick from',
+  },
+  {
+    key: PERMISSIONS.PIPELINE_MANAGE,
+    module: 'admin',
+    description: 'Add, rename, reorder and switch off the middle pipeline stages',
+  },
+  {
+    key: PERMISSIONS.FILES_MANAGE,
+    module: 'admin',
+    description: 'Upload, rename and delete the brochures and images staff share as WhatsApp links',
   },
   {
     key: PERMISSIONS.REPORTS_VIEW,

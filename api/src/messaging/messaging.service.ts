@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { leadScope } from '../crm/lead-scope.js';
 import { Prisma } from '../generated/prisma/client.js';
+import { kindOf } from '../files/file-types.js';
+import { CATEGORY_LABELS, FilesService } from '../files/files.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateTemplateDto, StartWhatsAppDto, UpdateTemplateDto } from './dto/messaging.dto.js';
 import { renderTemplate, waLink, waPhone } from './whatsapp.js';
@@ -12,7 +14,10 @@ const sizeFormat = new Intl.NumberFormat('en-IN');
 /** WhatsApp quick-contact: admin-managed templates, and starting (and logging) a message to a lead. */
 @Injectable()
 export class MessagingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly files: FilesService,
+  ) {}
 
   listTemplates(includeInactive: boolean) {
     return this.prisma.messageTemplate.findMany({
@@ -50,11 +55,13 @@ export class MessagingService {
 
   /**
    * Fills the chosen template (or takes a typed message) for one of the
-   * user's leads, records that a WhatsApp message was started, and returns
+   * user's leads, adds a link line for each chosen library file (wa.me can't
+   * carry real attachments), records that a WhatsApp message was started
+   * (and which files were shared), and returns
    * the wa.me link to open. WhatsApp itself sends nothing until the user taps
    * Send there, so this logs "initiated", not "delivered".
    */
-  async startWhatsApp(user: AuthenticatedUser, leadId: string, dto: StartWhatsAppDto) {
+  async startWhatsApp(user: AuthenticatedUser, leadId: string, dto: StartWhatsAppDto, base: string) {
     const lead = await this.prisma.lead.findFirst({
       where: { AND: [{ id: leadId }, leadScope(user)] },
       select: { id: true, name: true, phone: true, city: true, productInterest: true, sumpSizeLitres: true },
@@ -79,7 +86,15 @@ export class MessagingService {
         : lead.productInterest === 'MICROBES'
           ? 'Microbes'
           : '';
-    const message = template
+    const shared = (await this.files.pick(dto.fileIds ?? [])).map((f) => ({
+      id: f.id,
+      title: f.title,
+      category: CATEGORY_LABELS[f.category],
+      kind: kindOf(f.mimeType),
+      url: this.files.linkFor(f, base),
+    }));
+
+    const text = template
       ? renderTemplate(template.body, {
           name: lead.name,
           first_name: lead.name.split(/\s+/)[0],
@@ -89,6 +104,8 @@ export class MessagingService {
           company: process.env.COMPANY_NAME || 'Precon',
         })
       : (dto.message ?? '').trim();
+    const links = shared.map((f) => `${f.title}: ${f.url}`).join('\n');
+    const message = [text, links].filter(Boolean).join('\n\n');
 
     const activity = await this.prisma.leadActivity.create({
       data: {
@@ -98,10 +115,11 @@ export class MessagingService {
         templateId: template?.id ?? null,
         templateName: template?.name ?? null,
         message: message.slice(0, 4000),
+        attachments: shared.length ? shared : undefined,
       },
       select: { id: true, createdAt: true },
     });
-    return { activityId: activity.id, url: waLink(lead.phone, message), message, phone: waPhone(lead.phone) };
+    return { activityId: activity.id, url: waLink(lead.phone, message), message, phone: waPhone(lead.phone), files: shared };
   }
 
   /** WhatsApp messages started on a lead, newest first. */
@@ -112,7 +130,7 @@ export class MessagingService {
       where: { leadId, type: 'WHATSAPP' }, // the rest of the history is the admin-only timeline
       orderBy: { createdAt: 'desc' },
       take: 100,
-      select: { id: true, type: true, templateName: true, message: true, createdAt: true, user: { select: { id: true, fullName: true } } },
+      select: { id: true, type: true, templateName: true, message: true, attachments: true, createdAt: true, user: { select: { id: true, fullName: true } } },
     });
   }
 

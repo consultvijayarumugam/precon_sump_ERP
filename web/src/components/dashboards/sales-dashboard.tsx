@@ -16,12 +16,15 @@ import { SalesDashboardData, SalesLead } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
 import { EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from "./shared";
 
-const COLUMNS: { status: "QUALIFIED" | "QUOTED" | "WON" | "LOST"; title: string; tone: string }[] = [
-  { status: "QUALIFIED", title: "Qualified", tone: "border-t-violet-500" },
-  { status: "QUOTED", title: "Quoted", tone: "border-t-amber-500" },
-  { status: "WON", title: "Won this month", tone: "border-t-emerald-500" },
-  { status: "LOST", title: "Lost this month", tone: "border-t-neutral-400" },
-];
+/** One board column: an admin-defined sales stage, or this month's Won / Lost. */
+interface Column {
+  key: string;
+  title: string;
+  tone: string;
+  count: number | undefined;
+  leads: SalesLead[];
+  href: string;
+}
 
 function LeadCard({ lead, now }: { lead: SalesLead; now: number }) {
   const fu = lead.nextFollowUp;
@@ -100,6 +103,19 @@ export function SalesDashboard() {
   const [now] = useState(() => Date.now());
   const p = data?.pipeline;
   const overdue = data?.followUps.filter((f) => f.overdue).length ?? 0;
+  // The sales-side stages (admin-defined, in order), then this month's outcomes.
+  const columns: Column[] = [
+    ...(data?.stages ?? []).map((st) => ({
+      key: st.id,
+      title: st.isActive ? st.name : `${st.name} (off)`,
+      tone: "border-t-[var(--ps-blue-600)]",
+      count: st.leads,
+      leads: (data?.open ?? []).filter((l) => l.stage?.id === st.id),
+      href: `/leads?stageId=${st.id}`,
+    })),
+    { key: "won", title: "Won this month", tone: "border-t-emerald-500", count: p?.wonThisMonth, leads: (data?.closedThisMonth ?? []).filter((l) => l.status === "WON"), href: "/leads/won" },
+    { key: "lost", title: "Lost this month", tone: "border-t-neutral-400", count: p?.lostThisMonth, leads: (data?.closedThisMonth ?? []).filter((l) => l.status === "LOST"), href: "/leads?status=LOST" },
+  ];
   const dueToday = (data?.followUps.length ?? 0) - overdue;
 
   return (
@@ -143,34 +159,26 @@ export function SalesDashboard() {
 
       <section>
         <SectionHeader title="My pipeline" module="crm" href="/leads" linkLabel="All my leads" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {COLUMNS.map((col) => {
-            const leads =
-              col.status === "QUALIFIED" || col.status === "QUOTED"
-                ? (data?.open ?? []).filter((l) => l.status === col.status)
-                : (data?.closedThisMonth ?? []).filter((l) => l.status === col.status);
-            const count =
-              col.status === "WON" ? p?.wonThisMonth : col.status === "LOST" ? p?.lostThisMonth : p?.[col.status];
-            return (
-              <div key={col.status} className={`rounded-xl border border-t-4 border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-950/40 ${col.tone}`}>
-                <div className="mb-2 flex items-baseline justify-between">
-                  <h3 className="font-semibold">{col.title}</h3>
-                  <span className="text-2xl font-bold tabular-nums">{count ?? "–"}</span>
-                </div>
-                <div className="space-y-2">
-                  {leads.slice(0, 8).map((l) => (
-                    <LeadCard key={l.id} lead={l} now={now} />
-                  ))}
-                  {leads.length === 0 && <p className="py-4 text-center text-xs text-neutral-500">None</p>}
-                  {leads.length > 8 && (
-                    <Link href={`/leads?status=${col.status}`} className="block text-center text-xs font-semibold text-brand-700">
-                      +{leads.length - 8} more →
-                    </Link>
-                  )}
-                </div>
+        <div className={`grid gap-4 md:grid-cols-2 ${columns.length > 4 ? "xl:grid-cols-3 2xl:grid-cols-5" : "xl:grid-cols-4"}`}>
+          {columns.map((col) => (
+            <div key={col.key} className={`rounded-xl border border-t-4 border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-950/40 ${col.tone}`}>
+              <div className="mb-2 flex items-baseline justify-between gap-2">
+                <h3 className="font-semibold">{col.title}</h3>
+                <span className="text-2xl font-bold tabular-nums">{col.count ?? "–"}</span>
               </div>
-            );
-          })}
+              <div className="space-y-2">
+                {col.leads.slice(0, 8).map((l) => (
+                  <LeadCard key={l.id} lead={l} now={now} />
+                ))}
+                {col.leads.length === 0 && <p className="py-4 text-center text-xs text-neutral-500">None</p>}
+                {col.leads.length > 8 && (
+                  <Link href={col.href} className="block text-center text-xs font-semibold text-brand-700">
+                    +{col.leads.length - 8} more →
+                  </Link>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 

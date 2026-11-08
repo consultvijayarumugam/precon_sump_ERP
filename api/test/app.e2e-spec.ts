@@ -1219,7 +1219,7 @@ describe('Auth and RBAC (e2e)', () => {
       const o = before.overview;
       // Shapes and internal consistency.
       expect(o.leadFlow.daily).toHaveLength(14);
-      expect(o.pipeline.stages.map((s: { status: string }) => s.status)).toEqual(['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED']);
+      expect(o.pipeline.stages.map((s: { key: string }) => s.key)).toEqual(['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED']);
       expect(o.pipeline.active).toBe(o.pipeline.stages.reduce((n: number, s: { leads: number }) => n + s.leads, 0));
       expect(o.pipeline.active).toBe(await db.lead.count({ where: { status: { in: ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] } } }));
       expect(o.leadFlow.thisWeek).toBe(o.leadFlow.bySource.reduce((n: number, s: { thisWeek: number }) => n + s.thisWeek, 0));
@@ -1238,8 +1238,8 @@ describe('Auth and RBAC (e2e)', () => {
       expect(meta(after)).toBe(meta(o) + 1);
       expect(after.activity.callsToday).toBe(o.activity.callsToday + 1);
       expect(after.activity.leadsWorkedToday).toBe(o.activity.leadsWorkedToday + 1);
-      expect(after.pipeline.stages.find((s: { status: string }) => s.status === 'CONTACTED').leads).toBe(
-        o.pipeline.stages.find((s: { status: string }) => s.status === 'CONTACTED').leads + 1,
+      expect(after.pipeline.stages.find((s: { key: string }) => s.key === 'CONTACTED').leads).toBe(
+        o.pipeline.stages.find((s: { key: string }) => s.key === 'CONTACTED').leads + 1,
       );
       // Only admin (leads.read_all + leads.assign) gets it.
       await http().get('/api/v1/dashboards/master').set(as(sales)).expect(403);
@@ -1806,8 +1806,9 @@ describe('Auth and RBAC (e2e)', () => {
       }
       const byType = (t: string) => history.filter((h) => h.type === t);
       expect(byType('HANDED_OVER')[0]).toMatchObject({ user: { fullName: 'Tara Telecaller' }, message: 'Qualified and handed to Suresh Sales' });
-      expect(byType('HANDED_OVER')[0].changes).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'status', from: 'CONTACTED', to: 'QUALIFIED' })]));
-      expect(byType('STATUS_CHANGED')[0]).toMatchObject({ user: { fullName: 'Suresh Sales' }, changes: [{ field: 'status', from: 'QUALIFIED', to: 'QUOTED' }] });
+      // Stage changes record the stage names, old -> new.
+      expect(byType('HANDED_OVER')[0].changes).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'stage', from: 'Contacted', to: 'Qualified' })]));
+      expect(byType('STATUS_CHANGED')[0]).toMatchObject({ user: { fullName: 'Suresh Sales' }, message: 'Stage: Qualified → Quoted', changes: [{ field: 'stage', from: 'Qualified', to: 'Quoted' }] });
       const salespersonChange = byType('ASSIGNED').find((h) => h.message.startsWith('Salesperson changed'));
       expect(salespersonChange).toMatchObject({ user: { fullName: 'Tara Telecaller' }, changes: [{ from: 'Suresh Sales', to: 'Priya Sales' }] });
       const notes = byType('NOTES_EDITED');
@@ -1973,6 +1974,327 @@ describe('Auth and RBAC (e2e)', () => {
       expect(await notes(suresh, `state=upcoming&${week}`)).toEqual(['E2E FU Suresh Sun late']);
       expect(await notes(suresh, `state=completed&${week}`)).toEqual(['E2E FU Suresh Mon']);
       await http().get('/api/v1/follow-ups?fromDate=2031-05-11&toDate=2031-05-05').set(as(suresh)).expect(400);
+    });
+  });
+
+  describe('Pipeline stages: admin-managed middle, protected New/Won/Lost, handover by identity', () => {
+    let admin: string;
+    let sales: string;
+    let tara: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    type Stage = { id: string; key: string; name: string; kind: string; phase: string; isHandover: boolean; isActive: boolean; leads: number };
+    const list = async (): Promise<Stage[]> => (await http().get('/api/v1/pipeline-stages').set(as(admin)).expect(200)).body;
+    const leadIds: string[] = [];
+    let original: Stage[] = [];
+    const byName = (stages: Stage[], name: string) => stages.find((s) => s.name === name)!;
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    async function newLead(name: string, phone: string, assignee: 'tara' | 'suresh') {
+      const db = await prisma();
+      const id = (await db.user.findUniqueOrThrow({ where: { email: assignee === 'tara' ? 'telecaller@precon.local' : 'sales@precon.local' } })).id;
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name, phone, source: 'META', assignedToId: id }).expect(201);
+      leadIds.push(res.body.id);
+      return res.body.id as string;
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      original = await list();
+    });
+    afterAll(async () => {
+      // Put everything back exactly as it was.
+      const db = await prisma();
+      await db.lead.deleteMany({ where: { id: { in: leadIds } } });
+      const now = await list();
+      for (const st of now.filter((x) => !original.some((o) => o.id === x.id))) await db.pipelineStage.delete({ where: { id: st.id } });
+      for (const o of original.filter((x) => x.kind === 'MIDDLE')) {
+        await http().patch(`/api/v1/pipeline-stages/${o.id}`).set(as(admin)).send({ name: o.name, isActive: o.isActive }).expect(200);
+      }
+      await http().put('/api/v1/pipeline-stages/order').set(as(admin)).send({ ids: original.filter((x) => x.kind === 'MIDDLE').map((x) => x.id) }).expect(200);
+    });
+
+    it('starts as New → Contacted → Qualified → Quoted → Won → Lost; only admins manage stages', async () => {
+      const stages = original;
+      expect(stages.map((x) => x.name)).toEqual(['New', 'Contacted', 'Qualified', 'Quoted', 'Won', 'Lost']);
+      expect(stages.map((x) => x.kind)).toEqual(['ENTRY', 'MIDDLE', 'MIDDLE', 'MIDDLE', 'WON', 'LOST']);
+      expect(stages.filter((x) => x.isHandover).map((x) => x.name)).toEqual(['Qualified']);
+      expect(stages.map((x) => x.phase)).toEqual(['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED', 'WON', 'LOST']);
+      await http().get('/api/v1/pipeline-stages').set(as(sales)).expect(200);
+      await http().post('/api/v1/pipeline-stages').set(as(sales)).send({ name: 'E2E Nope' }).expect(403);
+      await http().patch(`/api/v1/pipeline-stages/${byName(stages, 'Quoted').id}`).set(as(tara)).send({ name: 'X Y' }).expect(403);
+    });
+
+    it('protected stages and the handover stage cannot be renamed, moved out of place, switched off or deleted', async () => {
+      const st = original;
+      const [n, won, lost, qualified] = [byName(st, 'New'), byName(st, 'Won'), byName(st, 'Lost'), byName(st, 'Qualified')];
+      await http().patch(`/api/v1/pipeline-stages/${n.id}`).set(as(admin)).send({ name: 'Fresh' }).expect(400);
+      await http().patch(`/api/v1/pipeline-stages/${won.id}`).set(as(admin)).send({ isActive: false }).expect(400);
+      await http().delete(`/api/v1/pipeline-stages/${lost.id}`).set(as(admin)).expect(400);
+      await http().patch(`/api/v1/pipeline-stages/${qualified.id}`).set(as(admin)).send({ isActive: false }).expect(400);
+      await http().delete(`/api/v1/pipeline-stages/${qualified.id}`).set(as(admin)).expect(400);
+      const middleIds = st.filter((x) => x.kind === 'MIDDLE').map((x) => x.id);
+      await http().put('/api/v1/pipeline-stages/order').set(as(admin)).send({ ids: [n.id, ...middleIds] }).expect(400); // New in the middle
+      await http().put('/api/v1/pipeline-stages/order').set(as(admin)).send({ ids: middleIds.slice(1) }).expect(400); // one missing
+      await http().post('/api/v1/pipeline-stages').set(as(admin)).send({ name: 'E2E After Won', afterStageId: won.id }).expect(400);
+      await http().post('/api/v1/pipeline-stages').set(as(admin)).send({ name: ' ' }).expect(400);
+    });
+
+    it('admin adds a stage between Qualified and Quoted; leads move into it by id; history records the stage names', async () => {
+      const created = (await http().post('/api/v1/pipeline-stages').set(as(admin))
+        .send({ name: 'E2E Site visit done', afterStageId: byName(original, 'Qualified').id }).expect(201)).body;
+      expect(created).toMatchObject({ kind: 'MIDDLE', phase: 'QUOTED', isActive: true, isHandover: false });
+      expect((await list()).map((x) => x.name)).toEqual(['New', 'Contacted', 'Qualified', 'E2E Site visit done', 'Quoted', 'Won', 'Lost']);
+      await http().post('/api/v1/pipeline-stages').set(as(admin)).send({ name: 'e2e SITE visit DONE' }).expect(409);
+
+      const id = await newLead('E2E Stage Lead', '9000089001', 'suresh');
+      const moved = (await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ stageId: created.id }).expect(200)).body;
+      expect(moved).toMatchObject({ status: 'QUOTED', stage: { id: created.id, name: 'E2E Site visit done' } });
+      const history = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body;
+      expect(history.find((h: { type: string }) => h.type === 'STATUS_CHANGED')).toMatchObject({
+        message: 'Stage: New → E2E Site visit done',
+        changes: [{ field: 'stage', from: 'New', to: 'E2E Site visit done' }],
+      });
+      // The older way (status) still works: a status in the same phase keeps the stage; a new phase lands in its own stage.
+      const same = (await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ status: 'QUOTED' }).expect(200)).body;
+      expect(same.stage.name).toBe('E2E Site visit done');
+      expect((await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ status: 'QUALIFIED' }).expect(200)).body.stage.name).toBe('Qualified');
+      expect((await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ status: 'QUOTED' }).expect(200)).body.stage.name).toBe('Quoted');
+      await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ stageId: created.id }).expect(200);
+
+      // It shows in the funnel (master), the sales board, the pipeline report and the leads filter, in order.
+      const master = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      const names = master.overview.pipeline.stages.map((x: { name: string }) => x.name);
+      expect(names.indexOf('E2E Site visit done')).toBe(names.indexOf('Qualified') + 1);
+      expect(master.overview.pipeline.stages.find((x: { name: string }) => x.name === 'E2E Site visit done').leads).toBeGreaterThanOrEqual(1);
+      const salesDash = (await http().get('/api/v1/dashboards/sales').set(as(sales)).expect(200)).body;
+      expect(salesDash.stages.map((x: { name: string }) => x.name)).toEqual(['Qualified', 'E2E Site visit done', 'Quoted']);
+      expect(salesDash.stages[1].leads).toBe(1);
+      const report = (await http().get('/api/v1/reports/pipeline?from=2026-01-01&to=2028-12-31').set(as(admin)).expect(200)).body;
+      expect(report.rows.map((r: { status: string }) => r.status)).toEqual(['New', 'Contacted', 'Qualified', 'E2E Site visit done', 'Quoted', 'Won', 'Lost']);
+      const filtered = (await http().get(`/api/v1/leads?stageId=${created.id}`).set(as(admin)).expect(200)).body;
+      expect(filtered.items.map((l: { id: string }) => l.id)).toEqual([id]);
+    });
+
+    it("a stage with leads can't be deleted, only switched off; switched off it keeps its leads but takes no new ones", async () => {
+      const custom = byName(await list(), 'E2E Site visit done');
+      const blocked = await http().delete(`/api/v1/pipeline-stages/${custom.id}`).set(as(admin)).expect(409);
+      expect(blocked.body.message).toMatch(/has 1 lead.*Switch it off instead/);
+      await http().patch(`/api/v1/pipeline-stages/${custom.id}`).set(as(admin)).send({ isActive: false }).expect(200);
+      const other = await newLead('E2E Stage Other', '9000089002', 'suresh');
+      const refused = await http().patch(`/api/v1/leads/${other}`).set(as(sales)).send({ stageId: custom.id }).expect(400);
+      expect(refused.body.message).toMatch(/switched off/);
+      const kept = (await http().get(`/api/v1/leads/${leadIds[0]}`).set(as(admin)).expect(200)).body;
+      expect(kept.stage).toMatchObject({ id: custom.id, isActive: false });
+      const report = (await http().get('/api/v1/reports/pipeline?from=2026-01-01&to=2028-12-31').set(as(admin)).expect(200)).body;
+      expect(report.rows.map((r: { status: string }) => r.status)).toContain('E2E Site visit done (switched off)');
+      await http().patch(`/api/v1/pipeline-stages/${custom.id}`).set(as(admin)).send({ isActive: true }).expect(200);
+
+      // An empty stage can be deleted.
+      const empty = (await http().post('/api/v1/pipeline-stages').set(as(admin)).send({ name: 'E2E Empty' }).expect(201)).body;
+      await http().delete(`/api/v1/pipeline-stages/${empty.id}`).set(as(admin)).expect(204);
+      expect((await list()).map((x) => x.name)).not.toContain('E2E Empty');
+    });
+
+    it('reordering across the handover changes which side a stage (and its leads) counts as', async () => {
+      const st = await list();
+      const middle = st.filter((x) => x.kind === 'MIDDLE');
+      const custom = byName(st, 'E2E Site visit done');
+      // Move it before Qualified: it becomes telecaller-side, and its lead follows.
+      const order = middle.map((x) => x.id).filter((x) => x !== custom.id);
+      order.splice(order.indexOf(byName(st, 'Qualified').id), 0, custom.id);
+      const after = (await http().put('/api/v1/pipeline-stages/order').set(as(admin)).send({ ids: order }).expect(200)).body as Stage[];
+      expect(after.map((x) => x.name)).toEqual(['New', 'Contacted', 'E2E Site visit done', 'Qualified', 'Quoted', 'Won', 'Lost']);
+      expect(byName(after, 'E2E Site visit done').phase).toBe('CONTACTED');
+      const lead = await (await prisma()).lead.findUniqueOrThrow({ where: { id: leadIds[0] } });
+      expect(lead).toMatchObject({ status: 'CONTACTED', stageId: custom.id }); // same stage, new phase
+      // And back after Qualified.
+      await http().put('/api/v1/pipeline-stages/order').set(as(admin)).send({ ids: middle.map((x) => x.id) }).expect(200);
+      expect((await (await prisma()).lead.findUniqueOrThrow({ where: { id: leadIds[0] } })).status).toBe('QUOTED');
+    });
+
+    it('renaming the handover stage keeps qualify-and-handover working (by identity); won/lost logic is untouched', async () => {
+      const qualified = byName(await list(), 'Qualified');
+      await http().patch(`/api/v1/pipeline-stages/${qualified.id}`).set(as(admin)).send({ name: 'E2E Ready for sales' }).expect(200);
+      const id = await newLead('E2E Stage Handover', '9000089003', 'tara');
+      // First call: New -> the first telecaller-side stage.
+      const call = (await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'INTERESTED' }).expect(201)).body;
+      expect(call.stage).toBe('Contacted');
+      const suresh = (await (await prisma()).user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } })).id;
+      await http().post(`/api/v1/leads/${id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh }).expect(200);
+      const lead = (await http().get(`/api/v1/leads/${id}`).set(as(admin)).expect(200)).body;
+      expect(lead).toMatchObject({ status: 'QUALIFIED', stage: { id: qualified.id, name: 'E2E Ready for sales', isHandover: true } });
+      const history = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body;
+      expect(history.find((h: { type: string }) => h.type === 'HANDED_OVER').changes).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'stage', from: 'Contacted', to: 'E2E Ready for sales' })]),
+      );
+      // Won still drives the Won list and closedAt; Lost still closes it.
+      const won = (await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ stageId: byName(original, 'Won').id }).expect(200)).body;
+      expect(won).toMatchObject({ status: 'WON', stage: { name: 'Won' } });
+      expect(won.closedAt).not.toBeNull();
+      expect((await http().get('/api/v1/leads?status=WON&pageSize=100').set(as(admin)).expect(200)).body.items.map((l: { id: string }) => l.id)).toContain(id);
+      const lost = await newLead('E2E Stage Lost', '9000089004', 'tara');
+      await http().post(`/api/v1/leads/${lost}/calls`).set(as(tara)).send({ outcome: 'WRONG_NUMBER' }).expect(201);
+      expect((await http().get(`/api/v1/leads/${lost}`).set(as(admin)).expect(200)).body).toMatchObject({ status: 'LOST', stage: { name: 'Lost' } });
+    });
+  });
+
+  describe('File library: admin uploads, public links, shared as WhatsApp links', () => {
+    let admin: string;
+    let tara: string;
+    let suresh: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+    const fileIds: string[] = [];
+    const pdf = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0]);
+    type Lib = { id: string; title: string; kind: string; category: string; categoryLabel: string; url: string; sizeBytes: number };
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    const upload = (token: string, data: Buffer, filename: string, fields: Record<string, string>, contentType?: string) => {
+      let req = http().post('/api/v1/files').set(as(token));
+      for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+      return req.attach('file', data, { filename, contentType: contentType ?? 'application/octet-stream' });
+    };
+    const pathOf = (url: string) => new URL(url).pathname;
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      suresh = (await login('sales@precon.local')).body.accessToken;
+      process.env.PUBLIC_FILE_BASE_URL = 'https://crm.example.test/'; // the public site customers open links on
+    });
+    afterAll(async () => {
+      delete process.env.PUBLIC_FILE_BASE_URL;
+      const db = await prisma();
+      await db.lead.deleteMany({ where: { id: { in: leadIds } } });
+      for (const id of fileIds) await http().delete(`/api/v1/files/${id}`).set(as(admin)); // removes the stored files too
+    });
+
+    it('admin uploads a PDF and images; anyone opens the public link without logging in', async () => {
+      const brochure: Lib = (await upload(admin, pdf, 'brochure.pdf', { title: 'E2E Sump brochure', category: 'BROCHURE' }, 'application/pdf').expect(201)).body;
+      fileIds.push(brochure.id);
+      expect(brochure).toMatchObject({ title: 'E2E Sump brochure', kind: 'pdf', category: 'BROCHURE', categoryLabel: 'Brochure', sizeBytes: pdf.length });
+      expect(brochure).not.toHaveProperty('token');
+      expect(brochure).not.toHaveProperty('storedName');
+      // Hard to guess: a 32-character random token, then a readable name.
+      expect(brochure.url.startsWith('https://crm.example.test/api/v1/f/')).toBe(true); // trailing slash trimmed
+      expect(pathOf(brochure.url)).toMatch(/^\/api\/v1\/f\/[A-Za-z0-9_-]{32}\/e2e-sump-brochure\.pdf$/);
+
+      const open = await http().get(pathOf(brochure.url)).expect(200); // no Authorization header
+      expect(open.headers['content-type']).toBe('application/pdf');
+      expect(open.headers['content-disposition']).toBe('inline; filename="e2e-sump-brochure.pdf"');
+      expect(open.headers['x-content-type-options']).toBe('nosniff');
+      expect(Buffer.compare(Buffer.from(open.body), pdf)).toBe(0);
+      const token = pathOf(brochure.url).split('/')[4];
+      await http().get(`/api/v1/f/${token}`).expect(200); // the name part is optional
+      await http().get(`/api/v1/f/${token.slice(0, -1)}x`).expect(404);
+      await http().get('/api/v1/f/short').expect(404);
+
+      // Images: JPG and PNG; the type comes from the bytes, not the name.
+      const photo: Lib = (await upload(admin, png, 'photo.jpeg', { title: 'E2E Sump photo', category: 'PRODUCT_IMAGE' }).expect(201)).body;
+      const chart: Lib = (await upload(admin, jpg, 'sizes.jpg', { title: 'E2E Size chart' }).expect(201)).body;
+      fileIds.push(photo.id, chart.id);
+      expect(photo.url).toMatch(/\.png$/);
+      expect(chart).toMatchObject({ kind: 'image', category: 'OTHER' });
+      expect((await http().get(pathOf(photo.url)).expect(200)).headers['content-type']).toBe('image/png');
+      expect(pathOf(photo.url)).not.toBe(pathOf(chart.url));
+    });
+
+    it('rejects other types, videos, files over 10 MB, and missing title or file, with clear messages', async () => {
+      const fake = await upload(admin, Buffer.from('<html><script>alert(1)</script></html>'), 'price-list.pdf', { title: 'E2E Fake' }, 'application/pdf').expect(400);
+      expect(fake.body.message).toMatch(/isn't a PDF, JPG or PNG file/);
+      const video = await upload(admin, Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32]), 'demo.mp4', { title: 'E2E Video' }, 'video/mp4').expect(400);
+      expect(video.body.message).toMatch(/videos are not supported yet/);
+      const big = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(10 * 1024 * 1024)]);
+      const tooBig = await upload(admin, big, 'huge.pdf', { title: 'E2E Huge' }, 'application/pdf').expect(413);
+      expect(tooBig.body.message).toBe('That file is larger than 10 MB, the limit per file.');
+      expect((await http().post('/api/v1/files').set(as(admin)).field('title', 'E2E No file').expect(400)).body.message).toMatch(/Choose a file/);
+      await upload(admin, pdf, 'x.pdf', {}).expect(400);
+      await upload(admin, pdf, 'x.pdf', { title: 'E2E Bad category', category: 'VIDEO' }).expect(400);
+      expect(await (await prisma()).libraryFile.count({ where: { title: { in: ['E2E Fake', 'E2E Video', 'E2E Huge'] } } })).toBe(0);
+    });
+
+    it('staff can see and pick files but only admin uploads, renames or deletes', async () => {
+      const list: Lib[] = (await http().get('/api/v1/files').set(as(tara)).expect(200)).body;
+      expect(list.map((f) => f.title)).toEqual(expect.arrayContaining(['E2E Sump brochure', 'Precon Sump brochure (demo)', 'Sump product photo (demo)']));
+      expect((await http().get('/api/v1/files/categories').set(as(suresh)).expect(200)).body.map((c: { label: string }) => c.label)).toContain('Price list');
+      await upload(tara, pdf, 'x.pdf', { title: 'E2E Tara' }).expect(403);
+      await upload(suresh, pdf, 'x.pdf', { title: 'E2E Suresh' }).expect(403);
+      await http().patch(`/api/v1/files/${fileIds[0]}`).set(as(tara)).send({ title: 'Nope' }).expect(403);
+      await http().delete(`/api/v1/files/${fileIds[0]}`).set(as(suresh)).expect(403);
+      await http().get('/api/v1/files').expect(401);
+      // Renaming keeps the secret token (old links keep working).
+      const before = list.find((f) => f.id === fileIds[2])!;
+      const renamed = (await http().patch(`/api/v1/files/${fileIds[2]}`).set(as(admin)).send({ title: 'E2E Size chart 2026', category: 'SPEC_SHEET' }).expect(200)).body;
+      expect(renamed.categoryLabel).toBe('Spec sheet');
+      expect(pathOf(renamed.url).split('/')[4]).toBe(pathOf(before.url).split('/')[4]);
+      await http().get(pathOf(before.url)).expect(200);
+    });
+
+    it('a telecaller sends a WhatsApp message with a brochure: the link is in the message and logged on the lead', async () => {
+      const db = await prisma();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Files Lead', phone: '9000077001', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      leadIds.push(lead.id);
+      const tpl = await db.messageTemplate.findFirstOrThrow({ where: { name: 'Intro message' } });
+      const list: Lib[] = (await http().get('/api/v1/files').set(as(tara)).expect(200)).body;
+      const [brochure, photo] = [list.find((f) => f.id === fileIds[0])!, list.find((f) => f.id === fileIds[1])!];
+
+      const res = await http().post(`/api/v1/leads/${lead.id}/whatsapp`).set(as(tara)).send({ templateId: tpl.id, fileIds: [brochure.id, photo.id] }).expect(201);
+      expect(res.body.message).toMatch(/^Hi E2E, this is Tara Telecaller/);
+      expect(res.body.message).toContain(`\n\nE2E Sump brochure: ${brochure.url}\nE2E Sump photo: ${photo.url}`);
+      expect(decodeURIComponent(new URL(res.body.url).searchParams.get('text')!)).toBe(res.body.message);
+      expect(res.body.files.map((f: { title: string }) => f.title)).toEqual(['E2E Sump brochure', 'E2E Sump photo']);
+
+      // Just the links, no template.
+      const bare = await http().post(`/api/v1/leads/${lead.id}/whatsapp`).set(as(tara)).send({ fileIds: [brochure.id] }).expect(201);
+      expect(bare.body.message).toBe(`E2E Sump brochure: ${brochure.url}`);
+
+      // Logged on the lead: everyone on it sees which files went out; admin's history too.
+      const messages = (await http().get(`/api/v1/leads/${lead.id}/messages`).set(as(tara)).expect(200)).body;
+      expect(messages[1]).toMatchObject({ templateName: 'Intro message', attachments: [
+        { id: brochure.id, title: 'E2E Sump brochure', category: 'Brochure', kind: 'pdf', url: brochure.url },
+        { id: photo.id, title: 'E2E Sump photo', category: 'Product image', kind: 'image', url: photo.url },
+      ] });
+      const history = (await http().get(`/api/v1/leads/${lead.id}/history`).set(as(admin)).expect(200)).body;
+      expect(history.filter((h: { type: string }) => h.type === 'WHATSAPP').every((h: { attachments: unknown[] }) => h.attachments.length > 0)).toBe(true);
+
+      // Bad picks.
+      await http().post(`/api/v1/leads/${lead.id}/whatsapp`).set(as(tara)).send({ fileIds: ['not-a-uuid'] }).expect(400);
+      const gone = await http().post(`/api/v1/leads/${lead.id}/whatsapp`).set(as(tara)).send({ fileIds: ['00000000-0000-4000-8000-000000000000'] }).expect(400);
+      expect(gone.body.message).toMatch(/removed from the library/);
+      await http().post(`/api/v1/leads/${lead.id}/whatsapp`).set(as(tara)).send({ fileIds: Array(6).fill(brochure.id) }).expect(400);
+      // A plain message without files still has no attachments.
+      await http().post(`/api/v1/leads/${lead.id}/whatsapp`).set(as(tara)).send({}).expect(201);
+      expect((await http().get(`/api/v1/leads/${lead.id}/messages`).set(as(tara)).expect(200)).body[0].attachments).toBeNull();
+    });
+
+    it('deleting a file kills its link and removes it from disk; lead history keeps its name', async () => {
+      const db = await prisma();
+      const { storageDir } = await import('./../src/files/files.service.js');
+      const { existsSync } = await import('node:fs');
+      const path = await import('node:path');
+      const row = await db.libraryFile.findUniqueOrThrow({ where: { id: fileIds[0] } });
+      const onDisk = path.join(storageDir(), row.storedName);
+      expect(existsSync(onDisk)).toBe(true);
+      await http().delete(`/api/v1/files/${fileIds[0]}`).set(as(admin)).expect(204);
+      expect(existsSync(onDisk)).toBe(false);
+      await http().get(`/api/v1/f/${row.token}`).expect(404);
+      await http().delete(`/api/v1/files/${fileIds[0]}`).set(as(admin)).expect(404);
+      const messages = (await http().get(`/api/v1/leads/${leadIds[0]}/messages`).set(as(tara)).expect(200)).body;
+      expect(messages.some((m: { attachments: { title: string }[] | null }) => m.attachments?.some((a) => a.title === 'E2E Sump brochure'))).toBe(true);
+      fileIds.shift();
     });
   });
 });
