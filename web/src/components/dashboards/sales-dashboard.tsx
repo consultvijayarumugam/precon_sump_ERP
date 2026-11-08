@@ -1,6 +1,6 @@
 "use client";
 
-import { IndianRupee, MapPin, Phone, Target, TriangleAlert, Trophy } from "lucide-react";
+import { IndianRupee, MapPin, Target, TriangleAlert, Trophy } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { CheckInButton, osmLink, VisitsMap } from "@/components/check-in";
@@ -15,6 +15,8 @@ import { useApi } from "@/lib/use-api";
 import { SalesDashboardData, SalesLead } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
 import { EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from "./shared";
+import { CallButton } from "@/components/call-button";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 
 /** One board column: an admin-defined sales stage, or this month's Won / Lost. */
 interface Column {
@@ -26,15 +28,15 @@ interface Column {
   href: string;
 }
 
-function LeadCard({ lead, now }: { lead: SalesLead; now: number }) {
+function LeadCard({ lead, now, onChanged }: { lead: SalesLead; now: number; onChanged: () => void }) {
   const fu = lead.nextFollowUp;
   const late = fu && new Date(fu.scheduledAt).getTime() < now;
   return (
-    <Link
-      href={`/leads/${lead.id}`}
-      className="block rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-xs transition-colors hover:border-brand-300 dark:border-neutral-800 dark:bg-neutral-900"
-    >
-      <div className="font-semibold text-neutral-900 dark:text-white">{lead.name}</div>
+    <div className="relative rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-xs transition-colors hover:border-brand-300 dark:border-neutral-800 dark:bg-neutral-900">
+      {/* The name's link covers the card; the Call and WhatsApp buttons sit above it. */}
+      <Link href={`/leads/${lead.id}`} className="block font-semibold text-neutral-900 after:absolute after:inset-0 dark:text-white">
+        {lead.name}
+      </Link>
       <div className="mt-0.5 text-xs text-neutral-500">
         {productInterestLabel(lead)}
         {lead.city && ` · ${lead.city}`}
@@ -53,7 +55,13 @@ function LeadCard({ lead, now }: { lead: SalesLead; now: number }) {
       {lead.closedAt && (lead.status === "WON" || lead.status === "LOST") && (
         <div className="mt-1 text-xs text-neutral-500">Closed {formatDate(lead.closedAt)}</div>
       )}
-    </Link>
+      {(lead.status === "QUALIFIED" || lead.status === "QUOTED") && (
+        <div className="relative z-10 mt-2 flex gap-2">
+          <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} onLogged={onChanged} />
+          <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -72,9 +80,8 @@ function FollowUpRow({ f, onLogged }: { f: SalesDashboardData["followUps"][numbe
           {f.note && <p className="mt-0.5 text-sm text-neutral-600 dark:text-neutral-400">{f.note}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <a href={`tel:${f.lead.phone}`} className={secondaryButtonSmClass}>
-            <Phone className="size-4" aria-hidden /> {f.lead.phone}
-          </a>
+          <CallButton leadId={f.lead.id} phone={f.lead.phone} name={f.lead.name} variant="inline" onLogged={onLogged} />
+          <WhatsAppButton leadId={f.lead.id} name={f.lead.name} variant="icon" />
           {!logging && (
             <button type="button" className={secondaryButtonSmClass} onClick={() => setLogging(true)}>
               Log call
@@ -168,7 +175,7 @@ export function SalesDashboard() {
               </div>
               <div className="space-y-2">
                 {col.leads.slice(0, 8).map((l) => (
-                  <LeadCard key={l.id} lead={l} now={now} />
+                  <LeadCard key={l.id} lead={l} now={now} onChanged={reload} />
                 ))}
                 {col.leads.length === 0 && <p className="py-4 text-center text-xs text-neutral-500">None</p>}
                 {col.leads.length > 8 && (

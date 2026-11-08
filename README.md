@@ -24,6 +24,10 @@ Wherever a product is chosen, it's either **Sump + size** or **Microbes**. A lea
 /web   Next.js 16 (App Router) + Tailwind  (port 3000)
 ```
 
+## Android app
+
+The native app for telecallers and sales is in [`mobile/`](mobile/README.md). It uses this same API.
+
 ## Run locally
 
 Prerequisites: Node 20+ and PostgreSQL running locally (Homebrew: `brew services start postgresql@16`).
@@ -490,6 +494,14 @@ The pipeline is `New → [middle stages] → Won / Lost`. **New, Won and Lost ar
   - **The picker** shows only switched-on templates, by order number then name.
 - **Placeholders:** `{name}`, `{first_name}`, `{city}`, `{product}` (e.g. "Sump · 10,000 L"), `{my_name}` (the sender), `{company}` (`COMPANY_NAME` in `api/.env`, default "Precon"). Any case and spacing work (`{ Name }`); a misspelt placeholder is left visible so it gets noticed.
 
+## Click-to-call and WhatsApp from the lists
+
+Call and WhatsApp buttons sit on the telecaller workbench, the Leads and Won lists, Follow-ups, the sales board and the lead page. Phones get full-width 48px buttons on the workbench and lead cards instead of a table; pickers open as bottom sheets.
+
+- **Call** is a `tel:` link with the number in international form (`+91` added to Indian numbers), so a phone opens its dialer. It also records a **Call started** entry (who, when) on the lead, shown under "Calls, messages & visits" and in admin's change history.
+- A call attempt is not a logged call: no outcome, no stage move, callbacks stay open, and it isn't in the call counts. A sheet opens with the number (with Copy, for computers that can't dial) and the usual "How did the call go?" form, ready when the user returns from the dialer.
+- **WhatsApp** is the same template picker, file links and logging everywhere.
+
 ## File library: brochures & images as WhatsApp links (Admin → Files, tag `files.manage`)
 
 WhatsApp's free `wa.me` links can only carry text, so files go out as **links inside the message**.
@@ -575,6 +587,8 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | POST   | `/message-templates`     | `templates.manage`     | `{name, body, sortOrder?, isActive?}` (409 if the name exists) |
 | PATCH  | `/message-templates/:id` | `templates.manage`     | Edit, reorder, switch off |
 | DELETE | `/message-templates/:id` | `templates.manage`     | Delete (past messages keep its name) |
+| POST   | `/leads/:id/call-attempts` | `leads.read`         | Records that Call was tapped (who, when); leads you can see only (404 otherwise) |
+| GET    | `/leads/:id/call-attempts` | `leads.read`         | Times Call was tapped, newest first |
 | POST   | `/leads/:id/whatsapp`    | `leads.read`           | `{templateId?, message?, fileIds?}` → `{url, message, phone, files}`; each file adds a `Title: <link>` line; logs the message (and shared files) on the lead. 400 if the number can't be used |
 | GET    | `/leads/:id/messages`    | `leads.read`           | WhatsApp messages started on the lead |
 | GET    | `/reports`               | `reports.view` or `reports.view_all` | Reports you can open, and your scope (`all` / `own`) |

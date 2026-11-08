@@ -64,7 +64,7 @@ function LeadsView() {
   const canAssign = can(TAGS.LEADS_ASSIGN);
   const assignees = useApi<{ id: string; fullName: string; role: { name: string } }[]>(canAssign ? "/leads/assignees" : null);
   const stages = useStages();
-  const { data, error } = useApi<Paginated<LeadListItem>>(
+  const { data, error, reload } = useApi<Paginated<LeadListItem>>(
     `/leads${queryString({ ...filters, pageSize: PAGE_SIZE })}`,
   );
 
@@ -142,7 +142,7 @@ function LeadsView() {
       <ErrorText error={error} />
       {data && (
         <>
-          <LeadsTable leads={data.items} />
+          <LeadsTable leads={data.items} onChanged={reload} />
           <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={(p) => setFilter("page", p)} />
         </>
       )}

@@ -5,6 +5,7 @@ import { FormEvent, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge, buttonSmClass, ErrorText, Field, inputClass, NoAccess, PageHeader, panelClass } from "@/components/ui";
 import { api, apiPatch, apiUpload } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import { formatDate } from "@/lib/crm";
 import { ACCEPT, FILE_CATEGORIES, FileCategory, fileTypeLabel, formatBytes, LibraryFile, MAX_FILE_MB, uploadProblem } from "@/lib/files";
 import { TAGS } from "@/lib/tags";
@@ -71,7 +72,7 @@ function FileRow({ file, busy, onSave, onDelete }: { file: LibraryFile; busy: bo
             aria-label={`Copy link to ${file.title}`}
             title={copied ? "Copied" : "Copy link"}
             onClick={async () => {
-              await navigator.clipboard?.writeText(file.url).catch(() => undefined);
+              if (!(await copyText(file.url))) return;
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}

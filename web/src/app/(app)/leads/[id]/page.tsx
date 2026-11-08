@@ -8,6 +8,7 @@ import { FollowUpItem } from "@/components/follow-up-item";
 import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
 import { LeadHistoryTimeline, LeadOwners, LeadVisits } from "@/components/lead-handover";
+import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { pickableStages, useStages } from "@/lib/stages";
 import { SharedFiles } from "@/components/shared-files";
@@ -91,6 +92,13 @@ interface CallLogRow {
   caller: { id: string; fullName: string };
 }
 
+interface CallAttemptRow {
+  id: string;
+  message: string;
+  createdAt: string;
+  user: { id: string; fullName: string };
+}
+
 interface MessageRow {
   id: string;
   templateName: string | null;
@@ -102,18 +110,21 @@ interface MessageRow {
 
 type HistoryEntry =
   | { kind: "call"; id: string; at: string; by: string; call: CallLogRow }
+  | { kind: "attempt"; id: string; at: string; by: string }
   | { kind: "whatsapp"; id: string; at: string; by: string; msg: MessageRow }
   | { kind: "visit"; id: string; at: string; by: string; visit: CheckIn };
 
 /** Calls logged and WhatsApp messages started on the lead, newest first. */
 function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: string }) {
   const calls = useApi<CallLogRow[]>(`/leads/${leadId}/calls?r=${refreshKey}`);
+  const attempts = useApi<CallAttemptRow[]>(`/leads/${leadId}/call-attempts?r=${refreshKey}`);
   const messages = useApi<MessageRow[]>(`/leads/${leadId}/messages?r=${refreshKey}`);
   const visits = useApi<CheckIn[]>(`/leads/${leadId}/visits?r=${refreshKey}`);
   const entries: HistoryEntry[] | null =
-    calls.data && messages.data && visits.data
+    calls.data && attempts.data && messages.data && visits.data
       ? [
           ...calls.data.map((c) => ({ kind: "call" as const, id: c.id, at: c.calledAt, by: c.caller.fullName, call: c })),
+          ...attempts.data.map((a) => ({ kind: "attempt" as const, id: a.id, at: a.createdAt, by: a.user.fullName })),
           ...messages.data.map((m) => ({ kind: "whatsapp" as const, id: m.id, at: m.createdAt, by: m.user.fullName, msg: m })),
           ...visits.data.map((v) => ({ kind: "visit" as const, id: v.id, at: v.checkedInAt, by: v.person.fullName, visit: v })),
         ].sort((a, b) => b.at.localeCompare(a.at))
@@ -123,7 +134,7 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
       <h2 className="font-medium">
         Calls, messages &amp; visits{entries && entries.length > 0 && <span className="ml-1 text-neutral-500">· {entries.length}</span>}
       </h2>
-      <ErrorText error={calls.error ?? messages.error ?? visits.error} />
+      <ErrorText error={calls.error ?? attempts.error ?? messages.error ?? visits.error} />
       {entries && entries.length === 0 && <p className="text-sm text-neutral-500">No calls or messages yet.</p>}
       {entries && entries.length > 0 && (
         <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
@@ -144,6 +155,11 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
                     {CALL_OUTCOME_LABELS[e.call.outcome]}
                   </span>
                   {e.call.note && <span className="text-neutral-600 dark:text-neutral-400"> · {e.call.note}</span>}
+                </span>
+              ) : e.kind === "attempt" ? (
+                <span>
+                  <span className="mr-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--ps-blue-600)]">Call started</span>
+                  <span className="text-neutral-600 dark:text-neutral-400">Dialer opened</span>
                 </span>
               ) : e.kind === "visit" ? (
                 <span className="min-w-0 flex-1">
@@ -240,10 +256,18 @@ export default function LeadDetailPage() {
         <section className="grid gap-x-8 gap-y-2.5 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-xs sm:grid-cols-2 dark:border-neutral-800 dark:bg-neutral-900">
           <Detail label="Phone">
             <span className="inline-flex flex-wrap items-center gap-2">
-              <a href={`tel:${lead.phone}`} className="text-brand-700 hover:underline dark:text-brand-300">
-                {lead.phone}
-              </a>
-              <WhatsAppButton leadId={lead.id} onSent={() => setHistoryVersion((v) => v + 1)} />
+              <CallButton
+                leadId={lead.id}
+                phone={lead.phone}
+                name={lead.name}
+                variant="inline"
+                onStarted={() => setHistoryVersion((v) => v + 1)}
+                onLogged={() => {
+                  setHistoryVersion((v) => v + 1);
+                  reload();
+                }}
+              />
+              <WhatsAppButton leadId={lead.id} name={lead.name} onSent={() => setHistoryVersion((v) => v + 1)} />
             </span>
           </Detail>
           <Detail label="Email">{lead.email ?? "-"}</Detail>

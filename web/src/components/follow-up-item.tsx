@@ -29,6 +29,8 @@ import {
   ServiceFollowUpWithJob,
 } from "@/lib/service";
 import { TAGS } from "@/lib/tags";
+import { CallButton } from "@/components/call-button";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 
 interface CardProps {
   followUp: { id: string; scheduledAt: string; note: string | null; outcome: string | null; completedAt: string | null };
@@ -157,9 +159,11 @@ export function FollowUpItem({ followUp, onChange }: { followUp: FollowUp | Foll
             <Link href={`/leads/${lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
               {lead.name}
             </Link>
-            <a href={`tel:${lead.phone}`} className="text-neutral-500">
-              {lead.phone}
-            </a>
+            <span className="select-all text-neutral-500">{lead.phone}</span>
+            <span className="inline-flex gap-1.5">
+              <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} onLogged={onChange} />
+              <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" />
+            </span>
             <StatusBadge status={lead.status} stage={lead.stage} />
             {can(TAGS.LEADS_READ_ALL) && (
               <span className="text-xs text-neutral-500">{lead.assignedTo?.fullName ?? "Unassigned"}</span>

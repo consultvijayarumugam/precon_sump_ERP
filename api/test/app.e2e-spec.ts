@@ -2297,5 +2297,83 @@ describe('Auth and RBAC (e2e)', () => {
       fileIds.shift();
     });
   });
+
+  describe('Click-to-call: tapping Call logs an attempt on the lead', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    async function taraLead(name: string, phone: string) {
+      const taraUser = await (await prisma()).user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name, phone, source: 'META', assignedToId: taraUser.id }).expect(201);
+      leadIds.push(res.body.id);
+      return res.body.id as string;
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+    });
+    afterAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { id: { in: leadIds } } });
+    });
+
+    it('records who started the call and when, in the history and the contact list', async () => {
+      const id = await taraLead('E2E Dial Ravi', '9000066001');
+      const before = Date.now();
+      const res = await http().post(`/api/v1/leads/${id}/call-attempts`).set(as(tara)).expect(201);
+      expect(res.body.leadId).toBe(id);
+      expect(new Date(res.body.startedAt).getTime()).toBeGreaterThanOrEqual(before - 1000);
+
+      const history = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body;
+      expect(history.find((h: { type: string }) => h.type === 'CALL_ATTEMPT')).toMatchObject({
+        message: 'Call started to 9000066001',
+        user: { fullName: 'Tara Telecaller', role: { name: 'Telecaller' } },
+      });
+      const attempts = (await http().get(`/api/v1/leads/${id}/call-attempts`).set(as(tara)).expect(200)).body;
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]).toMatchObject({ message: 'Call started to 9000066001', user: { fullName: 'Tara Telecaller' } });
+      expect(attempts[0].createdAt).toBeTruthy();
+    });
+
+    it('is only an attempt: no outcome, no stage move, callbacks stay open, not in the call counts', async () => {
+      const id = await taraLead('E2E Dial Meena', '9000066002');
+      const scheduledAt = new Date(Date.now() + 86_400_000).toISOString();
+      await http().post(`/api/v1/leads/${id}/follow-ups`).set(as(tara)).send({ scheduledAt, note: 'Call back' }).expect(201);
+      const counts = async () => (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body.counts;
+      const callsBefore = (await counts()).callsToday;
+
+      await http().post(`/api/v1/leads/${id}/call-attempts`).set(as(tara)).expect(201);
+
+      const lead = (await http().get(`/api/v1/leads/${id}`).set(as(tara)).expect(200)).body;
+      expect(lead).toMatchObject({ status: 'NEW', stage: { name: 'New' } });
+      expect(lead.followUps.filter((f: { completedAt: string | null }) => !f.completedAt)).toHaveLength(1);
+      expect((await http().get(`/api/v1/leads/${id}/calls`).set(as(tara)).expect(200)).body).toEqual([]);
+      expect((await counts()).callsToday).toBe(callsBefore);
+
+      // Logging the outcome afterwards is the existing flow, and both show in the history.
+      await http().post(`/api/v1/leads/${id}/calls`).set(as(tara)).send({ outcome: 'NO_ANSWER' }).expect(201);
+      const types = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body.map((h: { type: string }) => h.type);
+      expect(types).toEqual(expect.arrayContaining(['CALL_ATTEMPT', 'CALL_LOGGED']));
+      expect((await counts()).callsToday).toBe(callsBefore + 1);
+    });
+
+    it("refuses other people's leads and anyone not logged in", async () => {
+      const id = await taraLead('E2E Dial Private', '9000066003');
+      await http().post(`/api/v1/leads/${id}/call-attempts`).set(as(kavya)).expect(404);
+      await http().get(`/api/v1/leads/${id}/call-attempts`).set(as(kavya)).expect(404);
+      await http().post(`/api/v1/leads/${id}/call-attempts`).expect(401);
+      expect((await http().get(`/api/v1/leads/${id}/call-attempts`).set(as(tara)).expect(200)).body).toEqual([]);
+      await http().post(`/api/v1/leads/${id}/call-attempts`).set(as(admin)).expect(201); // admins see every lead
+    });
+  });
 });
 

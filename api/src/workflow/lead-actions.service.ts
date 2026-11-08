@@ -288,6 +288,29 @@ export class LeadActionsService {
     });
   }
 
+  /**
+   * Someone tapped Call on a lead: records who and when in its history. The
+   * phone's dialer takes over from here, so this says "started", not "spoken":
+   * it isn't a logged call (no outcome, no stage move, not in the call counts).
+   */
+  async recordCallAttempt(user: AuthenticatedUser, leadId: string) {
+    const lead = await this.leadInScope(user, leadId);
+    const at = new Date();
+    await recordActivity(this.prisma, { leadId, userId: user.id, type: 'CALL_ATTEMPT', summary: `Call started to ${lead.phone}`, at });
+    return { leadId, startedAt: at };
+  }
+
+  /** Who tapped Call on a lead and when, newest first. */
+  async callAttempts(user: AuthenticatedUser, leadId: string) {
+    await this.leadInScope(user, leadId);
+    return this.prisma.leadActivity.findMany({
+      where: { leadId, type: 'CALL_ATTEMPT' },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: { id: true, message: true, createdAt: true, user: { select: { id: true, fullName: true } } },
+    });
+  }
+
   /** The lead, if the user may act on it (404 otherwise, like the rest of the CRM). */
   private async leadInScope(user: AuthenticatedUser, leadId: string, opts: { ownOnlyWithoutWrite?: boolean } = {}) {
     const ownOnly = opts.ownOnlyWithoutWrite && !user.permissions.includes(PERMISSIONS.LEADS_WRITE);
@@ -296,6 +319,7 @@ export class LeadActionsService {
       where,
       select: {
         id: true,
+        phone: true,
         status: true,
         stageId: true,
         stage: { select: { name: true } },

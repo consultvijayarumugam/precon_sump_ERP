@@ -1,8 +1,9 @@
 "use client";
 
-import { AlarmClock, CalendarClock, Phone, PhoneCall, PhoneOutgoing, Sparkles } from "lucide-react";
+import { AlarmClock, CalendarClock, PhoneCall, PhoneOutgoing, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { CallButton } from "@/components/call-button";
 import { CallbackPanel, LogCallPanel, QualifyPanel } from "@/components/lead-quick-actions";
 import { ErrorText, panelClass, secondaryButtonSmClass, StatusBadge } from "@/components/ui";
 import { WhatsAppButton } from "@/components/whatsapp-button";
@@ -61,14 +62,19 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
             {item.productInterest && ` · ${productInterestLabel(item)}`}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <a
-            href={`tel:${item.phone}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-emerald-700"
-          >
-            <Phone className="size-4" aria-hidden /> {item.phone}
-          </a>
-          <WhatsAppButton leadId={item.id} />
+        {/* Full width and tall on a phone, within thumb reach; beside the name on larger screens. */}
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
+          <CallButton
+            leadId={item.id}
+            phone={item.phone}
+            name={item.name}
+            variant="block"
+            onLogged={({ interested }) => {
+              if (interested) setPanel("qualify");
+              else onChanged();
+            }}
+          />
+          <WhatsAppButton leadId={item.id} name={item.name} variant="block" />
         </div>
       </div>
 

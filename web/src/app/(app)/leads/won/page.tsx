@@ -15,7 +15,7 @@ export default function WonLeadsPage() {
   const [page, setPage] = useState(1);
   const [range, setRange] = useState<DateRange>(ALL_TIME);
   // The date filter narrows what you can already see (a salesperson: only their own).
-  const { data, error } = useApi<Paginated<LeadListItem>>(
+  const { data, error, reload } = useApi<Paginated<LeadListItem>>(
     can(TAGS.LEADS_READ)
       ? `/leads${queryString({ status: "WON", wonFrom: range.from, wonTo: range.to, page, pageSize: 25 })}`
       : null,
@@ -38,7 +38,7 @@ export default function WonLeadsPage() {
       <ErrorText error={error} />
       {data && (
         <>
-          <LeadsTable leads={data.items} variant="won" />
+          <LeadsTable leads={data.items} variant="won" onChanged={reload} />
           <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
         </>
       )}

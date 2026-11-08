@@ -1,7 +1,9 @@
 "use client";
 
 import { FileText, Image as ImageIcon, MessageCircle, Paperclip } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { AnchoredPanel } from "@/components/anchored-panel";
+import type { ContactVariant } from "@/components/call-button";
 import { apiPost } from "@/lib/api";
 import { fileTypeLabel, LibraryFile } from "@/lib/files";
 import { useApi } from "@/lib/use-api";
@@ -15,6 +17,12 @@ export interface MessageTemplate {
   updatedAt: string;
 }
 
+const WA_LOOK: Record<ContactVariant, string> = {
+  icon: "size-11 lg:size-9",
+  inline: "h-11 px-3 text-sm font-semibold",
+  block: "h-12 w-full px-3 text-sm font-semibold sm:h-10 sm:w-auto",
+};
+
 /**
  * Green WhatsApp button for a lead. Opens a small picker of the admin's
  * templates; choosing one fills it from the lead on the server, logs it on
@@ -22,7 +30,20 @@ export interface MessageTemplate {
  * still taps Send in WhatsApp. Ticked library files are added to the message
  * as links (wa.me can't carry real attachments) and logged on the lead.
  */
-export function WhatsAppButton({ leadId, label = "WhatsApp", onSent }: { leadId: string; label?: string; onSent?: () => void }) {
+export function WhatsAppButton({
+  leadId,
+  name,
+  label = "WhatsApp",
+  variant = "inline",
+  onSent,
+}: {
+  leadId: string;
+  /** Whose lead this is, for the icon-only button's screen-reader label. */
+  name?: string;
+  label?: string;
+  variant?: ContactVariant;
+  onSent?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,19 +51,8 @@ export function WhatsAppButton({ leadId, label = "WhatsApp", onSent }: { leadId:
   const files = useApi<LibraryFile[]>(open ? "/files" : null);
   const [picked, setPicked] = useState<string[]>([]);
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 5 ? p : [...p, id]));
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => box.current && !box.current.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [open]);
+  const button = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
 
   async function send(templateId: string | null) {
     setError(null);
@@ -68,22 +78,21 @@ export function WhatsAppButton({ leadId, label = "WhatsApp", onSent }: { leadId:
   }
 
   return (
-    <div className="relative inline-block" ref={box}>
+    <>
       <button
+        ref={button}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-neutral-900 dark:text-emerald-300 dark:hover:bg-emerald-950"
+        aria-label={variant === "icon" ? `WhatsApp ${name ?? "this lead"}` : undefined}
+        title={variant === "icon" ? "WhatsApp" : undefined}
+        className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-white text-emerald-700 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-neutral-900 dark:text-emerald-300 dark:hover:bg-emerald-950 ${WA_LOOK[variant]}`}
       >
-        <MessageCircle className="size-4" aria-hidden /> {label}
+        <MessageCircle className="size-[18px]" aria-hidden /> {variant !== "icon" && label}
       </button>
       {open && (
-        <div
-          role="dialog"
-          aria-label="Send a WhatsApp message"
-          className="absolute right-0 z-30 mt-2 w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
-        >
+        <AnchoredPanel anchor={button} label="Send a WhatsApp message" onClose={close}>
           {files.data && files.data.length > 0 && (
             <fieldset className="mb-2 border-b border-neutral-100 pb-2 dark:border-neutral-800">
               <legend className="flex items-center gap-1.5 px-2 pt-1 pb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500">
@@ -138,8 +147,8 @@ export function WhatsAppButton({ leadId, label = "WhatsApp", onSent }: { leadId:
             {busy === "blank" ? "Opening WhatsApp…" : picked.length ? "Send just the file links" : "Open chat without a message"}
           </button>
           {error && <p className="px-2 pt-1 text-sm font-medium text-red-600">{error}</p>}
-        </div>
+        </AnchoredPanel>
       )}
-    </div>
+    </>
   );
 }

@@ -761,6 +761,7 @@ enum LeadActivityType {
   FOLLOW_UP_COMPLETED
   FOLLOW_UP_REOPENED
   CALL_LOGGED
+  CALL_ATTEMPT // tapped Call on a lead (the dialer opened; the outcome is logged separately)
   SITE_VISIT
 }
 

@@ -42,6 +42,23 @@ export class LeadActionsController {
     return this.actions.logCall(user, id, dto);
   }
 
+  @Post('leads/:id/call-attempts')
+  @RequirePermissions(PERMISSIONS.LEADS_READ)
+  @ApiOperation({
+    summary: 'Record that someone tapped Call on a lead (who and when)',
+    description: 'Only notes that the dialer was opened: no outcome, no stage change, not counted as a logged call. ' + SCOPE,
+  })
+  callAttempt(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.actions.recordCallAttempt(user, id);
+  }
+
+  @Get('leads/:id/call-attempts')
+  @RequirePermissions(PERMISSIONS.LEADS_READ)
+  @ApiOperation({ summary: 'Times Call was tapped on a lead, newest first. ' + SCOPE })
+  callAttempts(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.actions.callAttempts(user, id);
+  }
+
   @Put('leads/:id/salesperson')
   @RequireAnyPermission(PERMISSIONS.LEADS_QUALIFY, PERMISSIONS.LEADS_ASSIGN)
   @ApiOperation({

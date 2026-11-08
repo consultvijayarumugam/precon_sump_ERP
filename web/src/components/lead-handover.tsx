@@ -13,6 +13,7 @@ import {
   MessageCircle,
   PencilLine,
   PhoneCall,
+  PhoneOutgoing,
   Sparkles,
   StickyNote,
   UserPlus,
@@ -169,6 +170,7 @@ const TYPE_LOOK: Record<string, { icon: LucideIcon; tone: string; label: string 
   FOLLOW_UP_COMPLETED: { icon: CalendarCheck, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300", label: "Follow-up done" },
   FOLLOW_UP_REOPENED: { icon: CalendarPlus, tone: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300", label: "Follow-up reopened" },
   CALL_LOGGED: { icon: PhoneCall, tone: "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200", label: "Call" },
+  CALL_ATTEMPT: { icon: PhoneOutgoing, tone: "bg-[var(--ps-tint-50)] text-[var(--ps-blue-600)]", label: "Call started" },
   WHATSAPP: { icon: MessageCircle, tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300", label: "WhatsApp" },
   SITE_VISIT: { icon: MapPin, tone: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300", label: "Site visit" },
 };
