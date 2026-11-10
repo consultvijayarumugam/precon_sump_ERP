@@ -45,3 +45,6 @@ yarn-error.*
 
 # Built APKs
 /build/
+
+# Gradle output of local native modules
+modules/*/android/build/

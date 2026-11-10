@@ -1,9 +1,0 @@
-expo.modules.calllog.call-log-pngs-0 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/build/generated/res/pngs/release
-expo.modules.calllog.call-log-updated_navigation_xml-1 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/build/generated/updated_navigation_xml/release
-expo.modules.calllog.call-log-mergeReleaseResources-2 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
-expo.modules.calllog.call-log-mergeReleaseResources-3 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
-expo.modules.calllog.call-log-release-4 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/build/intermediates/merged_res/release/mergeReleaseResources
-expo.modules.calllog.call-log-release-5 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/build/intermediates/packaged_res/release/packageReleaseResources
-expo.modules.calllog.call-log-main-6 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/src/main/res
-expo.modules.calllog.call-log-release-7 /Users/vijayarumugam/PreconERP/mobile/modules/call-log/android/src/release/res
-gradleHome-0 /Users/vijayarumugam/.gradle
