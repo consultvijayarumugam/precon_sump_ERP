@@ -18,6 +18,9 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.preconsump.crm",
+      "permissions": [
+        "android.permission.READ_CALL_LOG"
+      ],
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",

@@ -21,10 +21,10 @@ import { ReactNode, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { VisitsMap } from "@/components/check-in";
 import { ErrorText } from "@/components/ui";
-import { SOURCE_LABELS } from "@/lib/crm";
+import { formatDateTime, SOURCE_LABELS } from "@/lib/crm";
 import { formatINR, formatINRShort } from "@/lib/finance";
 import { useApi } from "@/lib/use-api";
-import { Flag, MasterDashboardData, percent } from "@/lib/workflow";
+import { Flag, formatTalkTime, MasterDashboardData, percent, TalkPeriod } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
 
 // --- Building blocks ---------------------------------------------------------------
@@ -369,6 +369,90 @@ function MiniBar({ value }: { value: number | null }) {
 const th = "px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--ps-ink-3)]";
 const td = "px-3 py-2.5 align-middle";
 
+const TALK_PERIODS: { key: TalkPeriod; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "month", label: "This month" },
+];
+
+/** Real call durations synced from telecallers' phones, per person. */
+function TalkTimePanel({ talkTime }: { talkTime: MasterDashboardData["talkTime"] }) {
+  const [period, setPeriod] = useState<TalkPeriod>("today");
+  const rows = [...talkTime.rows].sort((a, b) => b[period].talkSeconds - a[period].talkSeconds || a.fullName.localeCompare(b.fullName));
+  const total = talkTime.totals[period];
+  const number = `${td} text-right tabular-nums`;
+  return (
+    <Panel
+      title="Talk-time"
+      subtitle="Real call durations from telecallers' phones. A person shows zero until their phone has synced with call tracking on."
+      action={
+        <div className="flex rounded-lg bg-[var(--ps-tint-50)] p-0.5 text-xs font-semibold" role="tablist">
+          {TALK_PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              role="tab"
+              aria-selected={period === p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`rounded-md px-3 py-1.5 whitespace-nowrap ${period === p.key ? "bg-[var(--ps-card)] text-[var(--ps-ink)] shadow-sm" : "text-[var(--ps-ink-2)]"}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <div className="-mx-2 overflow-x-auto">
+        <table className="w-full min-w-[620px] text-sm">
+          <thead>
+            <tr className="border-b border-[var(--ps-line)]">
+              <th className={th}>Telecaller</th>
+              <th className={`${th} text-right`}>Talk-time</th>
+              <th className={`${th} text-right`}>Calls</th>
+              <th className={`${th} text-right`}>Connected</th>
+              <th className={`${th} text-right`}>Avg per connected</th>
+              <th className={`${th} text-right`}>Last synced</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-b border-[var(--ps-line)] last:border-0">
+                <td className={`${td} font-medium text-[var(--ps-ink)]`}>{r.fullName}</td>
+                <td className={`${number} font-semibold text-[var(--ps-ink)]`}>{formatTalkTime(r[period].talkSeconds)}</td>
+                <td className={`${number} text-[var(--ps-ink-2)]`}>{r[period].calls}</td>
+                <td className={`${number} text-[var(--ps-ink-2)]`}>{r[period].connected}</td>
+                <td className={`${number} text-[var(--ps-ink-2)]`}>
+                  {r[period].connected ? formatTalkTime(Math.round(r[period].talkSeconds / r[period].connected)) : "–"}
+                </td>
+                <td className={`${td} text-right text-xs text-[var(--ps-ink-3)]`}>{r.lastSyncAt ? formatDateTime(r.lastSyncAt) : "Not synced yet"}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className={`${td} text-[var(--ps-ink-3)]`}>
+                  No telecallers yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot>
+              <tr className="border-t border-[var(--ps-line)]">
+                <td className={`${td} font-semibold text-[var(--ps-ink)]`}>Team</td>
+                <td className={`${number} font-semibold text-[var(--ps-ink)]`}>{formatTalkTime(total.talkSeconds)}</td>
+                <td className={`${number} font-semibold text-[var(--ps-ink)]`}>{total.calls}</td>
+                <td className={`${number} font-semibold text-[var(--ps-ink)]`}>{total.connected}</td>
+                <td className={`${number} text-[var(--ps-ink-2)]`}>{total.connected ? formatTalkTime(Math.round(total.talkSeconds / total.connected)) : "–"}</td>
+                <td />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
 function Leaderboard({ data }: { data: MasterDashboardData }) {
   const [tab, setTab] = useState<"telecallers" | "sales">("telecallers");
   const telecallers = [...data.telecallers].sort((a, b) => b.callsWeek - a.callsWeek || b.qualifiedMonth - a.qualifiedMonth);
@@ -627,6 +711,8 @@ export function CeoDashboard() {
           </div>
 
           <Leaderboard data={data} />
+
+          <TalkTimePanel talkTime={data.talkTime} />
 
           <Panel title="Sales site visits" subtitle="GPS check-ins, last 30 days" action={<PanelLink href="/site-visits">All visits</PanelLink>}>
             <VisitsMap visits={data.visits} height={380} />

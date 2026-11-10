@@ -113,6 +113,15 @@ export interface CallAttemptRow {
   createdAt: string;
   user: { fullName: string };
 }
+export const DIRECTION_LABELS = { OUTGOING: 'Outgoing', INCOMING: 'Incoming', MISSED: 'Missed', REJECTED: 'Rejected' } as const;
+
+export interface DeviceCallRow {
+  id: string;
+  direction: keyof typeof DIRECTION_LABELS;
+  startedAt: string;
+  durationSeconds: number;
+  user: { fullName: string };
+}
 export interface MessageRow {
   id: string;
   templateName: string | null;

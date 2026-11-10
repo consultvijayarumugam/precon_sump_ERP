@@ -589,6 +589,9 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | DELETE | `/message-templates/:id` | `templates.manage`     | Delete (past messages keep its name) |
 | POST   | `/leads/:id/call-attempts` | `leads.read`         | Records that Call was tapped (who, when); leads you can see only (404 otherwise) |
 | GET    | `/leads/:id/call-attempts` | `leads.read`         | Times Call was tapped, newest first |
+| GET    | `/device-calls/lead-numbers` | `leads.read`       | `{leads:[{id, phone}]}`: the only numbers the mobile app looks for in the phone's call log; leads you can see |
+| POST   | `/device-calls/sync`     | `leads.read`           | `{calls:[{deviceCallId, phone, direction, startedAt, durationSeconds, leadId?}]}` (up to 200) → `{received, stored, duplicates, rejected, matchedToLeads}`. Always stored as your own calls; re-sending a call stores it once; `leadId` counts only if you can see that lead and the number is on it |
+| GET    | `/leads/:id/device-calls` | `leads.read`          | Real calls on a lead with durations, newest first; leads you can see only (404 otherwise) |
 | POST   | `/leads/:id/whatsapp`    | `leads.read`           | `{templateId?, message?, fileIds?}` → `{url, message, phone, files}`; each file adds a `Title: <link>` line; logs the message (and shared files) on the lead. 400 if the number can't be used |
 | GET    | `/leads/:id/messages`    | `leads.read`           | WhatsApp messages started on the lead |
 | GET    | `/reports`               | `reports.view` or `reports.view_all` | Reports you can open, and your scope (`all` / `own`) |

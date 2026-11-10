@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { memo, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
@@ -10,6 +10,7 @@ import { useLeadActions } from '../components/use-lead-actions';
 import { CALL_OUTCOME_LABELS, formatDateTime, productLabel, TelecallerData, toSections, WorklistBucket, WorklistItem } from '../lib/workflow';
 import { useSession, useUser } from '../session';
 import { colors, space } from '../theme';
+import { useCallSync } from '../use-call-sync';
 import { useResource } from '../use-resource';
 
 const BUCKET_COLOR: Record<WorklistBucket, string> = {
@@ -21,6 +22,7 @@ const BUCKET_COLOR: Record<WorklistBucket, string> = {
 };
 
 const WorkCard = memo(function WorkCard({ item, onChanged }: { item: WorklistItem; onChanged: () => void }) {
+  const router = useRouter();
   const actions = useLeadActions({ ...item, nextCallbackAt: item.nextCallback?.scheduledAt ?? null }, { onChanged });
   const overdue = item.bucket === 'overdue';
   const details = [item.city, productLabel(item)].filter(Boolean).join(' · ');
@@ -62,10 +64,12 @@ function Tile({ value, label, alert }: { value: number | undefined; label: strin
 /** The telecaller's day: today's counts, then who to call next, most urgent first. */
 export function WorklistScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user, apiUrl } = useUser();
   const { signOut } = useSession();
   const { data, error, refreshing, refresh, reload } = useResource<TelecallerData>('/dashboards/telecaller');
   const [account, setAccount] = useState(false);
+  useCallSync();
   const sections = useMemo(() => toSections(data?.items ?? []), [data]);
   const c = data?.counts;
 
@@ -134,6 +138,17 @@ export function WorklistScreen() {
         <Sheet title={`${user.fullName} (${user.role.name})`} onClose={() => setAccount(false)}>
           <Text style={styles.details}>{user.email}</Text>
           <Text style={styles.details}>Server: {apiUrl}</Text>
+          <Button
+            testID="call-tracking"
+            label="Call tracking"
+            tone="secondary"
+            icon="timer-outline"
+            style={styles.logout}
+            onPress={() => {
+              setAccount(false);
+              router.push('/call-tracking');
+            }}
+          />
           <Button testID="logout" label="Log out" tone="secondary" icon="log-out-outline" style={styles.logout} onPress={() => void signOut()} />
         </Sheet>
       )}

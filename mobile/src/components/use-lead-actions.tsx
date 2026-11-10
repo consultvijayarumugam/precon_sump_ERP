@@ -1,5 +1,6 @@
 import { ReactNode, useState } from 'react';
 import { Linking, ToastAndroid } from 'react-native';
+import { markCallPlaced } from '../call-sync';
 import { telNumber } from '../lib/phone';
 import type { ProductInterest } from '../lib/workflow';
 import { useSession, useUser } from '../session';
@@ -36,6 +37,7 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
       return;
     }
     if (canLog) setOpen('log');
+    markCallPlaced();
     api(`/leads/${lead.id}/call-attempts`, { method: 'POST' }).then(handlers.onChanged, () => undefined); // never get in the way of the call
     Linking.openURL(`tel:${tel}`).catch(() => ToastAndroid.show('This phone could not open the dialer', ToastAndroid.LONG));
   }

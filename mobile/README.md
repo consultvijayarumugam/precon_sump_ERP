@@ -24,12 +24,50 @@ React Native + Expo app for telecallers and sales. It talks to the existing Nest
 
 No backend changes were needed.
 
+**Stage 3 (built; needs real-phone testing): call-log sync**
+
+Reads real call durations from the telecaller's phone and sends them to the API, for talk-time on the master dashboard. See [Call tracking](#call-tracking-what-is-read-and-why) below.
+
 **Next (not built yet)**
 
 1. Sales workflow: pipeline, follow-ups.
-2. Call-log sync: read the phone's call log (needs the `READ_CALL_LOG` permission and a native module, which is why this project uses native builds rather than Expo Go) and match calls to leads.
-3. GPS: one-time location reading for site visits and attendance, shown on an OSM map (never Google Maps; no live tracking).
-4. Before real rollout: HTTPS server address and `usesCleartextTraffic` off, an app-owned signing key (see below), Precon app icon and splash screen.
+2. GPS: one-time location reading for site visits and attendance, shown on an OSM map (never Google Maps; no live tracking).
+3. Before real rollout: HTTPS server address and `usesCleartextTraffic` off, an app-owned signing key (see below), Precon app icon and splash screen.
+
+## Call tracking: what is read and why
+
+**Why.** So a telecaller's talk-time is counted from their real calls without typing it in. Admins see total talk-time and number of calls per telecaller on the master dashboard.
+
+**What leaves the phone**, for calls to or from the user's own leads only: the phone number, direction (outgoing, incoming, missed, rejected), start time, duration in seconds, and Android's id for that call-log row.
+
+**What is never read or sent:** calls with anyone who isn't one of the user's leads, calls from before tracking was turned on or while it was off, contact names, and call audio. The app doesn't record calls.
+
+How that's enforced:
+
+- Android's permission technically opens the whole call log, so the limit is in this app's code. The native module (`modules/call-log`) asks only for rows newer than the last sync and only for the five columns above.
+- It's given the list of the user's lead numbers from `GET /device-calls/lead-numbers`, and drops every other row inside the module. A non-lead call never reaches the app's JavaScript, storage or the network.
+- The first sync only starts the clock. No past calls are read. Turning the permission off resets this, so turning it back on starts fresh.
+
+**Permission flow.** A telecaller sees the explanation screen once, the first time they reach their worklist. It's also under Account → Call tracking.
+
+| State | What happens |
+| --- | --- |
+| Allowed | Calls sync automatically. The screen shows the last sync and a **Sync now** button. |
+| Refused | The app works as normal with calls logged by hand. They can tap Allow again later. |
+| Refused for good ("don't ask again") | The screen explains and offers **Open Settings**. |
+| Not available (Expo Go or no native module) | The screen says so. Nothing is read. |
+
+Nothing in this flow can crash the app: a refusal, or an unreadable call log, simply means no automatic sync.
+
+**"Restricted setting" on sideloaded installs.** Newer Android versions may refuse this permission for apps installed from a file. If so: Settings → Apps → Precon Sump → ⋮ → **Allow restricted settings**, then allow Call logs. This hasn't been confirmed on a real phone yet.
+
+**Google Play.** Play only allows the call-log permission for a few app categories such as default dialers, so this app would likely need this feature removed or a declaration approved to be published there. It's distributed as a direct APK, where this doesn't apply.
+
+**When it syncs:** when the app opens, whenever it returns to the foreground, and again 5 and 15 seconds after returning from a call placed with the Call button, because Android can take a moment to write the entry.
+
+**Offline.** There's no separate queue: the phone's call log is the queue. The sync position only moves forward after the server confirms, so calls made offline are sent on the next successful sync. A failed sync retries every minute while the app is open. Each read looks back 2 hours, because Android dates a call by when it started but only writes it when it ends.
+
+**No duplicates.** The server stores each call once per user, phone row id and start time, so re-sending, or reinstalling the app, can't double-count. The user always comes from the login token, so nobody can post calls for someone else, and a call only attaches to a lead the user can see with that number on it.
 
 ## Tools you need (Mac)
 
@@ -119,6 +157,9 @@ src/storage.ts        token and server address (SecureStore)
 src/lib/              server address, phone number and workflow rules (tested: npm test)
 src/screens/          Login, Worklist, Lead
 src/components/       buttons, sheets (log call, callback, WhatsApp, qualify), lead actions
+src/call-sync.ts, src/use-call-sync.ts, src/call-permission.ts   call tracking
+src/lib/call-sync.ts  call tracking rules (tested without a device: npm test)
+modules/call-log/     Android module that reads the call log (Kotlin)
 scripts/android.sh    run / apk, using Android Studio's JDK and SDK
 android/              generated by `expo prebuild`; not in git
 ```

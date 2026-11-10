@@ -118,6 +118,26 @@ export interface Flag {
   href: string;
 }
 
+export type TalkPeriod = "today" | "week" | "month";
+
+export interface TalkStats {
+  /** Every synced call, answered or not. */
+  calls: number;
+  /** Calls that connected (duration above 0). */
+  connected: number;
+  /** Effective talk-time: the sum of the durations. */
+  talkSeconds: number;
+}
+
+/** "3h 05m", "12m 30s", "45s"; a dash for none. */
+export function formatTalkTime(seconds: number): string {
+  if (seconds <= 0) return "–";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
+
 export interface MasterDashboardData {
   today: {
     total: number;
@@ -165,6 +185,11 @@ export interface MasterDashboardData {
   }[];
   flags: Flag[];
   visits: CheckIn[];
+  /** Real call durations synced from telecallers' phones. */
+  talkTime: {
+    rows: ({ id: string; fullName: string; lastSyncAt: string | null } & Record<TalkPeriod, TalkStats>)[];
+    totals: Record<TalkPeriod, TalkStats>;
+  };
   /** The owner's morning view (CEO dashboard). */
   overview: {
     leadFlow: {

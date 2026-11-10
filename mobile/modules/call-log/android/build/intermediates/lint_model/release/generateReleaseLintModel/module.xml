@@ -1,0 +1,19 @@
+<lint-module
+    format="1"
+    dir="/Users/vijayarumugam/PreconERP/mobile/modules/call-log/android"
+    name=":call-log"
+    type="LIBRARY"
+    maven="com.preconsump.crm:call-log:1.0.0"
+    agpVersion="9.2.1"
+    buildFolder="build"
+    bootClassPath="/Users/vijayarumugam/Library/Android/sdk/platforms/android-37.0/android.jar:/Users/vijayarumugam/Library/Android/sdk/build-tools/36.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-37.0"
+    neverShrinking="true"
+    highlightGradualR8Api="false">
+  <lintOptions
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>

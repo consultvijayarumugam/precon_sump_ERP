@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { ReactNode, useCallback, useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
-import { CALL_OUTCOME_LABELS, CallAttemptRow, CallRow, canBeQualified, formatDateTime, LeadDetail, MessageRow, productLabel, SOURCE_LABELS } from '../lib/workflow';
+import { formatDuration } from '../lib/call-sync';
+import { CALL_OUTCOME_LABELS, CallAttemptRow, CallRow, canBeQualified, DeviceCallRow, DIRECTION_LABELS, formatDateTime, LeadDetail, MessageRow, productLabel, SOURCE_LABELS } from '../lib/workflow';
 import { colors } from '../theme';
 import { useResource } from '../use-resource';
 
@@ -34,16 +35,19 @@ function Activity({ tag, tagColor, title, body, meta, extra }: { tag: string; ta
 
 function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadDetail; id: string; refreshing: boolean; onRefresh: () => void; reloadLead: () => void }) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const calls = useResource<CallRow[]>(`/leads/${id}/calls`);
   const attempts = useResource<CallAttemptRow[]>(`/leads/${id}/call-attempts`);
   const messages = useResource<MessageRow[]>(`/leads/${id}/messages`);
+  const phoneCalls = useResource<DeviceCallRow[]>(`/leads/${id}/device-calls`);
 
   const reloadAll = useCallback(() => {
     reloadLead();
     calls.reload();
     attempts.reload();
     messages.reload();
-  }, [reloadLead, calls.reload, attempts.reload, messages.reload]); // eslint-disable-line react-hooks/exhaustive-deps
+    phoneCalls.reload();
+  }, [reloadLead, calls.reload, attempts.reload, messages.reload, phoneCalls.reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pending = useMemo(() => lead.followUps.filter((f) => !f.completedAt).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt)), [lead.followUps]);
   const done = useMemo(() => lead.followUps.filter((f) => f.completedAt).sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt)), [lead.followUps]);
@@ -65,9 +69,19 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         body: m.message,
         extra: m.attachments?.length ? `Shared: ${m.attachments.map((a) => a.title).join(', ')}` : undefined,
       })),
+      // Optional extra: the rest of the history still shows if these can't load.
+      ...(phoneCalls.data ?? []).map((c) => ({
+        key: `d${c.id}`,
+        at: c.startedAt,
+        by: c.user.fullName,
+        tag: 'Phone',
+        tagColor: colors.blue,
+        title: `${DIRECTION_LABELS[c.direction]} · ${c.durationSeconds > 0 ? formatDuration(c.durationSeconds) : 'not connected'}`,
+        body: null,
+      })),
     ];
     return entries.sort((a, b) => b.at.localeCompare(a.at));
-  }, [calls.data, attempts.data, messages.data]);
+  }, [calls.data, attempts.data, messages.data, phoneCalls.data]);
 
   return (
     <>

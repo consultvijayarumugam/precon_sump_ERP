@@ -2375,5 +2375,165 @@ describe('Auth and RBAC (e2e)', () => {
       await http().post(`/api/v1/leads/${id}/call-attempts`).set(as(admin)).expect(201); // admins see every lead
     });
   });
+
+  describe('Call-log sync: real call durations from the phone, talk-time on the master dashboard', () => {
+    let admin: string;
+    let tara: string;
+    let kavya: string;
+    let taraId: string;
+    let sequence = 0;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const leadIds: string[] = [];
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    async function taraLead(name: string, phone: string) {
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ name, phone, source: 'META', assignedToId: taraId }).expect(201);
+      leadIds.push(res.body.id);
+      return res.body.id as string;
+    }
+    const call = (overrides: Record<string, unknown> = {}) => ({
+      deviceCallId: `e2e-${++sequence}`,
+      phone: '+919000077001',
+      direction: 'OUTGOING',
+      startedAt: new Date().toISOString(),
+      durationSeconds: 120,
+      ...overrides,
+    });
+    const sync = (token: string, calls: unknown[]) => http().post('/api/v1/device-calls/sync').set(as(token)).send({ calls });
+    const history = async (leadId: string) => (await prisma()).leadActivity.findMany({ where: { leadId, type: 'CALL_SYNCED' } });
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      kavya = (await login('telecaller2@precon.local')).body.accessToken;
+      taraId = (await (await prisma()).user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } })).id;
+    });
+    afterAll(async () => {
+      const db = await prisma();
+      await db.deviceCall.deleteMany({ where: { deviceCallId: { startsWith: 'e2e-' } } });
+      await db.lead.deleteMany({ where: { id: { in: leadIds } } });
+    });
+
+    it('stores a call against the logged-in user and matches the lead however its number is written', async () => {
+      const id = await taraLead('E2E Sync Match', '9000077001'); // stored without +91; the phone reports it with
+      const res = await sync(tara, [call({ durationSeconds: 192 })]).expect(200);
+      expect(res.body).toEqual({ received: 1, stored: 1, duplicates: 0, rejected: 0, matchedToLeads: 1 });
+
+      const calls = (await http().get(`/api/v1/leads/${id}/device-calls`).set(as(tara)).expect(200)).body;
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ direction: 'OUTGOING', durationSeconds: 192, user: { id: taraId } });
+      expect((await history(id)).map((h) => h.message)).toEqual(['Outgoing call, 3m 12s (from phone call log)']);
+    });
+
+    it('sending the same call again stores nothing and adds nothing to the history', async () => {
+      const id = await taraLead('E2E Sync Dedupe', '9000077002');
+      const one = call({ phone: '+919000077002' });
+      await sync(tara, [one]).expect(200);
+      const again = await sync(tara, [one, one]).expect(200);
+      expect(again.body).toMatchObject({ received: 2, stored: 0, duplicates: 2, matchedToLeads: 0 });
+      expect(await history(id)).toHaveLength(1);
+    });
+
+    it('the same device id on a different call or for a different person is a separate call', async () => {
+      const deviceCallId = `e2e-shared-${Date.now()}`;
+      const startedAt = new Date().toISOString();
+      const earlier = new Date(Date.now() - 3_600_000).toISOString();
+      expect((await sync(tara, [call({ deviceCallId, startedAt })]).expect(200)).body.stored).toBe(1);
+      expect((await sync(tara, [call({ deviceCallId, startedAt: earlier })]).expect(200)).body.stored).toBe(1);
+      expect((await sync(kavya, [call({ deviceCallId, startedAt })]).expect(200)).body.stored).toBe(1);
+    });
+
+    it('you can only send your own calls: a user id in the request is refused', async () => {
+      await sync(kavya, [call({ userId: taraId })]).expect(400);
+      await http().post('/api/v1/device-calls/sync').set(as(kavya)).send({ userId: taraId, calls: [call()] }).expect(400);
+    });
+
+    it("can't attach a call to someone else's lead, or to a lead with a different number", async () => {
+      const id = await taraLead('E2E Sync Private', '9000077003');
+      const spoofed = await sync(kavya, [call({ phone: '+919000077003', leadId: id })]).expect(200);
+      expect(spoofed.body).toMatchObject({ stored: 1, matchedToLeads: 0 });
+      const other = await sync(tara, [call({ phone: '+919000077999', leadId: id })]).expect(200);
+      expect(other.body).toMatchObject({ stored: 1, matchedToLeads: 0 });
+      expect(await history(id)).toHaveLength(0);
+      await http().get(`/api/v1/leads/${id}/device-calls`).set(as(kavya)).expect(404);
+    });
+
+    it('a number that matches no lead is stored without a lead', async () => {
+      const deviceCallId = `e2e-nolead-${Date.now()}`;
+      expect((await sync(tara, [call({ deviceCallId, phone: '+919000077888' })]).expect(200)).body).toMatchObject({ stored: 1, matchedToLeads: 0 });
+      const row = await (await prisma()).deviceCall.findFirstOrThrow({ where: { deviceCallId } });
+      expect(row).toMatchObject({ userId: taraId, leadId: null });
+    });
+
+    it('refuses bad data, oversized batches and anyone not logged in; drops calls from a wrong future clock', async () => {
+      await sync(tara, [call({ durationSeconds: -1 })]).expect(400);
+      await sync(tara, [call({ direction: 'SIDEWAYS' })]).expect(400);
+      await sync(tara, [call({ startedAt: 'yesterday' })]).expect(400);
+      await sync(tara, []).expect(400);
+      await sync(tara, Array.from({ length: 201 }, () => call())).expect(400);
+      await http().post('/api/v1/device-calls/sync').send({ calls: [call()] }).expect(401);
+
+      const future = new Date(Date.now() + 3 * 86_400_000).toISOString();
+      expect((await sync(tara, [call({ startedAt: future })]).expect(200)).body).toMatchObject({ received: 1, stored: 0, rejected: 1 });
+    });
+
+    it('gives the app only the numbers of leads you can see', async () => {
+      const id = await taraLead('E2E Sync Numbers', '9000077004');
+      const numbers = async (token: string) =>
+        (await http().get('/api/v1/device-calls/lead-numbers').set(as(token)).expect(200)).body.leads as { id: string; phone: string }[];
+      expect((await numbers(tara)).some((l) => l.id === id)).toBe(true);
+      expect((await numbers(kavya)).some((l) => l.id === id)).toBe(false);
+    });
+
+    it('master dashboard adds up talk-time per telecaller for today, this week and this month', async () => {
+      const { businessPeriods } = await import('./../src/workflow/business-periods.js');
+      const p = businessPeriods();
+      const talk = async () => {
+        const data = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body.talkTime;
+        return { row: data.rows.find((r: { id: string }) => r.id === taraId), totals: data.totals };
+      };
+      const before = await talk();
+
+      const minuteAfter = (d: Date) => new Date(d.getTime() + 60_000);
+      const weekCall = minuteAfter(p.weekStart);
+      const monthCall = minuteAfter(p.monthStart);
+      const counted = (at: Date, from: Date) => at >= from;
+      await sync(tara, [
+        call({ durationSeconds: 100 }), // today
+        call({ durationSeconds: 0 }), // today, not answered
+        call({ startedAt: weekCall.toISOString(), durationSeconds: 200 }),
+        call({ startedAt: monthCall.toISOString(), durationSeconds: 400 }),
+        call({ startedAt: new Date(p.monthStart.getTime() - 86_400_000).toISOString(), durationSeconds: 800 }), // last month
+      ]).expect(200);
+
+      const after = await talk();
+      const change = (period: 'today' | 'week' | 'month') => ({
+        calls: after.row[period].calls - before.row[period].calls,
+        connected: after.row[period].connected - before.row[period].connected,
+        talkSeconds: after.row[period].talkSeconds - before.row[period].talkSeconds,
+      });
+      const expected = (from: Date, base: { calls: number; connected: number; talkSeconds: number }) => {
+        for (const [at, seconds] of [[weekCall, 200], [monthCall, 400]] as const) {
+          if (counted(at, from)) {
+            base.calls += 1;
+            base.connected += 1;
+            base.talkSeconds += seconds;
+          }
+        }
+        return base;
+      };
+      expect(change('today')).toEqual(expected(p.todayStart, { calls: 2, connected: 1, talkSeconds: 100 }));
+      expect(change('week')).toEqual(expected(p.weekStart, { calls: 2, connected: 1, talkSeconds: 100 }));
+      expect(change('month')).toEqual(expected(p.monthStart, { calls: 2, connected: 1, talkSeconds: 100 }));
+      expect(after.totals.month.talkSeconds - before.totals.month.talkSeconds).toBe(change('month').talkSeconds);
+      expect(after.row.lastSyncAt).not.toBeNull();
+
+      await http().get('/api/v1/dashboards/master').set(as(tara)).expect(403);
+    });
+  });
 });
 

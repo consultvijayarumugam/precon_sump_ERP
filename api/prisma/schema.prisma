@@ -116,6 +116,7 @@ model User {
   qualifiedLeads       Lead[]             @relation("LeadQualifier")
   callLogs             CallLog[]          @relation("CallLogCaller")
   leadActivities       LeadActivity[]     @relation("LeadActivityUser")
+  deviceCalls          DeviceCall[]
   notifications        Notification[]     @relation("NotificationRecipient")
   lastLoginAt          DateTime?          @map("last_login_at")
   createdAt            DateTime           @default(now()) @map("created_at")
@@ -225,6 +226,7 @@ model Lead {
   qualifiedById   String?          @map("qualified_by_id") @db.Uuid
   qualifiedBy     User?            @relation("LeadQualifier", fields: [qualifiedById], references: [id])
   calls           CallLog[]
+  deviceCalls     DeviceCall[]
   activities      LeadActivity[]
   notifications   Notification[]
   siteVisits      SiteVisit[]
@@ -618,6 +620,38 @@ model CallLog {
   @@map("call_logs")
 }
 
+enum DeviceCallDirection {
+  OUTGOING
+  INCOMING
+  MISSED
+  REJECTED
+}
+
+// A real call read from the telecaller's phone by the mobile app's call-log
+// sync, with its true duration. Separate from CallLog, which is the outcome a
+// person typed in. Talk-time reporting adds these up. Kept if the lead is deleted.
+model DeviceCall {
+  id              String              @id @default(uuid()) @db.Uuid
+  userId          String              @map("user_id") @db.Uuid
+  user            User                @relation(fields: [userId], references: [id])
+  // Null when the number didn't match a lead this user can see.
+  leadId          String?             @map("lead_id") @db.Uuid
+  lead            Lead?               @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  phone           String
+  direction       DeviceCallDirection
+  startedAt       DateTime            @map("started_at")
+  durationSeconds Int                 @map("duration_seconds")
+  // The phone's own row id. With the start time it identifies one call, even
+  // after a reinstall, so the same call can never be counted twice.
+  deviceCallId    String              @map("device_call_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  @@unique([userId, deviceCallId, startedAt])
+  @@index([userId, startedAt])
+  @@index([leadId, startedAt])
+  @@map("device_calls")
+}
+
 // ---------------------------------------------------------------------------
 // HR (web): leave (#19), holidays + team calendar (#16), LOP (#19),
 // allowances (#8). Attendance/GPS comes later with the mobile app.
@@ -762,6 +796,7 @@ enum LeadActivityType {
   FOLLOW_UP_REOPENED
   CALL_LOGGED
   CALL_ATTEMPT // tapped Call on a lead (the dialer opened; the outcome is logged separately)
+  CALL_SYNCED // a real call and its duration, read from the phone by the mobile app
   SITE_VISIT
 }
 

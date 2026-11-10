@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
+import { DeviceCallsService } from '../device-calls/device-calls.service.js';
 import { money } from '../finance/finance-utils.js';
 import { LeadStatus, Prisma, SalesOrderStatus } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
@@ -68,6 +69,7 @@ export class DashboardsService {
     private readonly assignment: LeadAssignmentService,
     private readonly checkIns: CheckInsService,
     private readonly stages: StagesService,
+    private readonly deviceCalls: DeviceCallsService,
   ) {}
 
   // --- Telecaller workbench ------------------------------------------------------
@@ -287,6 +289,7 @@ export class DashboardsService {
       sales: salesRows,
       flags,
       visits,
+      talkTime: await this.deviceCalls.talkTime(telecallers, p),
       overview: await this.ceoOverview(p, {
         callsToday: telecallerRows.reduce((n, r) => n + r.callsToday, 0),
         revenueMonth,

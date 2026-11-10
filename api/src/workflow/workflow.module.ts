@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AccessControlModule } from '../access-control/access-control.module.js';
+import { DeviceCallsModule } from '../device-calls/device-calls.module.js';
 import { IntakeModule } from '../intake/intake.module.js';
 import { CheckInsService } from './check-ins.service.js';
 import { DashboardsService } from './dashboards.service.js';
@@ -12,7 +13,7 @@ import { CheckInsController, DashboardsController, LeadActionsController } from 
  * telecaller, sales and master dashboards.
  */
 @Module({
-  imports: [AccessControlModule, IntakeModule],
+  imports: [AccessControlModule, IntakeModule, DeviceCallsModule],
   controllers: [LeadActionsController, DashboardsController, CheckInsController],
   providers: [LeadActionsService, DashboardsService, CheckInsService],
 })
