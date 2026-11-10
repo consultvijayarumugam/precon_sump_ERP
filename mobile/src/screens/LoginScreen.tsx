@@ -145,11 +145,11 @@ export function LoginScreen({
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 20 },
-  brand: { fontSize: 32, fontWeight: '700', color: colors.navy, textAlign: 'center' },
+  brand: { fontSize: 32, fontWeight: '700', color: colors.navy900, textAlign: 'center' },
   brandAccent: { color: colors.blue },
   subtitle: { marginTop: 4, marginBottom: 24, fontSize: 15, color: colors.ink2, textAlign: 'center' },
   card: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 20 },
-  notice: { backgroundColor: colors.blueLight, color: colors.navy, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 14 },
+  notice: { backgroundColor: colors.tint, color: colors.navy900, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 14 },
   label: { fontSize: 14, fontWeight: '600', color: colors.ink2, marginBottom: 6, marginTop: 8 },
   input: { height: 50, borderWidth: 1, borderColor: colors.line, borderRadius: 10, paddingHorizontal: 14, fontSize: 16, color: colors.ink, backgroundColor: colors.card },
   passwordInput: { paddingRight: 64 },

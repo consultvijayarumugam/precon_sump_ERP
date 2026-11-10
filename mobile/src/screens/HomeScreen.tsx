@@ -39,7 +39,7 @@ export function HomeScreen({ user, apiUrl, onLogout }: { user: User; apiUrl: str
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   body: { flex: 1, justifyContent: 'center', padding: 20 },
-  brand: { fontSize: 32, fontWeight: '700', color: colors.navy, textAlign: 'center', marginBottom: 24 },
+  brand: { fontSize: 32, fontWeight: '700', color: colors.navy900, textAlign: 'center', marginBottom: 24 },
   brandAccent: { color: colors.blue },
   card: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 20 },
   title: { fontSize: 20, fontWeight: '700', color: colors.ink },

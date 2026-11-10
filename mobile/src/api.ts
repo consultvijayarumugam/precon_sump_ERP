@@ -17,6 +17,11 @@ export interface LoginResult {
   user: User;
 }
 
+export interface RequestOptions {
+  method?: string;
+  body?: unknown;
+}
+
 /** status is 0 when the server couldn't be reached at all. */
 export class ApiError extends Error {
   constructor(
@@ -27,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(baseUrl: string, path: string, init: { method?: string; token?: string; body?: unknown } = {}): Promise<T> {
+export async function request<T>(baseUrl: string, path: string, init: RequestOptions & { token?: string } = {}): Promise<T> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
   let response: Response;

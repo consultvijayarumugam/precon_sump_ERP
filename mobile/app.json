@@ -37,7 +37,18 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      "expo-router",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#071A33",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 120
+        }
       ]
-    ]
+    ],
+    "scheme": "preconsump"
   }
 }
