@@ -95,8 +95,19 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
 
         <View style={styles.actions}>
           <Button testID="call" label={lead.phone} icon="call" onPress={actions.call} style={styles.flex} />
-          <Button testID="whatsapp" label="WhatsApp" icon="logo-whatsapp" tone="whatsapp" onPress={actions.whatsapp} style={styles.flex} />
+          <Button
+            testID="whatsapp"
+            label="WhatsApp"
+            icon="logo-whatsapp"
+            tone="whatsapp"
+            onPress={actions.whatsapp}
+            onLongPress={actions.whatsappTemplates}
+            accessibilityHint={actions.whatsAppLead ? 'Opens the chat. Long press for templates.' : 'Pick a message to send'}
+            busy={actions.opening}
+            style={styles.flex}
+          />
         </View>
+        {actions.whatsAppLead && <Text style={styles.hint}>WhatsApp opens their chat. Hold it for templates and files.</Text>}
         <View style={styles.actions}>
           {actions.canLog && <Button testID="log-call" label="Log call" icon="create-outline" tone="secondary" onPress={actions.logCall} style={styles.flex} />}
           {actions.canLog && <Button testID="set-callback" label={next ? 'Move callback' : 'Callback'} icon="alarm-outline" tone="secondary" onPress={actions.callback} style={styles.flex} />}
@@ -178,6 +189,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontWeight: '700', color: colors.ink, flexShrink: 1 },
   actions: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   qualify: { marginBottom: 8 },
+  hint: { fontSize: 13, color: colors.ink3, marginTop: -2, marginBottom: 8, textAlign: 'right' },
   heading: { fontSize: 15, fontWeight: '700', color: colors.navy900, marginTop: 14, marginBottom: 8 },
   card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, paddingVertical: 6 },
   info: { paddingVertical: 8 },

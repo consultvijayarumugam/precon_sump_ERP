@@ -45,7 +45,17 @@ const WorkCard = memo(function WorkCard({ item, onChanged }: { item: WorklistIte
       </Pressable>
       <View style={styles.actions}>
         <Button testID={`call-${item.name}`} label={item.phone} icon="call" onPress={actions.call} style={styles.flex} />
-        <Button testID={`whatsapp-${item.name}`} label="WhatsApp" icon="logo-whatsapp" tone="whatsapp" onPress={actions.whatsapp} style={styles.flex} />
+        <Button
+          testID={`whatsapp-${item.name}`}
+          label="WhatsApp"
+          icon="logo-whatsapp"
+          tone="whatsapp"
+          onPress={actions.whatsapp}
+          onLongPress={actions.whatsappTemplates}
+          accessibilityHint={actions.whatsAppLead ? 'Opens the chat. Long press for templates.' : 'Pick a message to send'}
+          busy={actions.opening}
+          style={styles.flex}
+        />
       </View>
       {actions.sheets}
     </View>

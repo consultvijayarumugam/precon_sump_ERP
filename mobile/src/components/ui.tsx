@@ -20,6 +20,8 @@ export function Button({
   icon,
   tone = 'primary',
   onPress,
+  onLongPress,
+  accessibilityHint,
   disabled,
   busy,
   testID,
@@ -29,6 +31,8 @@ export function Button({
   icon?: IconName;
   tone?: Tone;
   onPress: () => void;
+  onLongPress?: () => void;
+  accessibilityHint?: string;
   disabled?: boolean;
   busy?: boolean;
   testID?: string;
@@ -40,9 +44,12 @@ export function Button({
     <Pressable
       testID={testID}
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={off}
       accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(off) }}
+      accessibilityHint={accessibilityHint}
+      accessibilityActions={onLongPress ? [{ name: 'longpress', label: 'More options' }] : undefined}
+      onAccessibilityAction={(e) => e.nativeEvent.actionName === 'longpress' && onLongPress?.()}
       android_ripple={{ color: '#00000018' }}
       style={[styles.button, { backgroundColor: look.bg, borderColor: look.border }, disabled && styles.off, style]}
     >

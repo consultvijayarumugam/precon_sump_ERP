@@ -65,6 +65,8 @@ export interface WorklistItem {
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   createdAt: string;
+  /** Where the lead came from, e.g. WHATSAPP. */
+  source: string;
   bucket: WorklistBucket;
   nextCallback: { id: string; scheduledAt: string; note: string | null } | null;
   lastCall: { outcome: CallOutcome; note: string | null; calledAt: string } | null;

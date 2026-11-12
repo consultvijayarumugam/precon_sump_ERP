@@ -267,7 +267,7 @@ export default function LeadDetailPage() {
                   reload();
                 }}
               />
-              <WhatsAppButton leadId={lead.id} name={lead.name} onSent={() => setHistoryVersion((v) => v + 1)} />
+              <WhatsAppButton leadId={lead.id} name={lead.name} direct={lead.source === "WHATSAPP"} onSent={() => setHistoryVersion((v) => v + 1)} />
             </span>
           </Detail>
           <Detail label="Email">{lead.email ?? "-"}</Detail>

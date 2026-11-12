@@ -56,7 +56,7 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
               )}
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} variant="block" onLogged={onChanged} />
-                <WhatsAppButton leadId={lead.id} name={lead.name} variant="block" />
+                <WhatsAppButton leadId={lead.id} name={lead.name} variant="block" direct={lead.source === "WHATSAPP"} />
               </div>
             </li>
           );
@@ -91,7 +91,7 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                     <span className="select-all tabular-nums">{lead.phone}</span>
                     <span className="ml-auto flex gap-1.5">
                       <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} onLogged={onChanged} />
-                      <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" />
+                      <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" direct={lead.source === "WHATSAPP"} />
                     </span>
                   </div>
                 </td>

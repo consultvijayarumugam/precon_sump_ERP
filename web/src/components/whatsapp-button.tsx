@@ -1,6 +1,12 @@
 "use client";
 
-import { FileText, Image as ImageIcon, MessageCircle, Paperclip } from "lucide-react";
+import {
+  ChevronDown,
+  FileText,
+  Image as ImageIcon,
+  MessageCircle,
+  Paperclip,
+} from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { AnchoredPanel } from "@/components/anchored-panel";
 import type { ContactVariant } from "@/components/call-button";
@@ -29,6 +35,9 @@ const WA_LOOK: Record<ContactVariant, string> = {
  * the lead, and opens WhatsApp (wa.me) with the message typed in. The user
  * still taps Send in WhatsApp. Ticked library files are added to the message
  * as links (wa.me can't carry real attachments) and logged on the lead.
+ *
+ * `direct` (WhatsApp-source leads, whose chat already exists): one tap opens
+ * the chat, still logged on the lead; the arrow beside it opens the templates.
  */
 export function WhatsAppButton({
   leadId,
@@ -36,8 +45,11 @@ export function WhatsAppButton({
   label = "WhatsApp",
   variant = "inline",
   onSent,
+  direct = false,
 }: {
   leadId: string;
+  /** One tap opens the chat (for WhatsApp leads). */
+  direct?: boolean;
   /** Whose lead this is, for the icon-only button's screen-reader label. */
   name?: string;
   label?: string;
@@ -47,10 +59,19 @@ export function WhatsAppButton({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const templates = useApi<MessageTemplate[]>(open ? "/message-templates" : null);
+  const templates = useApi<MessageTemplate[]>(
+    open ? "/message-templates" : null,
+  );
   const files = useApi<LibraryFile[]>(open ? "/files" : null);
   const [picked, setPicked] = useState<string[]>([]);
-  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 5 ? p : [...p, id]));
+  const toggle = (id: string) =>
+    setPicked((p) =>
+      p.includes(id)
+        ? p.filter((x) => x !== id)
+        : p.length >= 5
+          ? p
+          : [...p, id],
+    );
   const button = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
 
@@ -72,39 +93,91 @@ export function WhatsAppButton({
     } catch (err) {
       tab?.close();
       setError(err instanceof Error ? err.message : "Could not open WhatsApp");
+      setOpen(true); // show the error, with the templates as a way on
     } finally {
       setBusy(null);
     }
   }
 
+  const split = direct && variant !== "icon";
   return (
     <>
-      <button
-        ref={button}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label={variant === "icon" ? `WhatsApp ${name ?? "this lead"}` : undefined}
-        title={variant === "icon" ? "WhatsApp" : undefined}
-        className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-white text-emerald-700 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-neutral-900 dark:text-emerald-300 dark:hover:bg-emerald-950 ${WA_LOOK[variant]}`}
+      <span
+        className={
+          split
+            ? `inline-flex ${variant === "block" ? "w-full sm:w-auto" : ""}`
+            : "contents"
+        }
       >
-        <MessageCircle className="size-[18px]" aria-hidden /> {variant !== "icon" && label}
-      </button>
+        <button
+          ref={button}
+          type="button"
+          onClick={() => (direct ? void send(null) : setOpen((v) => !v))}
+          disabled={direct && busy !== null}
+          aria-expanded={direct ? undefined : open}
+          aria-haspopup={direct ? undefined : "dialog"}
+          aria-label={
+            variant === "icon"
+              ? `WhatsApp ${name ?? "this lead"}${direct ? ": open the chat" : ""}`
+              : undefined
+          }
+          title={
+            variant === "icon"
+              ? direct
+                ? "Open the WhatsApp chat"
+                : "WhatsApp"
+              : undefined
+          }
+          className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-white text-emerald-700 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-neutral-900 dark:text-emerald-300 dark:hover:bg-emerald-950 disabled:opacity-60 ${WA_LOOK[variant]} ${split ? "min-w-0 flex-1 rounded-r-none sm:flex-none" : ""}`}
+        >
+          <MessageCircle className="size-[18px]" aria-hidden />{" "}
+          {variant !== "icon" &&
+            (busy === "blank" && direct ? "Opening…" : label)}
+        </button>
+        {split && (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-haspopup="dialog"
+            aria-label="WhatsApp templates and files"
+            title="Templates and files"
+            className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-white text-emerald-700 shadow-xs hover:bg-emerald-50 dark:border-emerald-800 dark:bg-neutral-900 dark:text-emerald-300 dark:hover:bg-emerald-950 -ml-px rounded-l-none px-2 ${variant === "block" ? "h-12 sm:h-10" : "h-11"}`}
+          >
+            <ChevronDown className="size-4" aria-hidden />
+          </button>
+        )}
+      </span>
       {open && (
-        <AnchoredPanel anchor={button} label="Send a WhatsApp message" onClose={close}>
+        <AnchoredPanel
+          anchor={button}
+          label="Send a WhatsApp message"
+          onClose={close}
+        >
           {files.data && files.data.length > 0 && (
             <fieldset className="mb-2 border-b border-neutral-100 pb-2 dark:border-neutral-800">
               <legend className="flex items-center gap-1.5 px-2 pt-1 pb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                <Paperclip className="size-3.5" aria-hidden /> Add files (sent as links)
+                <Paperclip className="size-3.5" aria-hidden /> Add files (sent
+                as links)
               </legend>
               <div className="max-h-40 overflow-y-auto">
                 {files.data.map((f) => {
                   const Icon = f.kind === "pdf" ? FileText : ImageIcon;
                   return (
-                    <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800">
-                      <input type="checkbox" checked={picked.includes(f.id)} onChange={() => toggle(f.id)} disabled={busy !== null} />
-                      <Icon className={`size-4 shrink-0 ${f.kind === "pdf" ? "text-red-600" : "text-[var(--ps-blue-600)]"}`} aria-hidden />
+                    <label
+                      key={f.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={picked.includes(f.id)}
+                        onChange={() => toggle(f.id)}
+                        disabled={busy !== null}
+                      />
+                      <Icon
+                        className={`size-4 shrink-0 ${f.kind === "pdf" ? "text-red-600" : "text-[var(--ps-blue-600)]"}`}
+                        aria-hidden
+                      />
                       <span className="min-w-0 flex-1 truncate" title={f.title}>
                         {f.title}
                       </span>
@@ -117,15 +190,26 @@ export function WhatsAppButton({
               </div>
               {picked.length > 0 && (
                 <p className="px-2 pt-1 text-xs text-emerald-700 dark:text-emerald-300">
-                  {picked.length} link{picked.length === 1 ? "" : "s"} will be added to the message below.
+                  {picked.length} link{picked.length === 1 ? "" : "s"} will be
+                  added to the message below.
                 </p>
               )}
             </fieldset>
           )}
-          {files.error && <p className="px-2 py-1 text-xs text-red-600">Files: {files.error}</p>}
-          <p className="px-2 pt-1 pb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">Pick a message</p>
-          {templates.error && <p className="px-2 py-1 text-sm text-red-600">{templates.error}</p>}
-          {!templates.data && !templates.error && <p className="px-2 py-1 text-sm text-neutral-500">Loading…</p>}
+          {files.error && (
+            <p className="px-2 py-1 text-xs text-red-600">
+              Files: {files.error}
+            </p>
+          )}
+          <p className="px-2 pt-1 pb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+            Pick a message
+          </p>
+          {templates.error && (
+            <p className="px-2 py-1 text-sm text-red-600">{templates.error}</p>
+          )}
+          {!templates.data && !templates.error && (
+            <p className="px-2 py-1 text-sm text-neutral-500">Loading…</p>
+          )}
           {templates.data?.map((t) => (
             <button
               key={t.id}
@@ -134,8 +218,12 @@ export function WhatsAppButton({
               onClick={() => send(t.id)}
               className="block w-full rounded-lg px-2 py-2 text-left hover:bg-emerald-50 disabled:opacity-60 dark:hover:bg-emerald-950/40"
             >
-              <span className="block text-sm font-semibold">{busy === t.id ? "Opening WhatsApp…" : t.name}</span>
-              <span className="line-clamp-2 block text-xs text-neutral-500">{t.body}</span>
+              <span className="block text-sm font-semibold">
+                {busy === t.id ? "Opening WhatsApp…" : t.name}
+              </span>
+              <span className="line-clamp-2 block text-xs text-neutral-500">
+                {t.body}
+              </span>
             </button>
           ))}
           <button
@@ -144,9 +232,17 @@ export function WhatsAppButton({
             onClick={() => send(null)}
             className="mt-1 block w-full rounded-lg border-t border-neutral-100 px-2 py-2 text-left text-sm text-neutral-600 hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
-            {busy === "blank" ? "Opening WhatsApp…" : picked.length ? "Send just the file links" : "Open chat without a message"}
+            {busy === "blank"
+              ? "Opening WhatsApp…"
+              : picked.length
+                ? "Send just the file links"
+                : "Open chat without a message"}
           </button>
-          {error && <p className="px-2 pt-1 text-sm font-medium text-red-600">{error}</p>}
+          {error && (
+            <p className="px-2 pt-1 text-sm font-medium text-red-600">
+              {error}
+            </p>
+          )}
         </AnchoredPanel>
       )}
     </>

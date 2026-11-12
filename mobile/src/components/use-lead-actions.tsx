@@ -14,6 +14,8 @@ export interface ActionLead {
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   nextCallbackAt: string | null;
+  /** WHATSAPP leads open their chat in one tap. */
+  source?: string;
 }
 
 type Open = 'log' | 'callback' | 'qualify' | 'whatsapp' | null;
@@ -28,6 +30,28 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
   const [open, setOpen] = useState<Open>(null);
   const close = () => setOpen(null);
   const canLog = can('followups.write');
+  const [opening, setOpening] = useState(false);
+  const whatsAppLead = lead.source === 'WHATSAPP';
+
+  /**
+   * WhatsApp leads came from a chat, so one tap goes straight back to it. The
+   * server logs it on the lead ("Chat opened") and gives the wa.me link.
+   * If that fails, the template sheet opens instead so they're never stuck.
+   */
+  async function openChat() {
+    if (opening) return;
+    setOpening(true);
+    try {
+      const { url } = await api<{ url: string }>(`/leads/${lead.id}/whatsapp`, { method: 'POST', body: {} });
+      await Linking.openURL(url);
+      handlers.onChanged();
+    } catch (err) {
+      ToastAndroid.show(err instanceof Error ? err.message : 'Could not open WhatsApp', ToastAndroid.LONG);
+      setOpen('whatsapp');
+    } finally {
+      setOpening(false);
+    }
+  }
 
   /** Opens the dialer and logs the attempt; the outcome sheet is waiting when they come back. */
   function call() {
@@ -95,5 +119,18 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
     );
   }
 
-  return { call, whatsapp: () => setOpen('whatsapp'), logCall: () => setOpen('log'), callback: () => setOpen('callback'), qualify: () => setOpen('qualify'), sheets, canLog, canQualify: can('leads.qualify') };
+  return {
+    call,
+    whatsapp: whatsAppLead ? () => void openChat() : () => setOpen('whatsapp'),
+    /** The template sheet, also on a long press of a one-tap button. */
+    whatsappTemplates: () => setOpen('whatsapp'),
+    whatsAppLead,
+    opening,
+    logCall: () => setOpen('log'),
+    callback: () => setOpen('callback'),
+    qualify: () => setOpen('qualify'),
+    sheets,
+    canLog,
+    canQualify: can('leads.qualify'),
+  };
 }

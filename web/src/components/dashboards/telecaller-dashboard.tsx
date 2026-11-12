@@ -74,7 +74,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
               else onChanged();
             }}
           />
-          <WhatsAppButton leadId={item.id} name={item.name} variant="block" />
+          <WhatsAppButton leadId={item.id} name={item.name} variant="block" direct={item.source === "WHATSAPP"} />
         </div>
       </div>
 
