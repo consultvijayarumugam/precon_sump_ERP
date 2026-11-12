@@ -26,11 +26,41 @@ export interface IntakeLead {
   createdById: string;
   sourceDetail: string;
   externalRef?: string | null;
+  /**
+   * Which existing leads with the same phone block a new one: 'any' (default)
+   * or only 'open' ones, so a past Won or Lost customer enquiring again gets a new lead.
+   */
+  duplicates?: 'any' | 'open';
+}
+
+/** Leads still being worked: a new enquiry from the same number is a duplicate of these. */
+export const OPEN_STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'];
+
+export interface ExistingLead {
+  id: string;
+  name: string;
+  status: LeadStatus;
+  assignedTo: { id: string; fullName: string } | null;
+}
+
+type Db = PrismaService | Prisma.TransactionClient;
+
+/** Thrown inside the create transaction when a duplicate turns up under the lock. */
+class DuplicateFound {
+  constructor(readonly found: { reason: 'phone' | 'externalRef'; lead: ExistingLead }) {}
 }
 
 export type IntakeResult =
   | { status: 'created'; leadId: string; assignedTo: Assignee | null; autoAssigned: boolean }
-  | { status: 'duplicate'; reason: 'phone' | 'externalRef'; leadId: string; existingName: string };
+  | { status: 'duplicate'; reason: 'phone' | 'externalRef'; leadId: string; existingName: string; existing: ExistingLead };
+
+const duplicateResult = (found: { reason: 'phone' | 'externalRef'; lead: ExistingLead }): IntakeResult => ({
+  status: 'duplicate',
+  reason: found.reason,
+  leadId: found.lead.id,
+  existingName: found.lead.name,
+  existing: found.lead,
+});
 
 /**
  * The one place leads arrive from outside (import, public API, Meta webhook).
@@ -47,27 +77,33 @@ export class LeadIntakeService {
     private readonly assignment: LeadAssignmentService,
   ) {}
 
-  async findDuplicate(phone: string, externalRef?: string | null) {
+  async findDuplicate(phone: string, externalRef?: string | null, duplicates: 'any' | 'open' = 'any', db: Db = this.prisma) {
+    const select = { id: true, name: true, status: true, assignedTo: { select: { id: true, fullName: true } } } as const;
     if (externalRef) {
-      const byRef = await this.prisma.lead.findUnique({ where: { externalRef }, select: { id: true, name: true } });
+      const byRef = await db.lead.findUnique({ where: { externalRef }, select });
       if (byRef) return { reason: 'externalRef' as const, lead: byRef };
     }
-    const byPhone = await this.prisma.lead.findFirst({
-      where: { phone: { endsWith: phoneMatchKey(phone) } },
+    const byPhone = await db.lead.findFirst({
+      where: { phone: { endsWith: phoneMatchKey(phone) }, ...(duplicates === 'open' ? { status: { in: OPEN_STATUSES } } : {}) },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, name: true },
+      select,
     });
     return byPhone ? { reason: 'phone' as const, lead: byPhone } : null;
   }
 
   async create(input: IntakeLead): Promise<IntakeResult> {
-    const dup = await this.findDuplicate(input.phone, input.externalRef);
-    if (dup) return { status: 'duplicate', reason: dup.reason, leadId: dup.lead.id, existingName: dup.lead.name };
+    const dup = await this.findDuplicate(input.phone, input.externalRef, input.duplicates);
+    if (dup) return duplicateResult(dup);
 
     const chosenId = input.assignedToId ?? null;
     let created: { leadId: string; assignedTo: Assignee | null; autoAssigned: boolean };
     try {
       created = await this.prisma.$transaction(async (tx) => {
+        // One number at a time: the same enquiry sent twice at once (a double Enter, two
+        // people logging the same chat) waits here and is then caught as a duplicate.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`lead-phone:${phoneMatchKey(input.phone)}`}))::text AS locked`;
+        const raced = await this.findDuplicate(input.phone, input.externalRef, input.duplicates, tx);
+        if (raced) throw new DuplicateFound(raced);
         // Round-robin only when nobody was chosen; the pick and the lead commit together.
         const auto = chosenId || !input.rotation ? null : await this.assignment.pickNext(tx, input.rotation);
         const lead = await tx.lead.create({
@@ -116,11 +152,12 @@ export class LeadIntakeService {
         return { leadId: lead.id, assignedTo: lead.assignedTo, autoAssigned: Boolean(auto) };
       });
     } catch (error) {
+      if (error instanceof DuplicateFound) return duplicateResult(error.found);
       // Same submission arriving twice at once: the unique externalRef stops the second
       // (and its rotation pick is rolled back with it).
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const again = await this.findDuplicate(input.phone, input.externalRef);
-        if (again) return { status: 'duplicate', reason: again.reason, leadId: again.lead.id, existingName: again.lead.name };
+        const again = await this.findDuplicate(input.phone, input.externalRef, input.duplicates);
+        if (again) return duplicateResult(again);
       }
       throw error;
     }

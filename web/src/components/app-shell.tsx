@@ -35,6 +35,7 @@ import {
   Wallet,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -69,6 +70,7 @@ const NAV: { module: ModuleKey; title?: string; whenAny?: string[]; operations?:
     module: "crm",
     title: "CRM",
     items: [
+      { href: "/leads/quick-add", label: "Quick add", icon: Zap, tag: TAGS.LEADS_QUICK_ADD },
       { href: "/leads", label: "Leads", icon: Contact, tag: TAGS.LEADS_READ },
       { href: "/leads/won", label: "Won", icon: Trophy, anyTags: [TAGS.LEADS_WRITE, TAGS.LEADS_READ_ALL] },
       { href: "/follow-ups", label: "Follow-ups", icon: PhoneCall, tag: TAGS.LEADS_READ },

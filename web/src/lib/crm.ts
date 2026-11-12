@@ -1,7 +1,7 @@
 // CRM types and display labels, mirroring the API's enums.
 
 export const LEAD_STATUSES = ["NEW", "CONTACTED", "QUALIFIED", "QUOTED", "WON", "LOST"] as const;
-export const LEAD_SOURCES = ["META", "MANUAL", "WEBSITE", "REFERRAL", "OTHER", "API"] as const;
+export const LEAD_SOURCES = ["META", "WHATSAPP", "MANUAL", "WEBSITE", "REFERRAL", "OTHER", "API"] as const;
 /** The two product types (see CLAUDE.md "Products"). */
 export const PRODUCT_INTERESTS = ["SUMP", "MICROBES"] as const;
 /** Valid sump sizes in litres; each size is its own stock item. */
@@ -32,6 +32,7 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
 
 export const SOURCE_LABELS: Record<LeadSource, string> = {
   META: "Meta (Facebook)",
+  WHATSAPP: "WhatsApp",
   MANUAL: "Manual",
   WEBSITE: "Website",
   REFERRAL: "Referral",

@@ -43,6 +43,7 @@ const SOURCE_LABELS: Record<LeadSource, string> = {
   MANUAL: 'Manual',
   WEBSITE: 'Website',
   REFERRAL: 'Referral',
+  WHATSAPP: 'WhatsApp',
   OTHER: 'Other',
   API: 'External system (API)',
 };

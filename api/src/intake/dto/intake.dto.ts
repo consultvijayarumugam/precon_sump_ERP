@@ -85,14 +85,14 @@ export class CreateApiKeyDto {
 
 export class ImportOptionsDto {
   @ApiPropertyOptional({
-    enum: ['META', 'MANUAL', 'WEBSITE', 'REFERRAL', 'OTHER'],
+    enum: ['META', 'WHATSAPP', 'MANUAL', 'WEBSITE', 'REFERRAL', 'OTHER'],
     default: 'MANUAL',
     description: 'Source for rows that leave it blank (e.g. META for a Meta lead export)',
   })
   @IsOptional()
   @Transform(upper)
-  @IsIn(['META', 'MANUAL', 'WEBSITE', 'REFERRAL', 'OTHER'])
-  defaultSource?: 'META' | 'MANUAL' | 'WEBSITE' | 'REFERRAL' | 'OTHER';
+  @IsIn(['META', 'WHATSAPP', 'MANUAL', 'WEBSITE', 'REFERRAL', 'OTHER'])
+  defaultSource?: 'META' | 'WHATSAPP' | 'MANUAL' | 'WEBSITE' | 'REFERRAL' | 'OTHER';
 }
 
 export class DistributionQueryDto {

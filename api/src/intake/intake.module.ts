@@ -14,6 +14,8 @@ import { LeadAssignmentService } from './lead-assignment.service.js';
 import { LeadImportService } from './lead-import.service.js';
 import { LeadIntakeService } from './lead-intake.service.js';
 import { MetaWebhookService } from './meta-webhook.service.js';
+import { QuickAddController } from './quick-add.controller.js';
+import { QuickAddService } from './quick-add.service.js';
 
 /**
  * Getting leads in from outside (#1, #21): bulk import, the public API with
@@ -27,8 +29,8 @@ import { MetaWebhookService } from './meta-webhook.service.js';
     // Only applied where @UseGuards(ApiKeyThrottlerGuard) is used (public API, webhook).
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: Number(process.env.PUBLIC_API_RATE_LIMIT ?? 60) }]),
   ],
-  controllers: [LeadImportController, LeadAssignmentController, ApiKeysController, PublicLeadsController, MetaWebhookController],
+  controllers: [QuickAddController, LeadImportController, LeadAssignmentController, ApiKeysController, PublicLeadsController, MetaWebhookController],
   exports: [LeadAssignmentService],
-  providers: [LeadAssignmentService, LeadIntakeService, LeadImportService, ApiKeysService, MetaWebhookService, ApiKeyGuard, ApiKeyThrottlerGuard],
+  providers: [LeadAssignmentService, LeadIntakeService, QuickAddService, LeadImportService, ApiKeysService, MetaWebhookService, ApiKeyGuard, ApiKeyThrottlerGuard],
 })
 export class IntakeModule {}

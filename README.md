@@ -208,6 +208,7 @@ Then restart the API (`npm run start:dev`). The web app reads the setting from t
 | `leads.read` | See leads assigned to you, their follow-ups, the won list and the calendar |
 | `leads.read_all` | Widens `leads.read` to every lead, including unassigned ones |
 | `leads.write` | Create leads and edit leads you can see (details, notes, pipeline status) |
+| `leads.quick_add` | Admin, or one designated intake person. Quick add WhatsApp enquiries (phone, optional name and first message); they go round-robin to the telecallers. Doesn't allow editing, importing or assigning leads |
 | `leads.qualify` | Telecaller preset. Update leads **assigned to you** after a call: name, email, city, product, size, notes and pipeline status. Phone and source stay locked (the phone is what duplicate checks match on); no creating, importing or reassigning |
 | `leads.assign` | Choose or change who a lead is assigned to; see Admin → Lead assignment and switch telecallers in or out of the rotation |
 | `leads.audit` | Admin. See a lead's full change history |
@@ -350,9 +351,9 @@ The rules live in `api/src/hr/hr-config.ts` and `api/src/hr/lop.service.ts`. The
 - **Phone numbers:** stored normalized. `98765 43210` becomes `9876543210`.
 - **Duplicates from outside:** import, the public API and the Meta webhook never create a second lead for the same phone. Phones match on their **last 10 digits**, so `+919876543210`, `919876543210` and `9876543210` are the same customer. The lead's detail page shows where it came from, for example "Import: march.xlsx", "API key: Website form" or "Meta lead form 123".
 
-## Getting leads in: import, public API, Meta webhook
+## Getting leads in: Quick add, import, public API, Meta webhook
 
-All three go through one intake service (`api/src/intake/`), so validation, duplicate handling and **round-robin assignment** are the same everywhere.
+All four go through one intake service (`api/src/intake/`), so validation, duplicate handling and **round-robin assignment** are the same everywhere.
 
 ### Round-robin assignment to telecallers
 
@@ -365,6 +366,18 @@ The business gets 50-60 leads a day from Meta click-to-WhatsApp ads, with name a
 - **Manual change:** admin opens a lead and changes "Assigned to". The lead is then no longer counted as round-robin (`autoAssigned` cleared).
 - **No one switched on:** leads arrive unassigned, and the import result and the Lead assignment page say so.
 - **Admin view:** Admin → Lead assignment (`leads.assign`) shows a day's leads (today by default), how many came by round-robin, how many are unassigned, and each telecaller's count with an "Even ✓" check. It also shows who is next and each person's on/off switch.
+
+### Quick add for WhatsApp enquiries (Leads → Quick add)
+
+Click-to-WhatsApp ads land in the company WhatsApp with no form data. One intake person logs each chat in seconds, and the round-robin shares them out, so telecallers don't compete for leads.
+
+- **Who:** anyone with `leads.quick_add`. Admins have it. To make someone else the intake person, grant just this tag on their permissions (Admin → Permissions & tags): it doesn't let them create other leads, edit, import or assign. A telecaller who does intake still receives a fair share of the leads; switch them off under Lead assignment if they shouldn't.
+- **Form:** phone (required), name and their first message (both optional). Press Enter to add; the form clears and the cursor goes back to the phone box for the next one. Shift+Enter makes a new line in the message.
+- **Phone:** `98765 43210`, `+91 98765-43210`, `919876543210`, `098765 43210` and `0091 98765 43210` are all saved as `+919876543210`. A non-Indian number needs + and its country code. Anything else is refused with a reason.
+- **Saved as:** source **WhatsApp**, status New, product unknown, the message as the lead's notes, and the name "WhatsApp enquiry …3210" until the telecaller learns it.
+- **Duplicates:** a number that is already an **open** lead (New, Contacted, Qualified or Quoted) is not added. The screen says whose lead it is. A past Won or Lost customer enquiring again gets a new lead, marked "enquired before". The same number added twice at the same moment (a double Enter, or two people) still creates one lead.
+- **Feedback:** each add shows who it went to ("Added, assigned to Kavya Telecaller"), with a one-tap **WhatsApp** button that opens the chat, the number you've added today, and today's split across telecallers.
+- **Where:** Leads → **Quick add** (button on the Leads page and on the admin dashboard, and in the menu). Works on a phone browser too.
 
 ### 1. Bulk import (Leads → Import)
 
@@ -555,6 +568,8 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
 | POST   | `/leads`                 | `leads.write`          | Create: `{name, phone, source, productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. `assignedToId` for someone else needs `leads.assign` |
 | PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline with `{stageId}` (an active stage; `{status}` still works and picks that phase's stage). Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
+| POST   | `/leads/quick-add`       | `leads.quick_add`      | `{phone, name?, note?}`. Phone normalised to +91. Created: `{status:"created", lead, assignedTo, previous, addedToday}` (round-robin, source WhatsApp). Already an open lead: `{status:"duplicate", existing, addedToday}`, nothing created. 400 if it isn't a mobile number |
+| GET    | `/leads/quick-add/today` | `leads.quick_add`      | `{addedByYou, addedByEveryone, nextUp, telecallers:[{fullName, inRotation, leadsToday}]}` |
 | GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
 | POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?}`. Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
@@ -702,6 +717,7 @@ Interactive docs: `http://localhost:4000/api/docs`.
 |------|-------|---------------|
 | `/` Dashboard | logged in | Lead counts, pipeline breakdown, follow-ups due today and overdue, recent leads |
 | `/leads` | `leads.read` | Filterable lead list. Filters live in the URL, e.g. `/leads?status=QUOTED` |
+| `/leads/quick-add` | `leads.quick_add` | Log WhatsApp enquiries fast: phone (+ optional name, first message), Enter, next. Shows who each went to, a WhatsApp button, today's count and split |
 | `/leads/new` | `leads.write` | Create a lead. The salesperson picker appears only with `leads.assign` |
 | `/leads/:id` | `leads.read` | Details, edit, pipeline buttons, follow-ups (schedule and record outcome) |
 | `/leads/import` | `leads.write` | Download the template or the 30-lead sample, upload .csv/.xlsx (Meta exports as is), see created, duplicate and failed rows and who got how many |

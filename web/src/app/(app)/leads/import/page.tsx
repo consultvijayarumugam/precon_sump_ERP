@@ -37,7 +37,7 @@ interface ImportReport {
 }
 
 /** Sources a whole file can default to (API is only for the public API). */
-const DEFAULT_SOURCES: LeadSource[] = ["META", "MANUAL", "WEBSITE", "REFERRAL", "OTHER"];
+const DEFAULT_SOURCES: LeadSource[] = ["META", "WHATSAPP", "MANUAL", "WEBSITE", "REFERRAL", "OTHER"];
 
 function Summary({ label, value, tone }: { label: string; value: number; tone: "green" | "amber" | "red" }) {
   const tones = {

@@ -20,6 +20,26 @@ export function normalizePhone(raw: unknown): string | null {
 }
 
 /**
+ * An Indian mobile number however it was typed or pasted, as +91XXXXXXXXXX:
+ * "98765 43210", "+91 98765-43210", "919876543210", "098765 43210" and
+ * "0091 98765 43210" all become "+919876543210". A number that starts with +
+ * and another country code is kept (8-15 digits). Null for anything else,
+ * including text mixed into the number.
+ */
+export function normalizeIndianPhone(raw: unknown): string | null {
+  const value = text(raw);
+  if (!/^[\s(]*\+?[\d\s\-().]+$/.test(value)) return null;
+  let digits = value.replace(/\D/g, '');
+  const international = /^[\s(]*\+/.test(value) || digits.startsWith('00');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (!international && digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1); // trunk 0
+  if (!international && digits.length === 10) digits = `91${digits}`;
+  if (digits.startsWith('91') && digits.length === 12) return /^91[6-9]/.test(digits) ? `+${digits}` : null;
+  if (international && !digits.startsWith('91') && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return null;
+}
+
+/**
  * The part of a phone number used to spot duplicates: its last 10 digits, so
  * "+919876543210", "919876543210" and "9876543210" are the same person.
  */
@@ -54,8 +74,9 @@ export function parseSource(raw: unknown, fallback: LeadSource): LeadSource | nu
   if (['referral', 'reference'].includes(t)) return 'REFERRAL';
   if (['other', 'others'].includes(t)) return 'OTHER';
   if (['api'].includes(t)) return 'API';
+  if (['whatsapp', 'whats app', 'wa'].includes(t)) return 'WHATSAPP';
   return null;
 }
 
-export const VALID_SOURCES_TEXT = 'Meta, Manual, Website, Referral or Other';
+export const VALID_SOURCES_TEXT = 'Meta, WhatsApp, Manual, Website, Referral or Other';
 export const VALID_SIZES_TEXT = SUMP_SIZES_LITRES.join(', ');

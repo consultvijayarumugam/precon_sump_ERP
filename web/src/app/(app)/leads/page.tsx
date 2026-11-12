@@ -1,6 +1,6 @@
 "use client";
 
-import { Upload } from "lucide-react";
+import { Upload, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -73,12 +73,23 @@ function LeadsView() {
       <PageHeader
         title={can(TAGS.LEADS_READ_ALL) ? "All leads" : "My leads"}
         action={
-          can(TAGS.LEADS_WRITE) && (
-            <div className="flex gap-2">
-              <Link href="/leads/import" className={secondaryButtonClass}>
-                <Upload className="size-4" aria-hidden /> Import
-              </Link>
-              <LinkButton href="/leads/new">New lead</LinkButton>
+          (can(TAGS.LEADS_WRITE) || can(TAGS.LEADS_QUICK_ADD)) && (
+            <div className="flex flex-wrap gap-2">
+              {can(TAGS.LEADS_WRITE) && (
+                <Link href="/leads/import" className={secondaryButtonClass}>
+                  <Upload className="size-4" aria-hidden /> Import
+                </Link>
+              )}
+              {can(TAGS.LEADS_WRITE) && (
+                <Link href="/leads/new" className={secondaryButtonClass}>
+                  New lead
+                </Link>
+              )}
+              {can(TAGS.LEADS_QUICK_ADD) && (
+                <LinkButton href="/leads/quick-add">
+                  <Zap className="size-4" aria-hidden /> Quick add
+                </LinkButton>
+              )}
             </div>
           )
         }

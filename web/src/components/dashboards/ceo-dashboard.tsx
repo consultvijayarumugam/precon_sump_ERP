@@ -14,6 +14,7 @@ import {
   PhoneCall,
   ShieldCheck,
   TriangleAlert,
+  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -21,7 +22,7 @@ import { ReactNode, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { VisitsMap } from "@/components/check-in";
 import { ErrorText } from "@/components/ui";
-import { formatDateTime, SOURCE_LABELS } from "@/lib/crm";
+import { formatDateTime, SOURCE_LABELS, TAGS } from "@/lib/crm";
 import { formatINR, formatINRShort } from "@/lib/finance";
 import { useApi } from "@/lib/use-api";
 import { Flag, formatTalkTime, MasterDashboardData, percent, TalkPeriod } from "@/lib/workflow";
@@ -569,7 +570,7 @@ const longDate = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numer
 
 /** The owner's morning dashboard: the five numbers that matter, then who to talk to. */
 export function CeoDashboard() {
-  const { user, operations } = useAuth();
+  const { user, operations, can } = useAuth();
   const { data, error } = useApi<MasterDashboardData>("/dashboards/master");
   const [now] = useState(() => new Date());
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
@@ -595,6 +596,14 @@ export function CeoDashboard() {
               {greeting}, {user.fullName.split(" ")[0]}
             </h1>
             <p className="mt-1.5 text-sm text-sky-100/80">{longDate.format(now)}</p>
+            {can(TAGS.LEADS_QUICK_ADD) && (
+              <Link
+                href="/leads/quick-add"
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-[var(--ps-navy-950)] shadow-sm hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                <Zap className="size-4" aria-hidden /> Quick add WhatsApp lead
+              </Link>
+            )}
           </div>
           {data && o && (
             <div className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-white/15 text-center backdrop-blur-sm">

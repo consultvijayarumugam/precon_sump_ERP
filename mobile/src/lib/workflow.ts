@@ -31,6 +31,7 @@ export const BUCKET_LABELS: Record<WorklistBucket, string> = {
 
 export const SOURCE_LABELS: Record<string, string> = {
   META: 'Meta (Facebook)',
+  WHATSAPP: 'WhatsApp',
   MANUAL: 'Manual',
   WEBSITE: 'Website',
   REFERRAL: 'Referral',

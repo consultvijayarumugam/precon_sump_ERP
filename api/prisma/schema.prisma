@@ -150,6 +150,7 @@ enum LeadSource {
   REFERRAL
   OTHER
   API // created by an external system through the public API
+  WHATSAPP // a click-to-WhatsApp ad enquiry, logged with Quick add
 }
 
 // The two product types the business makes (see CLAUDE.md "Products").

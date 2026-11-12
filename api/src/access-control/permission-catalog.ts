@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   LEADS_READ: 'leads.read',
   LEADS_READ_ALL: 'leads.read_all',
   LEADS_WRITE: 'leads.write',
+  LEADS_QUICK_ADD: 'leads.quick_add',
   LEADS_QUALIFY: 'leads.qualify',
   LEADS_ASSIGN: 'leads.assign',
   LEADS_AUDIT: 'leads.audit',
@@ -125,6 +126,12 @@ export const PERMISSION_DEFINITIONS: {
     key: PERMISSIONS.LEADS_WRITE,
     module: 'crm',
     description: 'Create leads and edit leads you can see',
+  },
+  {
+    key: PERMISSIONS.LEADS_QUICK_ADD,
+    module: 'crm',
+    description:
+      'Quick add WhatsApp enquiries (phone, optional name and first message); they go round-robin to the telecallers. Nothing else: no editing, importing or assigning leads',
   },
   {
     key: PERMISSIONS.LEADS_QUALIFY,

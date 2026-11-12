@@ -2376,6 +2376,118 @@ describe('Auth and RBAC (e2e)', () => {
     });
   });
 
+  describe('Quick add: WhatsApp enquiries, round-robin to telecallers, duplicates flagged', () => {
+    let admin: string;
+    let tara: string;
+    let sales: string;
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const PHONES = ['9000088101', '9000088102', '9000088103', '9000088104', '9000088105', '9000088106', '9000088107', '9000088108'];
+    const quickAdd = (token: string, body: Record<string, unknown>) => http().post('/api/v1/leads/quick-add').set(as(token)).send(body);
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    const leadsWithPhone = async (digits: string) => (await prisma()).lead.findMany({ where: { phone: { endsWith: digits } } });
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+      tara = (await login('telecaller@precon.local')).body.accessToken;
+      sales = (await login('sales@precon.local')).body.accessToken;
+    });
+    afterAll(async () => {
+      const db = await prisma();
+      await db.lead.deleteMany({ where: { OR: PHONES.map((p) => ({ phone: { endsWith: p } })) } });
+      await db.userPermission.deleteMany({ where: { user: { email: 'telecaller@precon.local' }, permission: { key: 'leads.quick_add' } } });
+    });
+
+    it('three numbers in a row go round-robin to different telecallers, as WhatsApp leads with +91', async () => {
+      const rotation = (await http().get('/api/v1/lead-assignment').set(as(admin)).expect(200)).body.members.filter(
+        (m: { autoAssignEnabled: boolean }) => m.autoAssignEnabled,
+      );
+      const results = [];
+      for (const phone of PHONES.slice(0, 3)) results.push((await quickAdd(admin, { phone }).expect(200)).body);
+
+      expect(results.map((r) => r.status)).toEqual(['created', 'created', 'created']);
+      const assignees = results.map((r) => r.assignedTo?.fullName);
+      expect(assignees.every(Boolean)).toBe(true);
+      expect(new Set(assignees).size).toBe(Math.min(3, rotation.length));
+      expect(results[2].addedToday).toBe(results[0].addedToday + 2);
+
+      const [lead] = await leadsWithPhone(PHONES[0]);
+      expect(lead).toMatchObject({ phone: `+91${PHONES[0]}`, source: 'WHATSAPP', status: 'NEW', autoAssigned: true, productInterest: null });
+      expect(lead.name).toBe(`WhatsApp enquiry …${PHONES[0].slice(-4)}`);
+      expect(lead.telecallerId).toBe(lead.assignedToId);
+    });
+
+    it('the assigned telecaller sees the new lead at the top of their worklist as not called yet', async () => {
+      const added = (await quickAdd(admin, { phone: `+91 ${PHONES[3]}`, name: 'Ravi', note: 'Hi, 5000 L sump price?' }).expect(200)).body;
+      const owner = await (await prisma()).user.findUniqueOrThrow({ where: { id: added.assignedTo.id } });
+      const token = (await login(owner.email)).body.accessToken;
+      const worklist = (await http().get('/api/v1/dashboards/telecaller').set(as(token)).expect(200)).body;
+      const item = worklist.items.find((i: { id: string }) => i.id === added.lead.id);
+      expect(item).toMatchObject({ name: 'Ravi', bucket: 'new', notes: 'Hi, 5000 L sump price?' });
+    });
+
+    it('a number that is already an open lead is flagged, however it is written, and nothing is created', async () => {
+      const first = (await quickAdd(admin, { phone: PHONES[4] }).expect(200)).body;
+      for (const written of [`+91 ${PHONES[4]}`, `0${PHONES[4]}`, `91-${PHONES[4]}`]) {
+        const again = (await quickAdd(admin, { phone: written, name: 'Someone else' }).expect(200)).body;
+        expect(again).toMatchObject({ status: 'duplicate', existing: { id: first.lead.id, status: 'NEW', assignedTo: first.assignedTo } });
+      }
+      expect(await leadsWithPhone(PHONES[4])).toHaveLength(1);
+    });
+
+    it('two adds of the same number at the same moment create one lead', async () => {
+      const [a, b] = await Promise.all([quickAdd(admin, { phone: PHONES[5] }), quickAdd(admin, { phone: PHONES[5] })]);
+      expect([a.body.status, b.body.status].sort((x, y) => x.localeCompare(y))).toEqual(['created', 'duplicate']);
+      expect(await leadsWithPhone(PHONES[5])).toHaveLength(1);
+    });
+
+    it('a past Lost customer enquiring again gets a new lead that points to the old one', async () => {
+      const old = (await quickAdd(admin, { phone: PHONES[6] }).expect(200)).body;
+      await (await prisma()).lead.update({ where: { id: old.lead.id }, data: { status: 'LOST', closedAt: new Date() } });
+      const again = (await quickAdd(admin, { phone: PHONES[6] }).expect(200)).body;
+      expect(again).toMatchObject({ status: 'created', previous: { id: old.lead.id, status: 'LOST' } });
+      expect(again.lead.id).not.toBe(old.lead.id);
+    });
+
+    it('refuses what is not a mobile number', async () => {
+      for (const phone of ['12345', '1234567890', 'call me', '']) await quickAdd(admin, { phone }).expect(400);
+      await quickAdd(admin, {}).expect(400);
+      await quickAdd(admin, { phone: PHONES[7], assignedToId: 'x' }).expect(400);
+      expect(await leadsWithPhone(PHONES[7])).toHaveLength(0);
+    });
+
+    it('needs the leads.quick_add tag: admins have it; a telecaller can be given it on its own', async () => {
+      await quickAdd(tara, { phone: PHONES[7] }).expect(403);
+      await quickAdd(sales, { phone: PHONES[7] }).expect(403);
+      await http().get('/api/v1/leads/quick-add/today').set(as(tara)).expect(403);
+      await http().post('/api/v1/leads/quick-add').send({ phone: PHONES[7] }).expect(401);
+
+      const db = await prisma();
+      const [user, tag] = await Promise.all([
+        db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } }),
+        db.permission.findUniqueOrThrow({ where: { key: 'leads.quick_add' } }),
+      ]);
+      await db.userPermission.create({ data: { userId: user.id, permissionId: tag.id, effect: 'GRANT' } });
+      expect((await quickAdd(tara, { phone: PHONES[7] }).expect(200)).body.status).toBe('created');
+      // Still no general lead creation.
+      await http().post('/api/v1/leads').set(as(tara)).send({ name: 'Nope', phone: '9000088199', source: 'MANUAL' }).expect(403);
+      const today = (await http().get('/api/v1/leads/quick-add/today').set(as(tara)).expect(200)).body;
+      expect(today.addedByYou).toBe(1);
+    });
+
+    it("today's numbers: your count, everyone's, and each telecaller's share", async () => {
+      const today = (await http().get('/api/v1/leads/quick-add/today').set(as(admin)).expect(200)).body;
+      expect(today.addedByYou).toBeGreaterThanOrEqual(7);
+      expect(today.addedByEveryone).toBeGreaterThanOrEqual(today.addedByYou + 1);
+      expect(today.telecallers.length).toBeGreaterThan(0);
+      expect(today.telecallers[0]).toEqual(expect.objectContaining({ fullName: expect.any(String), leadsToday: expect.any(Number) }));
+    });
+  });
+
   describe('Call-log sync: real call durations from the phone, talk-time on the master dashboard', () => {
     let admin: string;
     let tara: string;
