@@ -12,9 +12,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// The browser tab reads "PRECON SUMP" on every page, login included.
 export const metadata: Metadata = {
-  title: "Precon Sump",
-  description: "Precon ERP dashboard",
+  title: "PRECON SUMP",
+  description: "PRECON SUMP: sales and telecaller CRM",
+  applicationName: "PRECON SUMP",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

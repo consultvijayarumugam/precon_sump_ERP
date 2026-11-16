@@ -1787,7 +1787,16 @@ describe('Auth and RBAC (e2e)', () => {
       const list = (await http().get('/api/v1/site-visits').set(as(suresh)).expect(200)).body;
       expect(list.every((v: { person: { id: string } }) => v.person.id === ids.suresh)).toBe(true);
       await http().get(`/api/v1/site-visits/${visit.id}`).set(as(suresh)).expect(404);
-      await http().get(`/api/v1/site-visits/${visit.id}`).set(as(admin)).expect(200);
+
+      // Admin sees every visit with its GPS reading, for the map; the visitor sees their own.
+      const adminList = (await http().get('/api/v1/site-visits').set(as(admin)).expect(200)).body;
+      expect(new Set(adminList.map((v: { person: { id: string } }) => v.person.id)).size).toBeGreaterThan(1);
+      const listed = adminList.find((v: { id: string }) => v.id === visit.id);
+      expect(listed).toMatchObject({ latitude: 11.3421, longitude: 77.7172, accuracyMeters: 12, notes: 'E2E measured the pit', person: { id: ids.priya }, lead: { id: leadId } });
+      expect(typeof listed.checkedInAt).toBe('string');
+      const one = (await http().get(`/api/v1/site-visits/${visit.id}`).set(as(admin)).expect(200)).body;
+      expect(one).toMatchObject({ latitude: 11.3421, longitude: 77.7172, lead: { id: leadId } });
+      await http().get(`/api/v1/site-visits/${visit.id}`).set(as(priya)).expect(200);
     });
 
     it('admin sees the full change history (who, what from -> to, when); telecaller and sales do not', async () => {

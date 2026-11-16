@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { DeliveryScene } from "@/components/delivery-scene";
 import { buttonClass, ErrorText, Field, inputClass, panelClass } from "@/components/ui";
 import { login } from "@/lib/api";
 
@@ -29,6 +30,10 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-gradient-to-b from-brand-950 to-brand-800 p-4">
       <div className="w-full max-w-sm">
+        {/* Wider than the form on larger screens; edges fade into the background. */}
+        <div className="mb-2 sm:-mx-20">
+          <DeliveryScene className="[mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]" />
+        </div>
         <div className="mb-6 flex items-center justify-center gap-3 text-white">
           <span className="grid size-10 place-items-center rounded-lg bg-brand-500 shadow-md">
             <svg viewBox="0 0 20 20" className="size-6" aria-hidden>
@@ -39,7 +44,7 @@ export default function LoginPage() {
             </svg>
           </span>
           <span className="text-2xl tracking-tight">
-            <span className="font-semibold">Precon</span> <span className="font-light text-brand-200">ERP</span>
+            <span className="font-semibold">Precon</span> <span className="font-light text-brand-200">Sump</span>
           </span>
         </div>
 
@@ -73,7 +78,7 @@ export default function LoginPage() {
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <p className="mt-6 text-center text-xs text-brand-200/70">Precon sumps (3,000–20,000 L) · microbes</p>
+        <p className="mt-6 text-center text-xs text-brand-200/70">Ready-made precast sumps, delivered to your site</p>
       </div>
     </main>
   );

@@ -17,7 +17,7 @@ import {
   WorklistItem,
 } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
-import { EmptyNote, Greeting, KpiRow, KpiTile } from "./shared";
+import { DailyQuote, EmptyNote, Greeting, KpiRow, KpiTile } from "./shared";
 
 const BUCKET_ORDER: WorklistBucket[] = ["overdue", "today", "new", "no_next_step", "later"];
 
@@ -167,6 +167,7 @@ export function TelecallerDashboard() {
             : "Your call list, most urgent first."
         }
       />
+      <DailyQuote />
       <ErrorText error={error} />
       <MyReminders />
       <KpiRow>

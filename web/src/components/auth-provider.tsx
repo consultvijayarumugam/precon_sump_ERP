@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       <main className="grid min-h-screen place-items-center p-4">
         <div className="flex items-center gap-3 text-sm text-neutral-500">
           <span className="size-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" aria-hidden />
-          Loading Precon ERP…
+          Loading Precon Sump…
         </div>
       </main>
     );

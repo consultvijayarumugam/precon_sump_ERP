@@ -3,7 +3,7 @@
 // Building blocks shared by the role dashboards. Every data hook here takes a
 // path or null; callers pass null when the user lacks the tag, so a dashboard
 // never asks the API for something the role can't see.
-import type { LucideIcon } from "lucide-react";
+import { Quote as QuoteIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
@@ -13,6 +13,7 @@ import { queryString } from "@/lib/api";
 import { CrmSummary, dayKey, FollowUpWithLead, formatTime } from "@/lib/crm";
 import { Product } from "@/lib/finance";
 import { MODULES, ModuleKey } from "@/lib/modules";
+import { quoteOfTheDay } from "@/lib/quotes";
 import { TAGS } from "@/lib/tags";
 import { useStages } from "@/lib/stages";
 import { useApi } from "@/lib/use-api";
@@ -33,6 +34,24 @@ export function Greeting({ subtitle }: { subtitle: ReactNode }) {
       </h1>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">{subtitle}</p>
     </section>
+  );
+}
+
+/** Quote of the day: the same for the whole team today, a new one tomorrow. */
+export function DailyQuote() {
+  const [quote] = useState(() => quoteOfTheDay());
+  return (
+    <figure className="relative flex items-start gap-4 overflow-hidden rounded-2xl border border-[var(--ps-line)] bg-[var(--ps-card)] px-5 py-4 shadow-xs">
+      <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-[var(--ps-aqua-500)] to-[var(--ps-blue-600)]" aria-hidden />
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--ps-tint-50)] text-[var(--ps-blue-600)]">
+        <QuoteIcon className="size-5" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ps-aqua-500)]">Thought for today</p>
+        <blockquote className="mt-1 text-[15px] leading-snug font-medium text-[var(--ps-ink)] sm:text-base">{quote.text}</blockquote>
+        {quote.author && <figcaption className="mt-1 text-xs text-[var(--ps-ink-3)]">— {quote.author}</figcaption>}
+      </div>
+    </figure>
   );
 }
 

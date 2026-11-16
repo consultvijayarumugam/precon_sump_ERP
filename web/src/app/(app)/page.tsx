@@ -17,7 +17,7 @@ function OperationsOffNotice() {
     <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-neutral-200 bg-white p-8 text-center shadow-xs dark:border-neutral-800 dark:bg-neutral-900">
       <h1 className="text-xl font-bold tracking-tight">Operations are switched off</h1>
       <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-        Precon ERP is running as the sales and telecaller CRM. Installations, service and stock will appear here when operations are switched on.
+        Precon Sump is running as the sales and telecaller CRM. Installations, service and stock will appear here when operations are switched on.
       </p>
     </div>
   );

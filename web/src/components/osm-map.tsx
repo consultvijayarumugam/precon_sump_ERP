@@ -1,6 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 export interface MapPin {
@@ -12,6 +13,9 @@ export interface MapPin {
   subtitle?: string;
   /** Pin colour (any CSS colour). */
   color?: string;
+  /** Adds an "Open" link to the popup (an in-app path, e.g. /site-visits/123). */
+  href?: string;
+  linkLabel?: string;
 }
 
 /**
@@ -21,6 +25,7 @@ export interface MapPin {
  */
 export function OsmMap({ pins, height = 320, emptyText = "No locations yet." }: { pins: MapPin[]; height?: number; emptyText?: string }) {
   const container = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (!container.current || pins.length === 0) return;
@@ -46,6 +51,21 @@ export function OsmMap({ pins, height = 320, emptyText = "No locations yet." }: 
           sub.textContent = pin.subtitle;
           popup.appendChild(sub);
         }
+        if (pin.href) {
+          const link = document.createElement("a");
+          const href = pin.href;
+          link.href = href;
+          link.textContent = `${pin.linkLabel ?? "Open"} →`;
+          link.style.display = "inline-block";
+          link.style.marginTop = "6px";
+          link.style.fontWeight = "600";
+          link.addEventListener("click", (e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey) return; // new tab as usual
+            e.preventDefault();
+            router.push(href);
+          });
+          popup.appendChild(link);
+        }
         L.circleMarker(at, { radius: 8, color: "#ffffff", weight: 2, fillColor: pin.color ?? "#2557eb", fillOpacity: 0.95 })
           .bindPopup(popup)
           .addTo(map);
@@ -57,7 +77,7 @@ export function OsmMap({ pins, height = 320, emptyText = "No locations yet." }: 
       disposed = true;
       map?.remove();
     };
-  }, [pins]);
+  }, [pins, router]);
 
   if (pins.length === 0) {
     return (

@@ -100,3 +100,36 @@ body {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
 }
+
+/*
+ * Login scene (components/delivery-scene.tsx): the lorry drives in once, then
+ * cruises while the background layers scroll by. Transforms and opacity only,
+ * so it stays smooth on low-end machines. Still when "reduce motion" is on.
+ */
+.ls-scene .ls-far { animation: ls-scroll 36s linear infinite; }
+.ls-scene .ls-mid { animation: ls-scroll 16s linear infinite; }
+.ls-scene .ls-wave { animation: ls-scroll 9s linear infinite; }
+.ls-scene .ls-dash { animation: ls-dash 0.55s linear infinite; }
+.ls-scene .ls-lorry { animation: ls-arrive 2.4s cubic-bezier(0.22, 0.85, 0.3, 1) both; }
+.ls-scene .ls-bob { animation: ls-bob 0.42s ease-in-out infinite alternate; }
+.ls-scene .ls-wheel { transform-box: fill-box; transform-origin: center; animation: ls-spin 0.5s linear infinite; }
+.ls-scene .ls-speed line { animation: ls-speed 0.9s ease-out infinite; }
+.ls-scene .ls-speed line:nth-child(2) { animation-delay: 0.3s; }
+.ls-scene .ls-speed line:nth-child(3) { animation-delay: 0.6s; }
+.ls-scene .ls-beam { animation: ls-glow 2.8s ease-in-out infinite; }
+
+@keyframes ls-scroll { to { transform: translateX(-400px); } }
+@keyframes ls-dash { to { stroke-dashoffset: 30; } }
+@keyframes ls-arrive { from { transform: translateX(-330px); } to { transform: translateX(0); } }
+@keyframes ls-bob { to { transform: translateY(-1.1px); } }
+@keyframes ls-spin { to { transform: rotate(360deg); } }
+@keyframes ls-speed {
+  0% { transform: translateX(0); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateX(-16px); opacity: 0; }
+}
+@keyframes ls-glow { 50% { opacity: 0.55; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ls-scene *, .ls-scene { animation: none !important; }
+}

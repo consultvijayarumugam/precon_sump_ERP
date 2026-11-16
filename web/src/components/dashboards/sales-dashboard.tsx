@@ -14,7 +14,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useApi } from "@/lib/use-api";
 import { SalesDashboardData, SalesLead } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
-import { EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from "./shared";
+import { DailyQuote, EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from "./shared";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 
@@ -134,6 +134,7 @@ export function SalesDashboard() {
             : "Your pipeline, follow-ups and site visits."
         }
       />
+      <DailyQuote />
       <ErrorText error={error} />
       <MyReminders />
       <KpiRow>
@@ -222,7 +223,7 @@ export function SalesDashboard() {
                 {data && data.visits.length === 0 && <li className="py-2 text-neutral-500">No check-ins yet.</li>}
               </ul>
             </div>
-            <div className="lg:col-span-3">{data && <VisitsMap visits={data.visits} height={420} />}</div>
+            <div className="lg:col-span-3">{data && <VisitsMap visits={data.visits} height={420} link />}</div>
           </div>
         </section>
       )}

@@ -7,25 +7,38 @@ import { buttonClass, inputClass } from "@/components/ui";
 import { apiPost } from "@/lib/api";
 import { formatDateTime, LeadStatus, STATUS_LABELS } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
-import { CheckIn } from "@/lib/workflow";
 
 const PERSON_COLORS = ["#2557eb", "#059669", "#d97706", "#7c3aed", "#db2777", "#0891b2"];
 
-/** Pins for check-ins, one colour per person. */
-export function useCheckInPins(visits: CheckIn[] | undefined) {
+/** Any visit that may carry a GPS reading: a check-in, or a site visit from /site-visits. */
+export interface MappableVisit {
+  id: string;
+  customerName: string;
+  latitude: number | null;
+  longitude: number | null;
+  checkedInAt: string | null;
+  person: { id: string; fullName: string };
+  lead?: { name: string } | null;
+}
+
+/** Pins for visits with a location, one colour per person. `link` adds "Open visit" to each popup. */
+export function useCheckInPins(visits: MappableVisit[] | undefined, { link = false }: { link?: boolean } = {}) {
   return useMemo(() => {
-    const people = [...new Map((visits ?? []).map((v) => [v.person.id, v.person.fullName])).entries()];
+    const located = (visits ?? []).filter((v) => v.latitude !== null && v.longitude !== null);
+    const people = [...new Map(located.map((v) => [v.person.id, v.person.fullName])).entries()];
     const colorOf = new Map(people.map(([id], i) => [id, PERSON_COLORS[i % PERSON_COLORS.length]]));
-    const pins: Pin[] = (visits ?? []).map((v) => ({
+    const pins: Pin[] = located.map((v) => ({
       id: v.id,
-      latitude: v.latitude,
-      longitude: v.longitude,
+      latitude: v.latitude!,
+      longitude: v.longitude!,
       title: v.lead?.name ?? v.customerName,
-      subtitle: `${v.person.fullName} · ${formatDateTime(v.checkedInAt)}`,
+      subtitle: `${v.person.fullName}${v.checkedInAt ? ` · ${formatDateTime(v.checkedInAt)}` : ""}`,
       color: colorOf.get(v.person.id),
+      href: link ? `/site-visits/${v.id}` : undefined,
+      linkLabel: "Open visit",
     }));
     return { pins, legend: people.map(([id, name]) => ({ id, name, color: colorOf.get(id)! })) };
-  }, [visits]);
+  }, [visits, link]);
 }
 
 export const osmLink = (lat: number, lng: number) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
@@ -133,11 +146,12 @@ export function CheckInButton({ leadId: fixedLeadId, onCheckedIn }: { leadId?: s
   );
 }
 
-export function VisitsMap({ visits, height = 300 }: { visits: CheckIn[]; height?: number }) {
-  const { pins, legend } = useCheckInPins(visits);
+/** Visits as pins on an OSM map, with a colour legend per person. `link` makes each pin open its visit. */
+export function VisitsMap({ visits, height = 300, link = false, emptyText = "No site check-ins yet." }: { visits: MappableVisit[]; height?: number; link?: boolean; emptyText?: string }) {
+  const { pins, legend } = useCheckInPins(visits, { link });
   return (
     <div className="space-y-2">
-      <OsmMap pins={pins} height={height} emptyText="No site check-ins yet." />
+      <OsmMap pins={pins} height={height} emptyText={emptyText} />
       {legend.length > 1 && (
         <div className="flex flex-wrap gap-3 text-xs text-neutral-600 dark:text-neutral-400">
           {legend.map((l) => (

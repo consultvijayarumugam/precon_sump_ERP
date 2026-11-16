@@ -27,6 +27,7 @@ import { formatINR, formatINRShort } from "@/lib/finance";
 import { useApi } from "@/lib/use-api";
 import { Flag, formatTalkTime, MasterDashboardData, percent, TalkPeriod } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
+import { DailyQuote } from "./shared";
 
 // --- Building blocks ---------------------------------------------------------------
 
@@ -564,6 +565,27 @@ function Leaderboard({ data }: { data: MasterDashboardData }) {
   );
 }
 
+/** The latest check-ins beside the map: who, which lead, when, and their note. */
+function RecentVisits({ visits }: { visits: MasterDashboardData["visits"] }) {
+  if (visits.length === 0) return null;
+  return (
+    <ul className="divide-y divide-[var(--ps-line)] text-sm lg:max-h-[380px] lg:overflow-y-auto">
+      {visits.slice(0, 8).map((v) => (
+        <li key={v.id}>
+          <Link href={`/site-visits/${v.id}`} className="block rounded-lg px-2 py-2.5 hover:bg-[var(--ps-tint-50)]">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate font-semibold text-[var(--ps-ink)]">{v.lead?.name ?? v.customerName}</span>
+              <span className="shrink-0 text-xs text-[var(--ps-ink-3)]">{formatDateTime(v.checkedInAt)}</span>
+            </div>
+            <div className="text-xs text-[var(--ps-ink-2)]">by {v.person.fullName}</div>
+            {v.notes && <div className="mt-0.5 line-clamp-2 text-xs text-[var(--ps-ink-3)]">{v.notes}</div>}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // --- Page --------------------------------------------------------------------------------
 
 const longDate = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -621,6 +643,8 @@ export function CeoDashboard() {
           )}
         </div>
       </section>
+
+      <DailyQuote />
 
       <ErrorText error={error} />
       {!data && !error && <p className="text-sm text-[var(--ps-ink-3)]">Loading today&apos;s numbers…</p>}
@@ -723,8 +747,13 @@ export function CeoDashboard() {
 
           <TalkTimePanel talkTime={data.talkTime} />
 
-          <Panel title="Sales site visits" subtitle="GPS check-ins, last 30 days" action={<PanelLink href="/site-visits">All visits</PanelLink>}>
-            <VisitsMap visits={data.visits} height={380} />
+          <Panel title="Sales site visits" subtitle="GPS check-ins, last 30 days · tap a pin to open the visit" action={<PanelLink href="/site-visits">All visits</PanelLink>}>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <VisitsMap visits={data.visits} height={380} link />
+              </div>
+              <RecentVisits visits={data.visits} />
+            </div>
           </Panel>
 
           <MyReminders hideWhenEmpty />

@@ -1,18 +1,20 @@
 "use client";
 
+import { MapPin } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { CheckInButton } from "@/components/check-in";
+import { CheckInButton, VisitsMap } from "@/components/check-in";
 import { SiteVisitForm } from "@/components/site-visit-form";
 import { buttonClass, ErrorText, NoAccess, PageHeader, panelClass, secondaryButtonClass, TagChip } from "@/components/ui";
 import { apiPost, queryString } from "@/lib/api";
+import { formatDateTime } from "@/lib/crm";
 import { formatDateOnly } from "@/lib/finance";
 import { SiteVisit, SiteVisitTag } from "@/lib/service";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
 
-/** Site visits (#18) with tag filters. */
+/** Site visits (#18) with tag filters, and GPS check-ins as pins on an OSM map. Salespeople see only their own. */
 export default function SiteVisitsPage() {
   const { can, operations } = useAuth();
   const canRead = can(TAGS.SITEVISIT_READ);
@@ -21,6 +23,7 @@ export default function SiteVisitsPage() {
   const tags = useApi<SiteVisitTag[]>(canRead ? "/site-visit-tags?includeInactive=true" : null);
   const visits = useApi<SiteVisit[]>(canRead ? `/site-visits${queryString({ tagId })}` : null);
   if (!canRead) return <NoAccess tag={TAGS.SITEVISIT_READ} />;
+  const located = visits.data?.filter((v) => v.latitude !== null).length ?? 0;
 
   return (
     <>
@@ -73,6 +76,17 @@ export default function SiteVisitsPage() {
       </div>
 
       <ErrorText error={visits.error ?? tags.error} />
+      {visits.data && visits.data.length > 0 && (
+        <section className={`${panelClass} mb-6 p-4`}>
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-semibold">Where the visits were</h2>
+            <span className="text-xs text-neutral-500">
+              {located} of {visits.data.length} with a GPS check-in · tap a pin to open the visit
+            </span>
+          </div>
+          <VisitsMap visits={visits.data} height={400} link emptyText="None of these visits has a GPS location yet." />
+        </section>
+      )}
       {visits.data?.length === 0 && <p className="text-sm text-neutral-500">No site visits match.</p>}
       <ul className="space-y-2">
         {visits.data?.map((v) => (
@@ -90,9 +104,20 @@ export default function SiteVisitsPage() {
               <span className="text-neutral-500">by {v.person.fullName}</span>
             </div>
             <p className="mt-1">{v.purpose}</p>
-            <p className="text-xs text-neutral-500">
-              {v.siteAddress}
-              {v.installation && ` · ${v.installation.orderNumberLabel} installation`}
+            {v.notes && <p className="mt-0.5 text-neutral-600 dark:text-neutral-400">{v.notes}</p>}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
+              {v.latitude !== null && v.checkedInAt && (
+                <Link
+                  href={`/site-visits/${v.id}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100 dark:bg-brand-950 dark:text-brand-300"
+                >
+                  <MapPin className="size-3" aria-hidden /> Checked in {formatDateTime(v.checkedInAt)} · view map
+                </Link>
+              )}
+              <span>
+                {v.siteAddress}
+                {v.installation && ` · ${v.installation.orderNumberLabel} installation`}
+              </span>
             </p>
           </li>
         ))}

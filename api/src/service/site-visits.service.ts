@@ -21,6 +21,12 @@ const VISIT_SELECT = {
   purpose: true,
   notes: true,
   createdAt: true,
+  // GPS check-in ("I'm at site"): one reading, shown as a pin on an OSM map.
+  latitude: true,
+  longitude: true,
+  accuracyMeters: true,
+  checkedInAt: true,
+  lead: { select: { id: true, name: true, phone: true, city: true } },
   person: { select: { id: true, fullName: true } },
   createdBy: { select: { id: true, fullName: true } },
   tags: { orderBy: { name: 'asc' }, select: TAG_SELECT },

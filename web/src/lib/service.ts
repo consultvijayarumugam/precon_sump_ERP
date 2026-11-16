@@ -150,6 +150,12 @@ export interface SiteVisit {
   purpose: string;
   notes: string | null;
   createdAt: string;
+  /** GPS check-in ("I'm at site"): set when the visit was recorded with a location. */
+  latitude: number | null;
+  longitude: number | null;
+  accuracyMeters: number | null;
+  checkedInAt: string | null;
+  lead: { id: string; name: string; phone: string; city: string | null } | null;
   person: UserRef;
   createdBy: UserRef;
   tags: SiteVisitTag[];
