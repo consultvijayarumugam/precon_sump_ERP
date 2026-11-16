@@ -1,0 +1,92 @@
+# Precon CRM on the VPS, behind the EXISTING Traefik (Compose project "n8n",
+# network n8n_default, cert resolver mytlschallenge). Same pattern as the
+# other apps there: no host ports are published, and only the web container
+# joins Traefik's network (as an external network). Postgres and the API sit
+# on Precon's own private network.
+#
+# Routers/services are named "precon" so they never collide with another
+# app's labels (another app on this server already uses "crm").
+#
+# Normally run via deploy.sh:
+#   docker compose -p precon --env-file .env.production build
+#   docker compose -p precon --env-file .env.production up -d
+
+name: precon
+
+services:
+  db:
+    image: postgres:17-bookworm
+    container_name: precon-db
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    environment:
+      POSTGRES_DB: precon
+      POSTGRES_USER: precon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - precon
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U precon -d precon"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../api
+    image: precon-api:${GIT_SHA:-latest}
+    container_name: precon-api
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    env_file:
+      - ./.env.production
+    environment:
+      DATABASE_URL: postgresql://precon:${POSTGRES_PASSWORD}@precon-db:5432/precon
+    volumes:
+      - files:/app/storage
+    networks:
+      - precon
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../web
+      args:
+        API_PROXY_TARGET: http://precon-api:4000
+    image: precon-web:${GIT_SHA:-latest}
+    container_name: precon-web
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    networks:
+      - precon
+      - n8n_default
+    depends_on:
+      - api
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.precon.rule=Host(`${CRM_DOMAIN:?set CRM_DOMAIN in .env.production}`)
+      - traefik.http.routers.precon.entrypoints=websecure
+      - traefik.http.routers.precon.tls.certresolver=mytlschallenge
+      - traefik.http.routers.precon.service=precon
+      - traefik.http.services.precon.loadbalancer.server.port=3000
+      # This container is on two networks: tell Traefik which one to use.
+      - traefik.docker.network=n8n_default
+
+networks:
+  precon:
+    name: precon_internal
+  n8n_default:
+    external: true
+
+volumes:
+  pgdata:
+    name: precon_pgdata
+  files:
+    name: precon_files

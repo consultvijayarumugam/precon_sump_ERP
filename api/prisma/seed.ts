@@ -18,6 +18,7 @@ import {
   ROLES,
   type RoleKey,
 } from '../src/access-control/permission-catalog.js';
+import { syncRolesAndPermissions } from './sync-access.js';
 import { seedSampleLeads, seedWhatsAppLeads } from './seed-crm.js';
 import { seedFinanceAndStock } from './seed-finance.js';
 import { seedServiceAndInstallations } from './seed-service.js';
@@ -51,40 +52,8 @@ async function main() {
   });
 
   try {
-    // 1. Permission tags
-    for (const p of PERMISSION_DEFINITIONS) {
-      await prisma.permission.upsert({
-        where: { key: p.key },
-        create: p,
-        update: { module: p.module, description: p.description },
-      });
-    }
-    const permissionIdByKey = new Map(
-      (await prisma.permission.findMany({ select: { id: true, key: true } })).map(
-        (p) => [p.key, p.id],
-      ),
-    );
-
-    // 2. Roles and their default tags (synced exactly to the catalog)
-    const roleIdByKey = new Map<string, string>();
-    for (const r of ROLE_DEFINITIONS) {
-      const role = await prisma.role.upsert({
-        where: { key: r.key },
-        create: { key: r.key, name: r.name, description: r.description },
-        update: { name: r.name, description: r.description },
-      });
-      roleIdByKey.set(r.key, role.id);
-
-      await prisma.$transaction([
-        prisma.rolePermission.deleteMany({ where: { roleId: role.id } }),
-        prisma.rolePermission.createMany({
-          data: r.defaultPermissions.map((key) => ({
-            roleId: role.id,
-            permissionId: permissionIdByKey.get(key)!,
-          })),
-        }),
-      ]);
-    }
+    // 1-2. Permission tags and roles
+    const roleIdByKey = await syncRolesAndPermissions(prisma);
 
     // 3. Demo users, one per role
     const passwordHash = await bcrypt.hash(seedPassword, 12);

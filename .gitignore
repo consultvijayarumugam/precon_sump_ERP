@@ -8,3 +8,6 @@ api/src/generated/
 
 # Uploaded file-library files (brochures, images)
 api/storage/
+
+# Production secrets on the server
+.env.production
