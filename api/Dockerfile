@@ -3,6 +3,11 @@
 # `prisma migrate deploy` and the production bootstrap (tsx) as one-off jobs.
 FROM node:24-bookworm-slim
 
+# Prisma needs OpenSSL to detect the platform; the slim image doesn't ship it.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 # prisma.config.ts reads DATABASE_URL even for `prisma generate`; this
 # placeholder is only for the build. The real one comes from .env.production.
