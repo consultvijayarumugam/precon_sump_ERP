@@ -51,6 +51,46 @@ npm install
 npm run dev                 # http://localhost:3000
 ```
 
+## Production server: backups and restore
+
+Precon runs on the VPS in `/opt/precon-crm` (Compose project `precon`: `precon-db`, `precon-api`, `precon-web`) behind the server's existing Traefik. Update with `cd /opt/precon-crm/deploy && ./deploy.sh --pull`.
+
+**What runs:** `deploy/backup.sh`, nightly at 21:00 UTC (2:30 am India time), from `/etc/cron.d/precon-backup`. Log: `/var/log/precon-backup.log`.
+
+**What each backup holds:** the whole Precon database (`precon_<date>.dump`, a `pg_dump` custom-format file) and the uploaded file library: brochures and images (`precon_files_<date>.tar.gz`). It does not hold `deploy/.env.production` (database password, JWT secret); keep a copy of that in a password manager.
+
+**Where, and how long:** both are kept for 30 days in two places:
+- on the server, in `/var/backups/precon`
+- off-site, in Backblaze B2 at `b2crm:faith-crm-backups/precon/daily/`, as one file per night (`precon_<date>.tar.age`) encrypted with age
+
+The off-site copies can only be opened with the private key in `/root/.precon-backup-age-key.txt`, so keep a copy of that key off the server too.
+
+**Restore from the server copy.** This replaces the current data with the backup's, so take a fresh backup first:
+
+```bash
+cd /opt/precon-crm/deploy
+./backup.sh                                            # safety copy of the current state
+ls -lt /var/backups/precon                             # pick the backup
+F=/var/backups/precon/precon_YYYY-MM-DD_HHMM.dump
+docker compose -p precon --env-file .env.production stop api web
+docker exec -i precon-db pg_restore -U precon -d precon --clean --if-exists --no-owner < "$F"
+# uploaded files too, only if they were lost:
+docker run --rm -v precon_files:/files -v /var/backups/precon:/in:ro busybox \
+  sh -c 'rm -rf /files/* && tar xzf /in/precon_files_YYYY-MM-DD_HHMM.tar.gz -C /files'
+docker compose -p precon --env-file .env.production start api web
+```
+
+**Restore from the off-site copy** (the server's copies are gone, or this is a new server with Precon deployed and an empty database):
+
+```bash
+rclone lsl b2crm:faith-crm-backups/precon/daily/       # pick one
+mkdir -p /root/precon-restore && cd /root/precon-restore
+rclone copy b2crm:faith-crm-backups/precon/daily/precon_YYYY-MM-DD_HHMM.tar.age .
+age -d -i /root/.precon-backup-age-key.txt precon_YYYY-MM-DD_HHMM.tar.age | tar xf -
+# gives precon_YYYY-MM-DD_HHMM.dump and precon_files_YYYY-MM-DD_HHMM.tar.gz:
+# restore them as above (use /root/precon-restore in place of /var/backups/precon)
+```
+
 ## Testing from other devices on the same Wi-Fi (local network only)
 
 > **This is not a deployment.** It runs the dev servers on your Mac so a phone or another laptop **on the same Wi-Fi** can try the app with demo data. Nothing is exposed to the internet. There's no HTTPS, no domain, and no production build. Real hosting will be set up separately later.
