@@ -74,7 +74,7 @@ export interface WorklistItem {
 }
 
 export interface TelecallerData {
-  counts: { newToday: number; callbacksDueToday: number; overdue: number; callsToday: number; notCalledYet: number };
+  counts: { newToday: number; callbacksDueToday: number; overdue: number; callsToday: number; callsThisWeek: number; qualifiedToday: number; notCalledYet: number };
   items: WorklistItem[];
 }
 

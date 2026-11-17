@@ -4,9 +4,10 @@ import { useSession } from './session';
 
 /**
  * GETs a path whenever the screen comes into focus. Old data stays on screen
- * while refreshing, and if a refresh fails.
+ * while refreshing, and if a refresh fails. A null path loads nothing (e.g. the
+ * user lacks the tag for it).
  */
-export function useResource<T>(path: string) {
+export function useResource<T>(path: string | null) {
   const { api } = useSession();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +16,7 @@ export function useResource<T>(path: string) {
 
   const load = useCallback(
     async (pulled: boolean) => {
+      if (path === null) return;
       const run = ++latest.current;
       if (pulled) setRefreshing(true);
       try {

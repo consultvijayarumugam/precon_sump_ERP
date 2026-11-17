@@ -23,11 +23,14 @@ function useOnce<T>(path: string) {
 export function LogCallSheet({
   leadId,
   leadName,
+  noun = 'callback',
   onClose,
   onDone,
 }: {
   leadId: string;
   leadName: string;
+  /** "callback" for telecallers, "follow-up" for sales. */
+  noun?: 'callback' | 'follow-up';
   onClose: () => void;
   onDone: (result: { interested: boolean }) => void;
 }) {
@@ -80,8 +83,8 @@ export function LogCallSheet({
             <Text style={styles.warning}>This closes the lead as Lost; it leaves your list.</Text>
           ) : (
             <>
-              <FieldLabel>{outcome === 'INTERESTED' ? 'Next callback (optional; you can qualify next)' : 'Next callback'}</FieldLabel>
-              <CallbackPicker value={callback} onChange={setCallback} allowNone />
+              <FieldLabel>{outcome === 'INTERESTED' && noun === 'callback' ? 'Next callback (optional; you can qualify next)' : `Next ${noun}`}</FieldLabel>
+              <CallbackPicker value={callback} onChange={setCallback} allowNone noun={noun} />
             </>
           )}
           <FieldLabel>Note (optional)</FieldLabel>
@@ -94,7 +97,22 @@ export function LogCallSheet({
   );
 }
 
-export function CallbackSheet({ leadId, leadName, current, onClose, onDone }: { leadId: string; leadName: string; current: string | null; onClose: () => void; onDone: () => void }) {
+export function CallbackSheet({
+  leadId,
+  leadName,
+  current,
+  noun = 'callback',
+  onClose,
+  onDone,
+}: {
+  leadId: string;
+  leadName: string;
+  current: string | null;
+  /** "callback" for telecallers, "follow-up" for sales. */
+  noun?: 'callback' | 'follow-up';
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const { api } = useSession();
   const [value, setValue] = useState<Date | null>(() => (current && new Date(current) > new Date() ? new Date(current) : callbackPresets()[0].at));
   const [busy, setBusy] = useState(false);
@@ -108,16 +126,16 @@ export function CallbackSheet({ leadId, leadName, current, onClose, onDone }: { 
       await api(`/leads/${leadId}/next-callback`, { method: 'PUT', body: { scheduledAt: value.toISOString() } });
       onDone();
     } catch (err) {
-      setError(messageOf(err, 'Could not set the callback.'));
+      setError(messageOf(err, `Could not set the ${noun}.`));
       setBusy(false);
     }
   }
 
   return (
-    <Sheet title={`${current ? 'Move the next callback' : 'Set the next callback'}: ${leadName}`} onClose={onClose}>
-      <CallbackPicker value={value} onChange={setValue} />
+    <Sheet title={`${current ? `Move the next ${noun}` : `Set the next ${noun}`}: ${leadName}`} onClose={onClose}>
+      <CallbackPicker value={value} onChange={setValue} noun={noun} />
       <ErrorBanner message={error} />
-      <Button testID="save-callback" label="Save callback" style={styles.save} onPress={save} disabled={!value} busy={busy} />
+      <Button testID="save-callback" label={`Save ${noun}`} style={styles.save} onPress={save} disabled={!value} busy={busy} />
     </Sheet>
   );
 }

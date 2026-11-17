@@ -32,6 +32,8 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
   const canLog = can('followups.write');
   const [opening, setOpening] = useState(false);
   const whatsAppLead = lead.source === 'WHATSAPP';
+  /** Salespeople plan follow-ups; telecallers set callbacks. Same endpoint. */
+  const followUpNoun: 'callback' | 'follow-up' = can('leads.receive_qualified') ? 'follow-up' : 'callback';
 
   /**
    * WhatsApp leads came from a chat, so one tap goes straight back to it. The
@@ -72,6 +74,7 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
       <LogCallSheet
         leadId={lead.id}
         leadName={lead.name}
+        noun={followUpNoun}
         onClose={close}
         onDone={({ interested }) => {
           handlers.onChanged();
@@ -85,6 +88,7 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
         leadId={lead.id}
         leadName={lead.name}
         current={lead.nextCallbackAt}
+        noun={followUpNoun}
         onClose={close}
         onDone={() => {
           close();
@@ -126,6 +130,7 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
     whatsappTemplates: () => setOpen('whatsapp'),
     whatsAppLead,
     opening,
+    followUpNoun,
     logCall: () => setOpen('log'),
     callback: () => setOpen('callback'),
     qualify: () => setOpen('qualify'),

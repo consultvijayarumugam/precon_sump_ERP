@@ -1185,6 +1185,7 @@ describe('Auth and RBAC (e2e)', () => {
       const dash = (await http().get('/api/v1/dashboards/sales').set(as(sales)).expect(200)).body;
       const card = dash.open.find((l: { id: string }) => l.id === third);
       expect(card).toMatchObject({ status: 'QUALIFIED', qualifiedBy: { fullName: 'Tara Telecaller' } });
+      expect(typeof card.source).toBe('string'); // mobile: WhatsApp leads open their chat in one tap
     });
 
     it('GPS check-in: sales stores one reading on their lead; shown on their dashboard and the master map', async () => {

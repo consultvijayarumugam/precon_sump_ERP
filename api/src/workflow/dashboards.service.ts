@@ -46,6 +46,7 @@ const SALES_LEAD_SELECT = {
   name: true,
   phone: true,
   city: true,
+  source: true, // WhatsApp leads open their chat in one tap (mobile)
   status: true,
   stage: { select: { id: true, name: true, phase: true, isActive: true } },
   productInterest: true,

@@ -28,11 +28,35 @@ No backend changes were needed.
 
 Reads real call durations from the telecaller's phone and sends them to the API, for talk-time on the master dashboard. See [Call tracking](#call-tracking-what-is-read-and-why) below.
 
+**Each role's home screen is their web dashboard, for the phone.** A field person shouldn't need the web app.
+
+| Telecaller (`WorklistScreen`) | Sales (`SalesHomeScreen`) |
+| --- | --- |
+| Counts: new today, callbacks due today, overdue, calls today; plus not called yet, calls this week, qualified today | Counts: my open leads, follow-ups due today, overdue, won this month; plus qualified, quoted, won in total |
+| Thought for today (same quote as web), My reminders today (`GET /notifications/summary`) | **Today**: the same quote and reminders, then follow-ups overdue and due today, leads with none planned, and later ones |
+| The call list, most urgent first | **Pipeline**: my leads per sales stage (tap one to see them), won and lost this month |
+| My pipeline: my leads per stage (`GET /leads/summary`), tap to see them | **Visits**: I'm at site, my visits on an OpenStreetMap map and as a list |
+| **All my leads**: search, status filter (`GET /leads`) | **Won**: deals won this month, won in total, lost this month; revenue when operations are on. **All my leads** as for telecallers |
+
+The OSM map is Leaflet in a WebView (`react-native-webview`), loading OpenStreetMap tiles. No Google Maps and no API key.
+
+**Stage 4 (built; needs real-phone testing): sales workflow**
+
+Salespeople get their own home screen (`SalesHomeScreen`), built on the telecaller screens and the same call, WhatsApp, outcome and call-log sync code:
+
+- **Summary** from `GET /dashboards/sales`: my open leads, follow-ups due today, overdue (red), won this month.
+- **My leads**: only leads assigned to them. Overdue follow-ups come first, then today's, then leads with no follow-up planned, then later ones. Each card shows who handed the lead over and has Call and WhatsApp buttons.
+- **Call, WhatsApp and call outcome**: the same as telecallers, including call-log sync and the explanation screen the first time. The next step is called a "follow-up" for sales and a "callback" for telecallers; it's the same endpoint.
+- **Lead page**: the same as telecallers, plus **Move stage** (the sales stages, Won and Lost, via `PATCH /leads/:id`), **I'm at site** and the lead's site visits.
+- **I'm at site**: pick one of your leads (`GET /check-ins/leads`), take one GPS reading, and record it with the time on that lead (`POST /check-ins`). It works the same as the web check-in. The **Site visits** tab lists recent visits, each with a link to it on OpenStreetMap.
+- **Won**: revenue this month (shown when the account has the `sales.read` tag), won this month, won in total, lost this month, and the deals won this month.
+
+**Location.** The app asks for location "only while using the app". It reads it once, when "I'm at site" is tapped, and never in the background. Background location and foreground services are blocked in `app.json`, so the app can't track anyone.
+
 **Next (not built yet)**
 
-1. Sales workflow: pipeline, follow-ups.
-2. GPS: one-time location reading for site visits and attendance, shown on an OSM map (never Google Maps; no live tracking).
-3. Before real rollout: HTTPS server address and `usesCleartextTraffic` off, an app-owned signing key (see below), Precon app icon and splash screen.
+1. GPS attendance check-in and check-out (operations module, off for now).
+2. Before real rollout: HTTPS server address and `usesCleartextTraffic` off, an app-owned signing key (see below), Precon app icon and splash screen.
 
 ## Call tracking: what is read and why
 

@@ -1,10 +1,13 @@
 import { HomeScreen } from '../screens/HomeScreen';
+import { SalesHomeScreen } from '../screens/SalesHomeScreen';
 import { WorklistScreen } from '../screens/WorklistScreen';
 import { useSession, useUser } from '../session';
 
-/** Telecallers land on their worklist; other roles have no mobile screens yet. */
+/** Telecallers land on their call list, salespeople on their leads and site visits; other roles have no mobile screens yet. */
 export default function Index() {
   const { user, apiUrl } = useUser();
   const { signOut } = useSession();
-  return user.role.key === 'telecaller' ? <WorklistScreen /> : <HomeScreen user={user} apiUrl={apiUrl} onLogout={signOut} />;
+  if (user.role.key === 'telecaller') return <WorklistScreen />;
+  if (user.role.key === 'sales') return <SalesHomeScreen />;
+  return <HomeScreen user={user} apiUrl={apiUrl} onLogout={signOut} />;
 }

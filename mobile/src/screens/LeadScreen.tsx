@@ -1,12 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
-import { ReactNode, useCallback, useMemo } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SiteVisitSheet, VisitRow } from '../components/site-visit';
+import { StageSheet } from '../components/stage-sheet';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
 import { formatDuration } from '../lib/call-sync';
+import type { CheckIn } from '../lib/sales';
 import { CALL_OUTCOME_LABELS, CallAttemptRow, CallRow, canBeQualified, DeviceCallRow, DIRECTION_LABELS, formatDateTime, LeadDetail, MessageRow, productLabel, SOURCE_LABELS } from '../lib/workflow';
+import { useUser } from '../session';
 import { colors } from '../theme';
 import { useResource } from '../use-resource';
 
@@ -40,6 +44,12 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
   const attempts = useResource<CallAttemptRow[]>(`/leads/${id}/call-attempts`);
   const messages = useResource<MessageRow[]>(`/leads/${id}/messages`);
   const phoneCalls = useResource<DeviceCallRow[]>(`/leads/${id}/device-calls`);
+  const { user, can } = useUser();
+  // Sales: GPS site visits on this lead, moving it along the pipeline. Telecallers have neither tag.
+  const visits = useResource<CheckIn[]>(can('sitevisit.read') ? `/leads/${id}/visits` : null);
+  const canMoveStage = can('leads.write');
+  const canVisit = can('sitevisit.write') && lead.assignedTo?.id === user.id;
+  const [salesSheet, setSalesSheet] = useState<'stage' | 'visit' | null>(null);
 
   const reloadAll = useCallback(() => {
     reloadLead();
@@ -47,7 +57,8 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
     attempts.reload();
     messages.reload();
     phoneCalls.reload();
-  }, [reloadLead, calls.reload, attempts.reload, messages.reload, phoneCalls.reload]); // eslint-disable-line react-hooks/exhaustive-deps
+    visits.reload();
+  }, [reloadLead, calls.reload, attempts.reload, messages.reload, phoneCalls.reload, visits.reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pending = useMemo(() => lead.followUps.filter((f) => !f.completedAt).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt)), [lead.followUps]);
   const done = useMemo(() => lead.followUps.filter((f) => f.completedAt).sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt)), [lead.followUps]);
@@ -110,8 +121,23 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         {actions.whatsAppLead && <Text style={styles.hint}>WhatsApp opens their chat. Hold it for templates and files.</Text>}
         <View style={styles.actions}>
           {actions.canLog && <Button testID="log-call" label="Log call" icon="create-outline" tone="secondary" onPress={actions.logCall} style={styles.flex} />}
-          {actions.canLog && <Button testID="set-callback" label={next ? 'Move callback' : 'Callback'} icon="alarm-outline" tone="secondary" onPress={actions.callback} style={styles.flex} />}
+          {actions.canLog && (
+            <Button
+              testID="set-callback"
+              label={next ? `Move ${actions.followUpNoun}` : actions.followUpNoun === 'callback' ? 'Callback' : 'Follow-up'}
+              icon="alarm-outline"
+              tone="secondary"
+              onPress={actions.callback}
+              style={styles.flex}
+            />
+          )}
         </View>
+        {(canMoveStage || canVisit) && (
+          <View style={styles.actions}>
+            {canMoveStage && <Button testID="move-stage" label="Move stage" icon="git-commit-outline" tone="secondary" onPress={() => setSalesSheet('stage')} style={styles.flex} />}
+            {canVisit && <Button testID="lead-at-site" label="I'm at site" icon="navigate" tone="secondary" onPress={() => setSalesSheet('visit')} style={styles.flex} />}
+          </View>
+        )}
         {actions.canQualify && canBeQualified(lead.status) && <Button testID="qualify" label="Qualify & hand over" icon="sparkles-outline" tone="qualify" onPress={actions.qualify} style={styles.qualify} />}
 
         <Text style={styles.heading}>Details</Text>
@@ -148,6 +174,17 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           ))}
         </View>
 
+        {visits.data && visits.data.length > 0 && (
+          <>
+            <Text style={styles.heading}>Site visits · {visits.data.length}</Text>
+            <View style={styles.card}>
+              {visits.data.map((v) => (
+                <VisitRow key={v.id} visit={v} />
+              ))}
+            </View>
+          </>
+        )}
+
         <Text style={styles.heading}>Calls and messages{history && history.length > 0 ? ` · ${history.length}` : ''}</Text>
         <ErrorBanner message={calls.error ?? attempts.error ?? messages.error} />
         <View style={styles.card}>
@@ -157,6 +194,27 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         </View>
       </ScrollView>
       {actions.sheets}
+      {salesSheet === 'stage' && (
+        <StageSheet
+          lead={lead}
+          onClose={() => setSalesSheet(null)}
+          onDone={(stage) => {
+            setSalesSheet(null);
+            ToastAndroid.show(stage.kind === 'WON' ? `${lead.name} won 🎉` : `${lead.name} moved to ${stage.name}`, ToastAndroid.LONG);
+            reloadAll();
+          }}
+        />
+      )}
+      {salesSheet === 'visit' && (
+        <SiteVisitSheet
+          lead={lead}
+          onClose={() => setSalesSheet(null)}
+          onDone={() => {
+            setSalesSheet(null);
+            reloadAll();
+          }}
+        />
+      )}
     </>
   );
 }

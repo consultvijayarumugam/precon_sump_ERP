@@ -119,8 +119,12 @@ export function FieldLabel({ children }: { children: string }) {
   return <Text style={styles.label}>{children}</Text>;
 }
 
-/** A panel that slides up from the bottom, within thumb reach. Back and tapping outside close it. */
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+/**
+ * A panel that slides up from the bottom, within thumb reach. Back and tapping
+ * outside close it. `footer` stays pinned below the scrolling content (the main
+ * button stays in reach however long the list is).
+ */
+export function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible transparent animationType="slide" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
@@ -134,6 +138,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {children}
           </ScrollView>
+          {footer && <View style={styles.sheetFooter}>{footer}</View>}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -168,4 +173,5 @@ const styles = StyleSheet.create({
   sheet: { maxHeight: '88%', backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 8 },
   grabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.lineStrong, marginBottom: 10 },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.ink, marginBottom: 6 },
+  sheetFooter: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingTop: 4 },
 });

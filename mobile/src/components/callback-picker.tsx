@@ -6,7 +6,7 @@ import { colors } from '../theme';
 import { Chip } from './ui';
 
 /** One-tap times, plus the phone's date and time dialogs for anything else. */
-export function CallbackPicker({ value, onChange, allowNone }: { value: Date | null; onChange: (at: Date | null) => void; allowNone?: boolean }) {
+export function CallbackPicker({ value, onChange, allowNone, noun = 'callback' }: { value: Date | null; onChange: (at: Date | null) => void; allowNone?: boolean; noun?: 'callback' | 'follow-up' }) {
   const [presets] = useState(() => callbackPresets());
   const isPreset = value !== null && presets.some((p) => p.at.getTime() === value.getTime());
 
@@ -33,7 +33,7 @@ export function CallbackPicker({ value, onChange, allowNone }: { value: Date | n
   return (
     <View>
       <View style={styles.chips}>
-        {allowNone && <Chip label="No callback" active={value === null} onPress={() => onChange(null)} />}
+        {allowNone && <Chip label={`No ${noun}`} active={value === null} onPress={() => onChange(null)} />}
         {presets.map((p) => (
           <Chip key={p.label} label={p.label} active={value?.getTime() === p.at.getTime()} onPress={() => onChange(p.at)} />
         ))}

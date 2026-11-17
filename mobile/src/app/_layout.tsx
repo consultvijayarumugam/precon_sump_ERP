@@ -25,6 +25,7 @@ function RootNavigator() {
       <Stack.Protected guard={state.status === 'in'}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="lead/[id]" options={{ title: 'Lead' }} />
+        <Stack.Screen name="leads" options={{ title: 'All my leads' }} />
         <Stack.Screen name="call-tracking" options={{ title: 'Call tracking' }} />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'out' || state.status === 'loading'}>

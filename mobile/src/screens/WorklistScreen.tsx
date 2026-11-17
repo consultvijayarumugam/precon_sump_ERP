@@ -5,10 +5,14 @@ import { StatusBar } from 'expo-status-bar';
 import { memo, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Centered, ErrorBanner, Sheet, StageBadge } from '../components/ui';
+import { AccountSheet } from '../components/account-sheet';
+import { DailyQuoteCard, PipelineCard, RemindersCard } from '../components/dashboard-cards';
+import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
+import { pipelineRows, type LeadsSummary } from '../lib/dashboard';
+import type { PipelineStage } from '../lib/sales';
 import { CALL_OUTCOME_LABELS, formatDateTime, productLabel, TelecallerData, toSections, WorklistBucket, WorklistItem } from '../lib/workflow';
-import { useSession, useUser } from '../session';
+import { useUser } from '../session';
 import { colors, space } from '../theme';
 import { useCallSync } from '../use-call-sync';
 import { useResource } from '../use-resource';
@@ -71,17 +75,27 @@ function Tile({ value, label, alert }: { value: number | undefined; label: strin
   );
 }
 
-/** The telecaller's day: today's counts, then who to call next, most urgent first. */
+/**
+ * The telecaller's dashboard, as on web: today's counts, the quote, my
+ * reminders, then who to call next (most urgent first), and my pipeline.
+ */
 export function WorklistScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, apiUrl } = useUser();
-  const { signOut } = useSession();
+  const { user } = useUser();
   const { data, error, refreshing, refresh, reload } = useResource<TelecallerData>('/dashboards/telecaller');
+  const summary = useResource<LeadsSummary>('/leads/summary');
+  const stages = useResource<PipelineStage[]>('/pipeline-stages');
   const [account, setAccount] = useState(false);
   useCallSync();
   const sections = useMemo(() => toSections(data?.items ?? []), [data]);
+  const pipeline = useMemo(() => (summary.data && stages.data ? pipelineRows(stages.data, summary.data.leadsByStage) : null), [summary.data, stages.data]);
   const c = data?.counts;
+  const refreshAll = () => {
+    refresh();
+    summary.reload();
+    stages.reload();
+  };
 
   const header = (
     <>
@@ -101,7 +115,18 @@ export function WorklistScreen() {
           <Tile value={c?.overdue} label="Overdue" alert={(c?.overdue ?? 0) > 0} />
           <Tile value={c?.callsToday} label="Calls today" />
         </View>
+        {c && (
+          <Text style={styles.hints}>
+            {c.notCalledYet} not called yet · {c.callsThisWeek} calls this week · {c.qualifiedToday} qualified today
+          </Text>
+        )}
+        <Pressable testID="all-leads-button" onPress={() => router.push('/leads')} style={({ pressed }) => [styles.allLeads, pressed && styles.pressed]} accessibilityRole="button">
+          <Ionicons name="list" size={20} color="#FFFFFF" />
+          <Text style={styles.allLeadsText}>All my leads</Text>
+        </Pressable>
       </LinearGradient>
+      <DailyQuoteCard />
+      <RemindersCard />
       {error && (
         <View style={styles.pad}>
           <ErrorBanner message={error} />
@@ -119,7 +144,7 @@ export function WorklistScreen() {
         keyExtractor={(item) => item.id}
         ListHeaderComponent={header}
         stickySectionHeadersEnabled={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.blue]} progressViewOffset={insets.top} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} colors={[colors.blue]} progressViewOffset={insets.top} />}
         renderSectionHeader={({ section }) => (
           <Text style={[styles.section, { color: BUCKET_COLOR[section.bucket] }]}>
             {section.title} · {section.data.length}
@@ -142,26 +167,14 @@ export function WorklistScreen() {
             </View>
           )
         }
+        ListFooterComponent={
+          pipeline ? (
+            <PipelineCard title="My pipeline" subtitle={summary.data ? `${summary.data.openLeads} open of ${summary.data.totalLeads} leads · tap a stage to see its leads` : undefined} rows={pipeline} />
+          ) : undefined
+        }
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
       />
-      {account && (
-        <Sheet title={`${user.fullName} (${user.role.name})`} onClose={() => setAccount(false)}>
-          <Text style={styles.details}>{user.email}</Text>
-          <Text style={styles.details}>Server: {apiUrl}</Text>
-          <Button
-            testID="call-tracking"
-            label="Call tracking"
-            tone="secondary"
-            icon="timer-outline"
-            style={styles.logout}
-            onPress={() => {
-              setAccount(false);
-              router.push('/call-tracking');
-            }}
-          />
-          <Button testID="logout" label="Log out" tone="secondary" icon="log-out-outline" style={styles.logout} onPress={() => void signOut()} />
-        </Sheet>
-      )}
+      {account && <AccountSheet onClose={() => setAccount(false)} />}
     </View>
   );
 }
@@ -181,6 +194,10 @@ const styles = StyleSheet.create({
   tileAlert: { backgroundColor: '#DC2626' },
   tileValue: { color: '#FFFFFF', fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'] },
   tileLabel: { color: '#E6F0FC', fontSize: 12, marginTop: 1 },
+  hints: { color: '#C9DDF5', fontSize: 13, marginTop: 10 },
+  allLeads: { marginTop: 12, minHeight: space.tap, borderRadius: space.radius, borderWidth: 1.5, borderColor: '#FFFFFF66', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  allLeadsText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  pressed: { opacity: 0.8 },
   section: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8 },
   card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: 14, marginHorizontal: 12, marginBottom: 10 },
   cardOverdue: { borderColor: colors.redLine },
@@ -191,5 +208,4 @@ const styles = StyleSheet.create({
   callbackOverdue: { color: colors.red },
   actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   empty: { marginTop: 10, fontSize: 15, color: colors.ink2, textAlign: 'center' },
-  logout: { marginTop: 16, marginBottom: 4 },
 });
