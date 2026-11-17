@@ -48,3 +48,7 @@ yarn-error.*
 
 # Gradle output of local native modules
 modules/*/android/build/
+
+# Release signing key: lives in ~/.precon-signing, never in the repo
+*.keystore
+signing.properties

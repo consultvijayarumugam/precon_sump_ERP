@@ -16,11 +16,20 @@ case "${1:-}" in
     shift; npx expo run:android "$@"
     ;;
   apk)
+    # Release builds are signed with Precon's private key (see README.md, Signing).
+    SIGNING="${PRECON_SIGNING_PROPERTIES:-$HOME/.precon-signing/signing.properties}"
+    if [[ ! -f "$SIGNING" ]]; then
+      echo "No release signing key at $SIGNING." >&2
+      echo "First time on this Mac: bash scripts/create-signing-key.sh. Otherwise restore the key from its backup (README.md, Signing)." >&2
+      exit 1
+    fi
     npx expo prebuild --platform android --no-install
     (cd android && ./gradlew assembleRelease -PreactNativeArchitectures="$ARCHS" --console=plain)
     mkdir -p build
     cp android/app/build/outputs/apk/release/app-release.apk build/precon-sump.apk
     echo "APK ready: $(pwd)/build/precon-sump.apk"
+    echo "Signed with:"
+    "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --print-certs build/precon-sump.apk | grep -E "certificate DN|SHA-256" | sed 's/^/  /'
     ;;
   *)
     echo "Usage: bash scripts/android.sh run|apk" >&2
