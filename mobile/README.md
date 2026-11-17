@@ -56,7 +56,7 @@ Salespeople get their own home screen (`SalesHomeScreen`), built on the telecall
 **Next (not built yet)**
 
 1. GPS attendance check-in and check-out (operations module, off for now).
-2. Before real rollout: `usesCleartextTraffic` off (the live server is HTTPS), Precon app icon and splash screen.
+2. Before real rollout: Precon app icon and splash screen.
 
 ## Call tracking: what is read and why
 
@@ -120,9 +120,11 @@ cp .env.example .env     # then set EXPO_PUBLIC_API_URL
 
 | Running on | Server address |
 | --- | --- |
-| Emulator | Your Mac's Wi-Fi address, or `http://10.0.2.2:4000` |
-| Real phone | Your Mac's Wi-Fi address; the phone must be on the same Wi-Fi |
-| Later | `https://your-real-server` |
+| Emulator, dev build (`npm run android`) | Your Mac's Wi-Fi address, or `http://10.0.2.2:4000` |
+| Real phone, dev build | Your Mac's Wi-Fi address; the phone must be on the same Wi-Fi |
+| Release APK (`npm run apk`) | `https://crm.preconsump.com` (HTTPS only, see below) |
+
+**The release APK only connects over HTTPS.** Cleartext (plain `http://`) traffic is off in release builds (`usesCleartextTraffic: false` in `app.json`), so logins and lead data are always encrypted in transit. The login screen refuses an `http://` server address with a plain message, and adds `https://` when no scheme is typed. Debug builds keep plain HTTP allowed (Expo's debug manifest), so testing against your Mac's local API still works with `npm run android`. To test the release APK itself, point it at an HTTPS server.
 
 The API listens on all network interfaces by default, so phones can reach it. `/api/v1` is added for you if you leave it off.
 
@@ -130,8 +132,10 @@ The API listens on all network interfaces by default, so phones can reach it. `/
 
 ```bash
 cd mobile
-npm run apk
+EXPO_PUBLIC_API_URL=https://crm.preconsump.com/api/v1 npm run apk
 ```
+
+Release APKs must point at an HTTPS server (see above); `.env` holds your Mac's address for dev builds, so pass the live one when building.
 
 The result is `mobile/build/precon-sump.apk` (about 48 MB, for ARM phones running Android 7 or later). Send it by WhatsApp, Drive or USB. On the phone, open the file and allow "Install unknown apps" for the app you opened it from.
 

@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError, login, User } from '../api';
-import { normalizeApiUrl } from '../lib/api-url';
+import { isPlainHttp, normalizeApiUrl } from '../lib/api-url';
+
+/** Release builds only connect over HTTPS (Android blocks cleartext); debug builds also allow http for local testing. */
+const HTTPS_ONLY = !__DEV__;
 import { saveApiUrl, saveToken } from '../storage';
 import { colors } from '../theme';
 
@@ -26,10 +29,15 @@ export function LoginScreen({
 
   async function submit() {
     if (!canSubmit) return;
-    const url = normalizeApiUrl(server);
+    const url = normalizeApiUrl(server, HTTPS_ONLY ? 'https' : 'http');
     if (!url) {
       setEditingServer(true);
-      setError("That server address doesn't look right. Example: http://192.168.31.50:4000");
+      setError(`That server address doesn't look right. Example: ${HTTPS_ONLY ? 'https://crm.preconsump.com' : 'http://192.168.31.50:4000'}`);
+      return;
+    }
+    if (HTTPS_ONLY && isPlainHttp(url)) {
+      setEditingServer(true);
+      setError('This app only connects securely. Use an https:// address, e.g. https://crm.preconsump.com');
       return;
     }
     setBusy(true);
@@ -122,10 +130,10 @@ export function LoginScreen({
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
-                  placeholder="http://192.168.31.50:4000"
+                  placeholder={HTTPS_ONLY ? 'https://crm.preconsump.com' : 'http://192.168.31.50:4000'}
                   placeholderTextColor={colors.ink3}
                 />
-                <Text style={styles.hint}>Saved when you log in. Emulator: http://10.0.2.2:4000</Text>
+                <Text style={styles.hint}>{HTTPS_ONLY ? 'Saved when you log in. Secure (https://) addresses only.' : 'Saved when you log in. Emulator: http://10.0.2.2:4000'}</Text>
               </>
             ) : (
               <Pressable onPress={() => setEditingServer(true)} accessibilityRole="button" style={styles.serverRow}>
