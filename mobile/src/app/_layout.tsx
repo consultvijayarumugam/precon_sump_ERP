@@ -26,6 +26,10 @@ function RootNavigator() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="lead/[id]" options={{ title: 'Lead' }} />
         <Stack.Screen name="leads" options={{ title: 'All my leads' }} />
+        <Stack.Screen name="follow-ups" options={{ title: 'Follow-ups' }} />
+        <Stack.Screen name="calendar" options={{ title: 'Calendar' }} />
+        <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+        <Stack.Screen name="new-lead" options={{ title: 'New lead' }} />
         <Stack.Screen name="call-tracking" options={{ title: 'Call tracking' }} />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'out' || state.status === 'loading'}>

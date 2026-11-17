@@ -6,7 +6,7 @@ import { memo, ReactElement, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountSheet } from '../components/account-sheet';
-import { DailyQuoteCard, PipelineCard, RemindersCard, VisitsMap } from '../components/dashboard-cards';
+import { DailyQuoteCard, PipelineCard, RemindersCard, ShortcutRow, VisitsMap } from '../components/dashboard-cards';
 import { SiteVisitSheet, VisitRow } from '../components/site-visit';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
@@ -16,6 +16,7 @@ import { useUser } from '../session';
 import { colors, space } from '../theme';
 import { useCallSync } from '../use-call-sync';
 import { useResource } from '../use-resource';
+import { NotificationBell } from './NotificationsScreen';
 
 const BUCKET_COLOR: Record<SalesBucket, string> = { overdue: colors.red, today: colors.amber, none: colors.ink2, later: colors.ink3 };
 type Tab = 'today' | 'pipeline' | 'visits' | 'won';
@@ -141,6 +142,7 @@ export function SalesHomeScreen() {
               {counts ? `${counts.overdue + counts.dueToday} follow-ups to do today${data && data.handedToday > 0 ? ` · ${data.handedToday} new from telecallers` : ''}` : 'Your leads, follow-ups and site visits'}
             </Text>
           </View>
+          <NotificationBell />
           <Pressable testID="account" onPress={() => setAccount(true)} style={styles.accountButton} accessibilityRole="button" accessibilityLabel="Account">
             <Ionicons name="person-circle-outline" size={32} color="#FFFFFF" />
           </Pressable>
@@ -204,6 +206,7 @@ export function SalesHomeScreen() {
         ListHeaderComponent={
           <>
             {header}
+            <ShortcutRow />
             <DailyQuoteCard />
             <RemindersCard />
           </>

@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, ToastAndroid, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FollowUpSheet } from '../components/follow-up-sheet';
+import { EditLeadSheet } from '../components/lead-form';
 import { SiteVisitSheet, VisitRow } from '../components/site-visit';
 import { StageSheet } from '../components/stage-sheet';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
@@ -50,6 +52,10 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
   const canMoveStage = can('leads.write');
   const canVisit = can('sitevisit.write') && lead.assignedTo?.id === user.id;
   const [salesSheet, setSalesSheet] = useState<'stage' | 'visit' | null>(null);
+  // Telecallers edit their own leads with leads.qualify (the server checks the scope), as on web.
+  const canEdit = can('leads.write') || can('leads.qualify');
+  const [editing, setEditing] = useState(false);
+  const [followUp, setFollowUp] = useState<{ id: string; scheduledAt: string; note: string | null } | null>(null);
 
   const reloadAll = useCallback(() => {
     reloadLead();
@@ -140,7 +146,15 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         )}
         {actions.canQualify && canBeQualified(lead.status) && <Button testID="qualify" label="Qualify & hand over" icon="sparkles-outline" tone="qualify" onPress={actions.qualify} style={styles.qualify} />}
 
-        <Text style={styles.heading}>Details</Text>
+        <View style={styles.headingRow}>
+          <Text style={styles.heading}>Details</Text>
+          {canEdit && (
+            <Pressable testID="edit-lead" onPress={() => setEditing(true)} style={styles.editButton} accessibilityRole="button" accessibilityLabel="Edit details">
+              <Ionicons name="create-outline" size={18} color={colors.blue} />
+              <Text style={styles.editText}>Edit</Text>
+            </Pressable>
+          )}
+        </View>
         <View style={styles.card}>
           <Info label="City">{lead.city ?? '-'}</Info>
           <Info label="Product">{productLabel(lead) ?? 'Not known yet'}</Info>
@@ -155,13 +169,22 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         <View style={styles.card}>
           {pending.length === 0 && done.length === 0 && <Text style={styles.none}>No follow-ups yet.</Text>}
           {pending.map((f) => (
-            <View key={f.id} style={styles.followUp}>
+            <Pressable
+              key={f.id}
+              testID={`pending-${f.id}`}
+              onPress={() => setFollowUp(f)}
+              disabled={!actions.canLog}
+              style={({ pressed }) => [styles.followUp, pressed && styles.pressed]}
+              accessibilityRole={actions.canLog ? 'button' : undefined}
+              accessibilityHint={actions.canLog ? 'Mark it done or move it' : undefined}
+            >
               <Ionicons name="alarm-outline" size={18} color={new Date(f.scheduledAt) < new Date() ? colors.red : colors.blue} />
               <View style={styles.flex}>
                 <Text style={[styles.followUpTime, new Date(f.scheduledAt) < new Date() && styles.overdue]}>{formatDateTime(f.scheduledAt)}</Text>
                 {f.note && <Text style={styles.activityBody}>{f.note}</Text>}
               </View>
-            </View>
+              {actions.canLog && <Text style={styles.doneLink}>Done / move</Text>}
+            </Pressable>
           ))}
           {done.map((f) => (
             <View key={f.id} style={styles.followUp}>
@@ -194,6 +217,35 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         </View>
       </ScrollView>
       {actions.sheets}
+      {editing && (
+        <EditLeadSheet
+          lead={lead}
+          onClose={() => setEditing(false)}
+          onDone={(result) => {
+            setEditing(false);
+            if (result.movedOutOfScope) {
+              ToastAndroid.show(`${lead.name} is no longer in your list`, ToastAndroid.LONG);
+              router.back();
+              return;
+            }
+            ToastAndroid.show('Saved', ToastAndroid.SHORT);
+            reloadAll();
+          }}
+        />
+      )}
+      {followUp && (
+        <FollowUpSheet
+          followUp={followUp}
+          leadName={lead.name}
+          noun={actions.followUpNoun}
+          onClose={() => setFollowUp(null)}
+          onDone={(message) => {
+            setFollowUp(null);
+            ToastAndroid.show(message, ToastAndroid.SHORT);
+            reloadAll();
+          }}
+        />
+      )}
       {salesSheet === 'stage' && (
         <StageSheet
           lead={lead}
@@ -249,12 +301,17 @@ const styles = StyleSheet.create({
   qualify: { marginBottom: 8 },
   hint: { fontSize: 13, color: colors.ink3, marginTop: -2, marginBottom: 8, textAlign: 'right' },
   heading: { fontSize: 15, fontWeight: '700', color: colors.navy900, marginTop: 14, marginBottom: 8 },
+  headingRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  editButton: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingHorizontal: 10, marginBottom: -2 },
+  editText: { fontSize: 15, fontWeight: '700', color: colors.blue },
+  pressed: { opacity: 0.7 },
+  doneLink: { fontSize: 13, fontWeight: '700', color: colors.blue, alignSelf: 'center' },
   card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, paddingVertical: 6 },
   info: { paddingVertical: 8 },
   infoLabel: { fontSize: 12, color: colors.ink3 },
   infoValue: { fontSize: 15, color: colors.ink, marginTop: 1 },
   none: { fontSize: 14, color: colors.ink3, paddingVertical: 10 },
-  followUp: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
+  followUp: { flexDirection: 'row', gap: 10, paddingVertical: 8, minHeight: 48 },
   followUpTime: { fontSize: 15, fontWeight: '600', color: colors.ink },
   followUpDone: { fontSize: 14, color: colors.ink3 },
   overdue: { color: colors.red },

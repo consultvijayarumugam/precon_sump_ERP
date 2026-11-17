@@ -40,6 +40,16 @@ Reads real call durations from the telecaller's phone and sends them to the API,
 
 The OSM map is Leaflet in a WebView (`react-native-webview`), loading OpenStreetMap tiles. No Google Maps and no API key.
 
+**Everything else a field person does on the web, also on the phone:**
+
+| Feature | Who | API |
+| --- | --- | --- |
+| **Edit details** on the lead page: name, phone, city, product and size, email, notes. Only what changed is sent. | Sales (`leads.write`), telecallers on their own leads (`leads.qualify`), as on web | `PATCH /leads/:id` |
+| **New lead** (shortcut on the home screen, or + on All my leads): **Quick add** for a WhatsApp enquiry (phone only, round-robin to a telecaller, an open lead with the same number is caught) and the **full form** (assigned to you) | Quick add: `leads.quick_add`; full form: `leads.write`. Telecallers have neither, so they don't see it. | `POST /leads/quick-add`, `POST /leads` |
+| **Follow-ups** ("Callbacks" for telecallers): overdue, upcoming and done. Tap one to mark it done with what happened, or move it. Also from the lead page's pending follow-ups. | Everyone with `followups.write` | `GET /follow-ups?state=…&assignedTo=me`, `POST /follow-ups/:id/complete`, `PATCH /follow-ups/:id` |
+| **Calendar**: my follow-ups by month, coloured overdue/upcoming/done; tap a day to see and act on them | Everyone | `GET /follow-ups?from&to&assignedTo=me` |
+| **Notifications**: the web's bell. Reminders and updates, unread count on the home screen, tap to open the lead (marks it read), Mark all read. | Everyone | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` |
+
 **Stage 4 (built; needs real-phone testing): sales workflow**
 
 Salespeople get their own home screen (`SalesHomeScreen`), built on the telecaller screens and the same call, WhatsApp, outcome and call-log sync code:

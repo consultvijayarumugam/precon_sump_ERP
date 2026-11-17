@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip, ErrorBanner, inputStyle, StageBadge } from '../components/ui';
 import { LEAD_FILTERS, leadListQuery, type LeadListItem, type LeadListPage } from '../lib/dashboard';
 import { formatDateTime, productLabel } from '../lib/workflow';
-import { useSession } from '../session';
+import { useSession, useUser } from '../session';
 import { colors } from '../theme';
 
 const PAGE_SIZE = 30;
@@ -20,6 +20,8 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { api } = useSession();
+  const { can } = useUser();
+  const canAdd = can('leads.write') || can('leads.quick_add');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
   const [filter, setFilter] = useState(() => (LEAD_FILTERS.some((f) => f.key === initialStatus) ? initialStatus! : 'all'));
@@ -70,7 +72,18 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
 
   return (
     <View style={styles.page}>
-      <Stack.Screen options={{ title: title ? `My leads: ${title}` : 'All my leads' }} />
+      <Stack.Screen
+        options={{
+          title: title ? `My leads: ${title}` : 'All my leads',
+          headerRight: canAdd
+            ? () => (
+                <Pressable testID="add-lead" onPress={() => router.push('/new-lead')} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="New lead">
+                  <Ionicons name="add" size={28} color="#FFFFFF" />
+                </Pressable>
+              )
+            : undefined,
+        }}
+      />
       <FlatList
         testID="all-leads"
         data={items}
@@ -162,4 +175,5 @@ const styles = StyleSheet.create({
   late: { color: colors.red },
   empty: { fontSize: 15, color: colors.ink2, textAlign: 'center', marginTop: 40 },
   spinner: { marginVertical: 16 },
+  headerButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
 });

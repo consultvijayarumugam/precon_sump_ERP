@@ -6,7 +6,7 @@ import { memo, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountSheet } from '../components/account-sheet';
-import { DailyQuoteCard, PipelineCard, RemindersCard } from '../components/dashboard-cards';
+import { DailyQuoteCard, PipelineCard, RemindersCard, ShortcutRow } from '../components/dashboard-cards';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
 import { pipelineRows, type LeadsSummary } from '../lib/dashboard';
@@ -16,6 +16,7 @@ import { useUser } from '../session';
 import { colors, space } from '../theme';
 import { useCallSync } from '../use-call-sync';
 import { useResource } from '../use-resource';
+import { NotificationBell } from './NotificationsScreen';
 
 const BUCKET_COLOR: Record<WorklistBucket, string> = {
   overdue: colors.red,
@@ -105,6 +106,7 @@ export function WorklistScreen() {
             <Text style={styles.greeting}>Hi {user.fullName.split(/\s+/)[0]}</Text>
             <Text style={styles.heroSub}>{c ? `${c.overdue + c.callbacksDueToday + c.notCalledYet} leads to call now` : 'Your call list, most urgent first'}</Text>
           </View>
+          <NotificationBell />
           <Pressable testID="account" onPress={() => setAccount(true)} style={styles.accountButton} accessibilityRole="button" accessibilityLabel="Account">
             <Ionicons name="person-circle-outline" size={32} color="#FFFFFF" />
           </Pressable>
@@ -125,6 +127,7 @@ export function WorklistScreen() {
           <Text style={styles.allLeadsText}>All my leads</Text>
         </Pressable>
       </LinearGradient>
+      <ShortcutRow />
       <DailyQuoteCard />
       <RemindersCard />
       {error && (
