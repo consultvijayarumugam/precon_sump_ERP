@@ -28,15 +28,19 @@ No backend changes were needed.
 
 Reads real call durations from the telecaller's phone and sends them to the API, for talk-time on the master dashboard. See [Call tracking](#call-tracking-what-is-read-and-why) below.
 
-**Each role's home screen is their web dashboard, for the phone.** A field person shouldn't need the web app.
+**Login screen animation.** The same scene as the web login: a Precon lorry delivering a precast sump, driving in once and then cruising while the town, road and water slide past (`src/components/delivery-scene.tsx`). It's plain views on the web's 400 x 160 canvas, scaled to the phone's width (`src/lib/scene.ts`, tested), animated with React Native's built-in `Animated` on the native driver (transforms and opacity only). No extra libraries, no images, nothing loaded before login. With Android's "Remove animations" on, it's a still picture.
 
-| Telecaller (`WorklistScreen`) | Sales (`SalesHomeScreen`) |
-| --- | --- |
-| Counts: new today, callbacks due today, overdue, calls today; plus not called yet, calls this week, qualified today | Counts: my open leads, follow-ups due today, overdue, won this month; plus qualified, quoted, won in total |
-| Thought for today (same quote as web), My reminders today (`GET /notifications/summary`) | **Today**: the same quote and reminders, then follow-ups overdue and due today, leads with none planned, and later ones |
-| The call list, most urgent first | **Pipeline**: my leads per sales stage (tap one to see them), won and lost this month |
-| My pipeline: my leads per stage (`GET /leads/summary`), tap to see them | **Visits**: I'm at site, my visits on an OpenStreetMap map and as a list |
-| **All my leads**: search, status filter (`GET /leads`) | **Won**: deals won this month, won in total, lost this month; revenue when operations are on. **All my leads** as for telecallers |
+**Navigation: a bottom tab bar per role.** Each tab is its own full screen; a lead, the searchable lead list, New lead, Notifications and Call tracking open above the tabs (Back returns to the tab). The tabs are chosen by role in `src/lib/tabs.ts` (tested); the routes live in `src/app/(tabs)/`. A field person shouldn't need the web app.
+
+| Tab | Telecaller | Sales |
+| --- | --- | --- |
+| **Home** | `TelecallerHomeScreen`: counts (new today, due today, overdue, calls today), Start calling, New lead (if allowed), thought for today, my reminders (`GET /notifications/summary`), the next 3 to call, my pipeline (`GET /leads/summary`) | `SalesHomeScreen`: counts (my leads, due today, overdue, won this month), I'm at site, New lead, thought for today, my reminders, today's follow-ups (top 3), this month: won, won in total, lost, and revenue when operations are on |
+| **My Leads** | `WorklistScreen`: the call list from `GET /dashboards/telecaller`, most urgent first, Call and WhatsApp on every card | `SalesLeadsScreen`: my handed-over leads, overdue follow-ups first, Call and WhatsApp on every card |
+| 3rd | **Callbacks**: overdue, upcoming, done (`FollowUpsScreen`) | **Pipeline** (`PipelineScreen`): leads per stage as bars, then each stage with its leads, then this month's wins |
+| 4th | **Calendar**: my callbacks by month (`CalendarScreen`) | **Site Visits** (`SiteVisitsScreen`): I'm at site, my visits on an OpenStreetMap map and as a list |
+| **More** | Profile, Notifications, All my leads (search), New lead (if allowed), Call tracking, server, Log out | The same, plus Follow-ups and Calendar |
+
+Badges: Callbacks (telecaller) and My Leads (sales) show follow-ups overdue or due today; More shows unread notifications. Both lead lists start with a "Search all my leads" bar (`GET /leads`, any status). Other roles (admin) get Home and More only.
 
 The OSM map is Leaflet in a WebView (`react-native-webview`), loading OpenStreetMap tiles. No Google Maps and no API key.
 
@@ -45,21 +49,24 @@ The OSM map is Leaflet in a WebView (`react-native-webview`), loading OpenStreet
 | Feature | Who | API |
 | --- | --- | --- |
 | **Edit details** on the lead page: name, phone, city, product and size, email, notes. Only what changed is sent. | Sales (`leads.write`), telecallers on their own leads (`leads.qualify`), as on web | `PATCH /leads/:id` |
-| **New lead** (shortcut on the home screen, or + on All my leads): **Quick add** for a WhatsApp enquiry (phone only, round-robin to a telecaller, an open lead with the same number is caught) and the **full form** (assigned to you) | Quick add: `leads.quick_add`; full form: `leads.write`. Telecallers have neither, so they don't see it. | `POST /leads/quick-add`, `POST /leads` |
+| **New lead** (button on Home, More → New lead, or + on All my leads): **Quick add** for a WhatsApp enquiry (phone only, round-robin to a telecaller, an open lead with the same number is caught) and the **full form** (assigned to you) | Quick add: `leads.quick_add`; full form: `leads.write`. Telecallers have neither, so they don't see it. | `POST /leads/quick-add`, `POST /leads` |
 | **Follow-ups** ("Callbacks" for telecallers): overdue, upcoming and done. Tap one to mark it done with what happened, or move it. Also from the lead page's pending follow-ups. | Everyone with `followups.write` | `GET /follow-ups?state=…&assignedTo=me`, `POST /follow-ups/:id/complete`, `PATCH /follow-ups/:id` |
 | **Calendar**: my follow-ups by month, coloured overdue/upcoming/done; tap a day to see and act on them | Everyone | `GET /follow-ups?from&to&assignedTo=me` |
-| **Notifications**: the web's bell. Reminders and updates, unread count on the home screen, tap to open the lead (marks it read), Mark all read. | Everyone | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` |
+| **Date filters**: Today, This week, This month, Last month, All time, or Custom (two date dialogs). On All my leads they combine with the status chips (Won / Lost by the day they closed, others by the day added); on Follow-ups / Callbacks by the day due; on both My Leads tabs by when the lead arrived or was handed to you | Everyone | `GET /leads?createdFrom&createdTo` (or `wonFrom&wonTo`), `GET /follow-ups?fromDate&toDate` |
+| **Shared notes** on the lead page: the telecaller and the salesperson (and admins) see each other's notes; add one, tap your own to edit it. The others get a notification | `leads.write` or `leads.qualify` to write | `GET/POST /leads/:id/notes`, `PATCH /leads/:id/notes/:noteId` |
+| **My results / Team results** on Home: the dashboard numbers for Today, This week, This month (default) or Last month | Everyone (admins see the team and each person) | `GET /dashboards/period?from&to` |
+| **Notifications**: the web's bell. Reminders and updates, unread count on the bell (Home and every tab header) and on More, tap to open the lead (marks it read), Mark all read. | Everyone | `GET /notifications`, `POST /notifications/:id/read`, `POST /notifications/read-all` |
 
 **Stage 4 (built; needs real-phone testing): sales workflow**
 
-Salespeople get their own home screen (`SalesHomeScreen`), built on the telecaller screens and the same call, WhatsApp, outcome and call-log sync code:
+Salespeople get their own tabs, built on the telecaller screens and the same call, WhatsApp, outcome and call-log sync code:
 
-- **Summary** from `GET /dashboards/sales`: my open leads, follow-ups due today, overdue (red), won this month.
-- **My leads**: only leads assigned to them. Overdue follow-ups come first, then today's, then leads with no follow-up planned, then later ones. Each card shows who handed the lead over and has Call and WhatsApp buttons.
+- **Home** from `GET /dashboards/sales`: my open leads, follow-ups due today, overdue (red), won this month.
+- **My Leads** tab: only leads assigned to them. Overdue follow-ups come first, then today's, then leads with no follow-up planned, then later ones. Each card shows who handed the lead over and has Call and WhatsApp buttons.
 - **Call, WhatsApp and call outcome**: the same as telecallers, including call-log sync and the explanation screen the first time. The next step is called a "follow-up" for sales and a "callback" for telecallers; it's the same endpoint.
 - **Lead page**: the same as telecallers, plus **Move stage** (the sales stages, Won and Lost, via `PATCH /leads/:id`), **I'm at site** and the lead's site visits.
-- **I'm at site**: pick one of your leads (`GET /check-ins/leads`), take one GPS reading, and record it with the time on that lead (`POST /check-ins`). It works the same as the web check-in. The **Site visits** tab lists recent visits, each with a link to it on OpenStreetMap.
-- **Won**: revenue this month (shown when the account has the `sales.read` tag), won this month, won in total, lost this month, and the deals won this month.
+- **I'm at site**: pick one of your leads (`GET /check-ins/leads`), take one GPS reading, and record it with the time on that lead (`POST /check-ins`). It works the same as the web check-in. The **Site Visits** tab has the button too, and lists recent visits on a map and, each with a link to it on OpenStreetMap.
+- **This month** (on Home) and **Won this month** (on Pipeline): revenue this month (shown when the account has the `sales.read` tag), won this month, won in total, lost this month, and the deals won this month.
 
 **Location.** The app asks for location "only while using the app". It reads it once, when "I'm at site" is tapped, and never in the background. Background location and foreground services are blocked in `app.json`, so the app can't track anyone.
 
@@ -82,7 +89,7 @@ How that's enforced:
 - It's given the list of the user's lead numbers from `GET /device-calls/lead-numbers`, and drops every other row inside the module. A non-lead call never reaches the app's JavaScript, storage or the network.
 - The first sync only starts the clock. No past calls are read. Turning the permission off resets this, so turning it back on starts fresh.
 
-**Permission flow.** A telecaller sees the explanation screen once, the first time they reach their worklist. It's also under Account → Call tracking.
+**Permission flow.** A telecaller sees the explanation screen once, the first time they reach their worklist. It's also under More → Call tracking.
 
 | State | What happens |
 | --- | --- |
@@ -98,6 +105,10 @@ Nothing in this flow can crash the app: a refusal, or an unreadable call log, si
 **Google Play.** Play only allows the call-log permission for a few app categories such as default dialers, so this app would likely need this feature removed or a declaration approved to be published there. It's distributed as a direct APK, where this doesn't apply.
 
 **When it syncs:** when the app opens, whenever it returns to the foreground, and again 5 and 15 seconds after returning from a call placed with the Call button, because Android can take a moment to write the entry.
+
+**Incoming calls from leads.** All four directions are read, including calls the customer made to you and calls dialled outside the app. Each one is stored on the matching lead (last 10 digits, among the leads you can see) with its direction and duration, and appears in the lead's "Calls and messages" (app) and "Calls, messages & visits" (web).
+
+**"How did the call go?" after an answered incoming call.** When a sync finds an answered incoming call (longer than 0 seconds) on one of your open leads, from the last 2 days, that you haven't logged an outcome for since, the app opens the usual outcome form over whichever tab is open, saying who called, when and for how long. Saving logs the call at the time it happened, marked "Incoming call" in the history, with the same effects as any logged call: it closes your pending callbacks on that lead, can set the next one, and "Interested" goes on to Qualify. **Skip, don't log it** drops the prompt; the call itself stays on the lead. One prompt per lead (its latest call), one at a time; they are kept on the phone until answered or skipped, and each call is asked about only once. Missed, rejected, unanswered and outgoing calls never prompt (the app already asks after its own Call button). The server decides which calls qualify (`toLog` in the sync reply).
 
 **Offline.** There's no separate queue: the phone's call log is the queue. The sync position only moves forward after the server confirms, so calls made offline are sent on the next successful sync. A failed sync retries every minute while the app is open. Each read looks back 2 hours, because Android dates a call by when it started but only writes it when it ends.
 

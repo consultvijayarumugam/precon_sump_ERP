@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { leadScope } from '../crm/lead-scope.js';
+import type { DeviceCallDirection } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { businessPeriods } from '../workflow/business-periods.js';
 import type { DeviceCallDto, SyncDeviceCallsDto } from './dto/device-calls.dto.js';
-import { buildTalkTime, callSummary, phoneKey, TALK_PERIODS } from './talk-time.js';
+import { buildTalkTime, callSummary, outcomePrompts, phoneKey, PROMPT_WINDOW_MS, TALK_PERIODS } from './talk-time.js';
 import type { PeriodTotal, TalkPeriod } from './talk-time.js';
 
 /** Phones with a wrong clock: anything further ahead than this is dropped, not counted. */
@@ -36,7 +37,7 @@ export class DeviceCallsService {
     const calls = dto.calls.filter((c) => new Date(c.startedAt).getTime() <= latest);
     const leadFor = await this.matchLeads(user, calls);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const stored = await tx.deviceCall.createManyAndReturn({
         data: calls.map((c) => ({
           userId: user.id,
@@ -69,8 +70,37 @@ export class DeviceCallsService {
         duplicates: calls.length - stored.length,
         rejected: dto.calls.length - calls.length,
         matchedToLeads: onLeads.length,
+        storedCalls: stored,
       };
     });
+    const { storedCalls, ...counts } = result;
+    return { ...counts, toLog: await this.toLog(user, storedCalls) };
+  }
+
+  /**
+   * Answered incoming calls that still need an outcome: the phone asks
+   * "How did the call go?" for each (see outcomePrompts). Only open leads,
+   * only calls this person hasn't logged since.
+   */
+  private async toLog(user: AuthenticatedUser, stored: { leadId: string | null; direction: DeviceCallDirection; durationSeconds: number; startedAt: Date }[]) {
+    const now = new Date();
+    const recent = stored.filter((c) => c.leadId && c.direction === 'INCOMING' && c.durationSeconds > 0 && now.getTime() - c.startedAt.getTime() <= PROMPT_WINDOW_MS);
+    if (recent.length === 0) return [];
+    const leadIds = [...new Set(recent.map((c) => c.leadId!))];
+    const since = new Date(Math.min(...recent.map((c) => c.startedAt.getTime())));
+    const [leads, logged] = await Promise.all([
+      this.prisma.lead.findMany({
+        where: { AND: [leadScope(user), { id: { in: leadIds } }, { status: { notIn: ['WON', 'LOST'] } }] },
+        select: { id: true, name: true, phone: true },
+      }),
+      this.prisma.callLog.groupBy({ by: ['leadId'], where: { callerId: user.id, leadId: { in: leadIds }, calledAt: { gte: since } }, _max: { calledAt: true } }),
+    ]);
+    return outcomePrompts(
+      stored,
+      new Map(leads.map((l) => [l.id, { name: l.name, phone: l.phone }])),
+      new Map(logged.flatMap((g) => (g._max.calledAt ? [[g.leadId, g._max.calledAt] as const] : []))),
+      now,
+    );
   }
 
   /**

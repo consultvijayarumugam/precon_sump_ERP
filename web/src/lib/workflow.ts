@@ -253,3 +253,21 @@ export function callbackPresets(now = new Date()): { label: string; at: Date }[]
     { label: "In 2 days", at: twoDays },
   ];
 }
+
+/** Directions of a call read from the phone's call log by the mobile app. */
+export type PhoneCallDirection = "OUTGOING" | "INCOMING" | "MISSED" | "REJECTED";
+
+export const PHONE_DIRECTION_LABELS: Record<PhoneCallDirection, string> = {
+  OUTGOING: "Outgoing call",
+  INCOMING: "Incoming call",
+  MISSED: "Missed call",
+  REJECTED: "Rejected call",
+};
+
+/** "3m 12s talk" for a connected call; otherwise what happened. */
+export function phoneCallResult(call: { direction: PhoneCallDirection; durationSeconds: number }): string {
+  if (call.durationSeconds > 0) return `${formatTalkTime(call.durationSeconds)} talk`;
+  if (call.direction === "OUTGOING") return "Not answered";
+  if (call.direction === "INCOMING") return "Not connected";
+  return call.direction === "MISSED" ? "Not picked up" : "Declined";
+}

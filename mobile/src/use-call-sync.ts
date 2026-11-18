@@ -9,14 +9,15 @@ const RETRY_MS = 60_000;
 /** Android can take a few seconds after hang-up to write the call to its log. */
 const AFTER_CALL_DELAYS_MS = [5_000, 15_000];
 
-/** Keeps the phone's work calls flowing to the server while the app is open. */
-export function useCallSync() {
+/** Keeps the phone's work calls flowing to the server while the app is open (for roles that call leads). */
+export function useCallSync(enabled = true) {
   const router = useRouter();
   const { api } = useSession();
   const { user } = useUser();
   const userId = user.id;
 
   useEffect(() => {
+    if (!enabled) return;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let alive = true;
 
@@ -49,5 +50,5 @@ export function useCallSync() {
       subscription.remove();
       for (const timer of timers) clearTimeout(timer);
     };
-  }, [api, userId, router]);
+  }, [api, userId, router, enabled]);
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError, login, User } from '../api';
+import { DeliveryScene } from '../components/delivery-scene';
 import { isPlainHttp, normalizeApiUrl } from '../lib/api-url';
 
 /** Release builds only connect over HTTPS (Android blocks cleartext); debug builds also allow http for local testing. */
@@ -57,6 +58,10 @@ export function LoginScreen({
     <SafeAreaView style={styles.page}>
       <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          {/* The web login's delivery scene: a Precon lorry bringing a precast sump. */}
+          <View style={styles.scene}>
+            <DeliveryScene />
+          </View>
           <Text style={styles.brand}>
             Precon <Text style={styles.brandAccent}>Sump</Text>
           </Text>
@@ -153,6 +158,7 @@ export function LoginScreen({
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 20 },
+  scene: { marginBottom: 20 },
   brand: { fontSize: 32, fontWeight: '700', color: colors.navy900, textAlign: 'center' },
   brandAccent: { color: colors.blue },
   subtitle: { marginTop: 4, marginBottom: 24, fontSize: 15, color: colors.ink2, textAlign: 'center' },

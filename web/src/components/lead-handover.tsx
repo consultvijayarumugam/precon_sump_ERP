@@ -31,15 +31,56 @@ import { CheckIn } from "@/lib/workflow";
 import { SharedFiles } from "@/components/shared-files";
 import type { SharedFile } from "@/lib/files";
 
-/** "Salesperson: X · Telecaller: Y" once handed over; otherwise "Assigned to". */
-export function LeadOwners({ lead, onChanged }: { lead: LeadDetail; onChanged: () => void }) {
-  const { user, can } = useAuth();
-  const handedOver = Boolean(lead.qualifiedAt) && lead.status !== "NEW" && lead.status !== "CONTACTED";
-  const mayChange = handedOver && (can(TAGS.LEADS_ASSIGN) || (can(TAGS.LEADS_QUALIFY) && lead.telecaller?.id === user.id));
-  const [editing, setEditing] = useState(false);
-  const team = useApi<{ members: { id: string; fullName: string; inRotation: boolean }[] }>(editing ? "/sales-team" : null);
+/** Handed to sales (Qualified or later): only then can an admin move it to a different salesperson. */
+export const isHandedOver = (lead: { qualifiedAt: string | null; status: LeadStatus }) =>
+  Boolean(lead.qualifiedAt) && lead.status !== "NEW" && lead.status !== "CONTACTED";
+
+/**
+ * Admin only (leads.assign): pick a different salesperson for a handed-over
+ * lead. The old salesperson loses it, the new one is notified, and the change
+ * history records who reassigned it, from whom and to whom.
+ */
+export function ReassignSalesperson({ leadId, currentId, onDone, onCancel }: { leadId: string; currentId: string | null; onDone: () => void; onCancel: () => void }) {
+  const team = useApi<{ members: { id: string; fullName: string; inRotation: boolean }[] }>("/sales-team");
   const [choice, setChoice] = useState("");
   const save = useAction();
+  return (
+    <span className="mt-1.5 flex flex-wrap items-center gap-2">
+      <select className={`${inputClass} w-auto`} value={choice} onChange={(e) => setChoice(e.target.value)} aria-label="New salesperson">
+        <option value="">Pick a salesperson…</option>
+        {team.data?.members
+          .filter((m) => m.id !== currentId)
+          .map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.fullName}
+              {m.inRotation ? "" : " (not taking new leads)"}
+            </option>
+          ))}
+      </select>
+      <button
+        type="button"
+        className={buttonSmClass}
+        disabled={!choice || save.busy}
+        onClick={async () => {
+          if (await save.run(() => apiPut(`/leads/${leadId}/salesperson`, { salesUserId: choice }))) onDone();
+        }}
+      >
+        Reassign
+      </button>
+      <button type="button" className={secondaryButtonSmClass} onClick={onCancel}>
+        Cancel
+      </button>
+      <ErrorText error={save.error ?? team.error} />
+    </span>
+  );
+}
+
+/** "Salesperson: X · Telecaller: Y" once handed over; otherwise "Assigned to". */
+export function LeadOwners({ lead, onChanged }: { lead: LeadDetail; onChanged: () => void }) {
+  const { can } = useAuth();
+  const handedOver = isHandedOver(lead);
+  const mayChange = handedOver && can(TAGS.LEADS_ASSIGN);
+  const [editing, setEditing] = useState(false);
 
   if (!handedOver) {
     return (
@@ -57,41 +98,19 @@ export function LeadOwners({ lead, onChanged }: { lead: LeadDetail; onChanged: (
         <span className="font-medium">{lead.assignedTo?.fullName ?? "Unassigned"}</span>
         {mayChange && !editing && (
           <button type="button" onClick={() => setEditing(true)} className="ml-2 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">
-            Change
+            Reassign
           </button>
         )}
         {editing && (
-          <span className="mt-1.5 flex flex-wrap items-center gap-2">
-            <select className={`${inputClass} w-auto`} value={choice} onChange={(e) => setChoice(e.target.value)} aria-label="New salesperson">
-              <option value="">Pick a salesperson…</option>
-              {team.data?.members
-                .filter((m) => m.id !== lead.assignedTo?.id)
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.fullName}
-                    {m.inRotation ? "" : " (not taking new leads)"}
-                  </option>
-                ))}
-            </select>
-            <button
-              type="button"
-              className={buttonSmClass}
-              disabled={!choice || save.busy}
-              onClick={async () => {
-                if (await save.run(() => apiPut(`/leads/${lead.id}/salesperson`, { salesUserId: choice }))) {
-                  setEditing(false);
-                  setChoice("");
-                  onChanged();
-                }
-              }}
-            >
-              Save
-            </button>
-            <button type="button" className={secondaryButtonSmClass} onClick={() => setEditing(false)}>
-              Cancel
-            </button>
-            <ErrorText error={save.error} />
-          </span>
+          <ReassignSalesperson
+            leadId={lead.id}
+            currentId={lead.assignedTo?.id ?? null}
+            onCancel={() => setEditing(false)}
+            onDone={() => {
+              setEditing(false);
+              onChanged();
+            }}
+          />
         )}
       </div>
       <div>

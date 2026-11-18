@@ -28,6 +28,7 @@ import { useApi } from "@/lib/use-api";
 import { Flag, formatTalkTime, MasterDashboardData, percent, TalkPeriod } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
 import { DailyQuote } from "./shared";
+import { PeriodReport } from "@/components/dashboards/period-report";
 
 // --- Building blocks ---------------------------------------------------------------
 
@@ -693,6 +694,8 @@ export function CeoDashboard() {
               foot={`${data.team.overdue} overdue callbacks & follow-ups · ${data.team.notCalled} new leads not called`}
             />
           </div>
+
+          <PeriodReport title="Team results by date" />
 
           {/* Lead flow detail */}
           <div className="grid gap-4 lg:grid-cols-3">

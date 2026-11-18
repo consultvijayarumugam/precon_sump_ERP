@@ -10,13 +10,14 @@ import { useSession } from '../session';
 import { colors, space } from '../theme';
 import { useResource } from '../use-resource';
 
-const ICON: Record<NotificationItem['type'], 'alarm-outline' | 'person-add-outline' | 'swap-horizontal-outline'> = {
+const ICON: Record<NotificationItem['type'], 'alarm-outline' | 'person-add-outline' | 'swap-horizontal-outline' | 'chatbubbles-outline'> = {
   FOLLOW_UP_DUE: 'alarm-outline',
   LEAD_ASSIGNED: 'person-add-outline',
   LEAD_HANDED_OVER: 'swap-horizontal-outline',
+  NOTE_ADDED: 'chatbubbles-outline',
 };
 
-/** The web's notification bell, as a screen: reminders (follow-ups due or overdue) and updates (leads assigned or handed to you). */
+/** The web's notification bell, as a screen: reminders (follow-ups due or overdue) and updates (leads assigned or handed to you, shared notes on your leads). */
 export function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -73,7 +74,7 @@ export function NotificationsScreen() {
             const late = item.type === 'FOLLOW_UP_DUE' && item.overdue;
             return (
               <Pressable testID={`note-${item.title}`} onPress={() => void openItem(item)} style={({ pressed }) => [styles.row, unread && styles.unread, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={`${unread ? 'New: ' : ''}${item.title}`}>
-                <Ionicons name={ICON[item.type]} size={22} color={late ? colors.red : colors.blue} />
+                <Ionicons name={ICON[item.type] ?? 'notifications-outline'} size={22} color={late ? colors.red : colors.blue} />
                 <View style={styles.flex}>
                   <Text style={[styles.title, unread && styles.titleUnread]}>{item.title}</Text>
                   {item.body ? <Text style={styles.body}>{item.body}</Text> : null}

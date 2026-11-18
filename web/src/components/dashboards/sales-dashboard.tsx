@@ -17,6 +17,7 @@ import { MyReminders } from "./my-reminders";
 import { DailyQuote, EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from "./shared";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
+import { PeriodReport } from "@/components/dashboards/period-report";
 
 /** One board column: an admin-defined sales stage, or this month's Won / Lost. */
 interface Column {
@@ -153,6 +154,8 @@ export function SalesDashboard() {
           hint={`${dueToday} more due today`}
         />
       </KpiRow>
+
+      <PeriodReport title="My results" />
 
       <section>
         <SectionHeader title="Follow-ups: overdue and today" module="crm" href="/follow-ups" />

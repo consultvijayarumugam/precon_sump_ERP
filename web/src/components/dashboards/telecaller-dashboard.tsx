@@ -18,6 +18,7 @@ import {
 } from "@/lib/workflow";
 import { MyReminders } from "./my-reminders";
 import { DailyQuote, EmptyNote, Greeting, KpiRow, KpiTile } from "./shared";
+import { PeriodReport } from "@/components/dashboards/period-report";
 
 const BUCKET_ORDER: WorklistBucket[] = ["overdue", "today", "new", "no_next_step", "later"];
 
@@ -183,6 +184,8 @@ export function TelecallerDashboard() {
           hint={c && `${c.callsThisWeek} this week · ${c.qualifiedToday} qualified today`}
         />
       </KpiRow>
+
+      <PeriodReport title="My results" />
 
       {notice && (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200" role="status">

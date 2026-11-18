@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, ToastAndroid, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FollowUpSheet } from '../components/follow-up-sheet';
 import { EditLeadSheet } from '../components/lead-form';
+import { SharedNotes } from '../components/lead-notes';
 import { SiteVisitSheet, VisitRow } from '../components/site-visit';
 import { StageSheet } from '../components/stage-sheet';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
@@ -160,10 +161,12 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           <Info label="Product">{productLabel(lead) ?? 'Not known yet'}</Info>
           <Info label="Source">{`${SOURCE_LABELS[lead.source] ?? lead.source}${lead.sourceDetail ? ` · ${lead.sourceDetail}` : ''}`}</Info>
           {lead.email && <Info label="Email">{lead.email}</Info>}
-          <Info label="Assigned to">{lead.assignedTo?.fullName ?? 'Unassigned'}</Info>
+          <Info label={lead.qualifiedAt ? 'Salesperson' : 'Assigned to'}>{lead.assignedTo?.fullName ?? 'Unassigned'}</Info>
+          {lead.telecaller && lead.qualifiedAt ? <Info label="Telecaller">{lead.telecaller.fullName}</Info> : null}
           <Info label="Created">{formatDateTime(lead.createdAt)}</Info>
-          {lead.notes && <Info label="Notes">{lead.notes}</Info>}
         </View>
+
+        <SharedNotes lead={lead} />
 
         <Text style={styles.heading}>Follow-ups</Text>
         <View style={styles.card}>

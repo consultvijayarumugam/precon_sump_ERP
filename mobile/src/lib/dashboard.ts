@@ -41,6 +41,15 @@ export interface LeadListItem {
   sumpSizeLitres: number | null;
   nextFollowUpAt: string | null;
   closedAt: string | null;
+  /** Who has it now (null = nobody: no telecaller was taking leads when it arrived). */
+  assignedTo: { id: string; fullName: string } | null;
+}
+
+/** The "who has it" line on a lead list row: you, someone else, or nobody (a warning). */
+export function ownerLine(lead: Pick<LeadListItem, 'assignedTo'>, meId: string): { text: string; warn: boolean } {
+  if (!lead.assignedTo) return { text: 'Not assigned to anyone', warn: true };
+  if (lead.assignedTo.id === meId) return { text: 'Assigned to you', warn: false };
+  return { text: `With ${lead.assignedTo.fullName}`, warn: false };
 }
 
 export interface LeadListPage {
@@ -88,12 +97,14 @@ export const LEAD_FILTERS: { key: string; label: string; status?: LeadStatus }[]
 ];
 
 /** The query string for one page of the lead list. */
-export function leadListQuery({ search, status, stageId, page, pageSize = 30 }: { search?: string; status?: LeadStatus; stageId?: string; page: number; pageSize?: number }) {
+/** `dates`: the date filter's params (see leadDateParams in date-range.ts), so it combines with the status filter. */
+export function leadListQuery({ search, status, stageId, dates = [], page, pageSize = 30 }: { search?: string; status?: LeadStatus; stageId?: string; dates?: [string, string][]; page: number; pageSize?: number }) {
   const params: [string, string][] = [];
   const term = search?.trim();
   if (term) params.push(['search', term]);
   if (status) params.push(['status', status]);
   if (stageId) params.push(['stageId', stageId]);
+  params.push(...dates);
   params.push(['page', String(page)], ['pageSize', String(pageSize)]);
   return `/leads?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
 }

@@ -145,6 +145,16 @@ export function Sheet({ title, onClose, children, footer }: { title: string; onC
   );
 }
 
+/** The "Search all my leads" bar at the top of the My Leads tab; opens the searchable list (GET /leads). */
+export function SearchLeadsLink({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable testID="all-leads-button" onPress={onPress} style={({ pressed }) => [styles.search, pressed && { opacity: 0.8 }]} accessibilityRole="search" accessibilityLabel="Search all my leads">
+      <Ionicons name="search" size={20} color={colors.ink3} />
+      <Text style={styles.searchText}>Search all my leads, any status</Text>
+    </Pressable>
+  );
+}
+
 export const inputStyle = {
   minHeight: space.tap,
   borderWidth: 1,
@@ -173,5 +183,7 @@ const styles = StyleSheet.create({
   sheet: { maxHeight: '88%', backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 8 },
   grabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.lineStrong, marginBottom: 10 },
   sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.ink, marginBottom: 6 },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: space.tap, marginHorizontal: 12, marginTop: 12, paddingHorizontal: 14, borderRadius: 24, borderWidth: 1, borderColor: colors.lineStrong, backgroundColor: colors.card },
+  searchText: { fontSize: 15, color: colors.ink3 },
   sheetFooter: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingTop: 4 },
 });

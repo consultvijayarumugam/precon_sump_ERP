@@ -2,13 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, ToastAndroid, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DateRangeBar } from '../components/date-range-bar';
 import { FollowUpSheet } from '../components/follow-up-sheet';
+import { ALL_TIME, rangeLabel, type DateRange } from '../lib/date-range';
 import { Centered, Chip, ErrorBanner, StageBadge } from '../components/ui';
 import { FOLLOW_UP_OUTCOME_LABELS, FOLLOW_UP_TABS, followUpsPath, type FollowUpTab, type FollowUpWithLead } from '../lib/followups';
 import { formatDateTime, productLabel } from '../lib/workflow';
 import { useUser } from '../session';
 import { colors, space } from '../theme';
+import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
 
 /** One follow-up: lead, when, note; tap to mark it done or move it (or open the lead, once done). */
@@ -37,12 +39,14 @@ export function FollowUpRow({ f, onPress }: { f: FollowUpWithLead; onPress: () =
 }
 
 /** My follow-ups, as on the web Follow-ups page: overdue, upcoming and done. */
-export function FollowUpsScreen() {
+export function FollowUpsScreen({ calendarLink = true }: { calendarLink?: boolean }) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const pad = useBottomPad();
   const { can } = useUser();
   const [tab, setTab] = useState<FollowUpTab>('overdue');
-  const { data, error, refreshing, refresh, reload } = useResource<FollowUpWithLead[]>(followUpsPath(tab));
+  // Date filter: the days they were (or are) due, combined with the tab.
+  const [range, setRange] = useState<DateRange>(ALL_TIME);
+  const { data, error, refreshing, refresh, reload } = useResource<FollowUpWithLead[]>(followUpsPath(tab, range));
   const [open, setOpen] = useState<FollowUpWithLead | null>(null);
   const canWrite = can('followups.write');
   const noun = can('leads.receive_qualified') ? 'follow-up' : 'callback';
@@ -52,11 +56,14 @@ export function FollowUpsScreen() {
       <Stack.Screen
         options={{
           title: noun === 'follow-up' ? 'My follow-ups' : 'My callbacks',
-          headerRight: () => (
-            <Pressable testID="open-calendar" onPress={() => router.push('/calendar')} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Calendar">
-              <Ionicons name="calendar-outline" size={24} color="#FFFFFF" />
-            </Pressable>
-          ),
+          // On the telecaller's Callbacks tab the calendar is its own tab.
+          ...(calendarLink && {
+            headerRight: () => (
+              <Pressable testID="open-calendar" onPress={() => router.push('/calendar')} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Calendar">
+                <Ionicons name="calendar-outline" size={24} color="#FFFFFF" />
+              </Pressable>
+            ),
+          }),
         }}
       />
       <View style={styles.tabs}>
@@ -64,6 +71,7 @@ export function FollowUpsScreen() {
           <Chip key={t.key} testID={`fu-tab-${t.key}`} label={t.label} active={tab === t.key} onPress={() => setTab(t.key)} tone={t.key === 'overdue' ? 'danger' : t.key === 'completed' ? 'good' : undefined} />
         ))}
       </View>
+      <DateRangeBar value={range} onChange={setRange} caption={`Due: ${rangeLabel(range)}`} />
       <ErrorBanner message={error} />
       {!data && !error ? (
         <Centered />
@@ -78,7 +86,7 @@ export function FollowUpsScreen() {
           ListEmptyComponent={
             <Text style={styles.empty}>{tab === 'overdue' ? 'Nothing overdue. 🎉' : tab === 'upcoming' ? `No ${noun}s planned yet.` : `No ${noun}s done yet.`}</Text>
           }
-          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+          contentContainerStyle={{ paddingBottom: pad }}
         />
       )}
       {open && (

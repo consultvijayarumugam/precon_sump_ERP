@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsDate, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDate, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsDateOnly } from '../../finance/dto/common.dto.js';
 import { CallOutcome } from '../../generated/prisma/client.js';
 import { SUMP_SIZES_LITRES } from '../../stock/product-catalog.js';
 
@@ -25,6 +26,21 @@ export class LogCallDto {
   @Type(() => Date)
   @IsDate()
   nextCallbackAt?: Date;
+
+  @ApiPropertyOptional({
+    example: '2026-11-18T15:40:00+05:30',
+    description: 'When the call happened, if not now (an incoming call found in the phone\'s call log). Up to 7 days back.',
+  })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @Type(() => Date)
+  @IsDate()
+  calledAt?: Date;
+
+  @ApiPropertyOptional({ description: 'The customer called in (from the phone\'s call log)' })
+  @IsOptional()
+  @IsBoolean()
+  incoming?: boolean;
 }
 
 export class NextCallbackDto {
@@ -120,4 +136,16 @@ export class ChangeSalespersonDto {
   @ApiProperty({ description: 'The salesperson to give the lead to (must hold leads.receive_qualified)' })
   @IsUUID()
   salesUserId: string;
+}
+
+export class PeriodQueryDto {
+  @ApiPropertyOptional({ example: '2026-11-01', description: 'First day (business time zone). Default: the 1st of this month' })
+  @IsOptional()
+  @IsDateOnly()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-30', description: 'Last day, inclusive. Default: today' })
+  @IsOptional()
+  @IsDateOnly()
+  to?: string;
 }

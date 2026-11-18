@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { User } from '../api';
+import { PeriodReportCard } from '../components/period-report-card';
 import { colors } from '../theme';
 
 export function HomeScreen({ user, apiUrl, onLogout }: { user: User; apiUrl: string; onLogout: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   return (
-    <SafeAreaView style={styles.page}>
-      <View style={styles.body}>
+    <SafeAreaView style={styles.page} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.body}>
         <Text style={styles.brand}>
           Precon <Text style={styles.brandAccent}>Sump</Text>
         </Text>
@@ -31,14 +32,21 @@ export function HomeScreen({ user, apiUrl, onLogout }: { user: User; apiUrl: str
         >
           {busy ? <ActivityIndicator color={colors.blue} /> : <Text style={styles.buttonText}>Log out</Text>}
         </Pressable>
-      </View>
+        {/* Admins (leads.read_all) see the team's results; others with leads.read their own. */}
+        {user.permissions?.includes('leads.read') && (
+          <View style={styles.report}>
+            <PeriodReportCard title={user.permissions.includes('leads.read_all') ? 'Team results' : 'My results'} />
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
-  body: { flex: 1, justifyContent: 'center', padding: 20 },
+  body: { flexGrow: 1, justifyContent: 'center', padding: 20 },
+  report: { marginHorizontal: -12, marginTop: 8 },
   brand: { fontSize: 32, fontWeight: '700', color: colors.navy900, textAlign: 'center', marginBottom: 24 },
   brandAccent: { color: colors.blue },
   card: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 20 },

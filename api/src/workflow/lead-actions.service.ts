@@ -5,7 +5,7 @@ import { leadScope } from '../crm/lead-scope.js';
 import { CallOutcome, FollowUpOutcome, LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
 import { recordActivity, STATUS_WORDS, when } from '../crm/lead-history.js';
-import { notifyLeadHandedOver } from '../notifications/notify.js';
+import { notifyLeadAssigned, notifyLeadHandedOver } from '../notifications/notify.js';
 import { StagesService } from '../pipeline/stages.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
@@ -22,6 +22,9 @@ const FOLLOW_UP_OUTCOME: Record<CallOutcome, FollowUpOutcome> = {
   NOT_INTERESTED: 'NOT_INTERESTED',
   WRONG_NUMBER: 'OTHER',
 };
+
+/** How far back an outcome can be dated (an incoming call found in the phone's call log). */
+const CALLED_AT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const OUTCOME_TEXT: Record<CallOutcome, string> = {
   NO_ANSWER: 'No answer',
@@ -57,6 +60,11 @@ export class LeadActionsService {
     const lead = await this.leadInScope(user, leadId);
     const now = new Date();
     if (dto.nextCallbackAt && dto.nextCallbackAt <= now) throw new BadRequestException('The next callback must be in the future');
+    // An incoming call logged after the fact keeps the time it happened (a little clock skew allowed).
+    if (dto.calledAt && (dto.calledAt.getTime() > now.getTime() + 5 * 60_000 || now.getTime() - dto.calledAt.getTime() > CALLED_AT_MAX_AGE_MS)) {
+      throw new BadRequestException('The call time must be within the last 7 days');
+    }
+    const calledAt = dto.calledAt && dto.calledAt < now ? dto.calledAt : now;
     const closes = CLOSING_OUTCOMES.includes(dto.outcome);
     if (closes && dto.nextCallbackAt) throw new BadRequestException(`"${OUTCOME_TEXT[dto.outcome]}" closes the lead, so no callback is needed`);
 
@@ -71,7 +79,7 @@ export class LeadActionsService {
     const status: LeadStatus | undefined = toStage?.phase;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.callLog.create({ data: { leadId, callerId: user.id, outcome: dto.outcome, note: dto.note || null, calledAt: now } });
+      await tx.callLog.create({ data: { leadId, callerId: user.id, outcome: dto.outcome, note: dto.note || null, calledAt } });
       // Only the lead's current owner closes its open follow-ups by calling: a telecaller
       // calling a lead they already handed to sales mustn't tick off the salesperson's.
       if (lead.assignedToId === user.id) {
@@ -88,7 +96,7 @@ export class LeadActionsService {
       if (toStage && toStage.id !== lead.stageId) {
         await tx.lead.update({ where: { id: leadId }, data: { status: toStage.phase, stageId: toStage.id, closedAt: toStage.phase === 'LOST' ? now : undefined } });
       }
-      const parts = [`Call: ${OUTCOME_TEXT[dto.outcome]}`];
+      const parts = [`${dto.incoming ? 'Incoming call' : 'Call'}: ${OUTCOME_TEXT[dto.outcome]}`];
       if (dto.note) parts.push(dto.note);
       if (dto.nextCallbackAt) parts.push(`next callback ${when(dto.nextCallbackAt)}`);
       const changed = Boolean(toStage && toStage.id !== lead.stageId);
@@ -100,7 +108,7 @@ export class LeadActionsService {
         type: 'CALL_LOGGED',
         summary: parts.join(' · '),
         changes: changed ? [{ field: 'stage', label: 'Stage', from: fromName, to: toStage!.name }] : undefined,
-        at: now,
+        at: calledAt,
       });
     });
     const moved = Boolean(toStage && toStage.id !== lead.stageId);
@@ -251,9 +259,9 @@ export class LeadActionsService {
       select: { id: true, name: true, status: true, qualifiedAt: true, telecallerId: true, assignedToId: true, assignedTo: { select: { fullName: true } } },
     });
     if (!lead) throw new NotFoundException('Lead not found');
-    const canAssign = user.permissions.includes(PERMISSIONS.LEADS_ASSIGN);
-    if (!canAssign && lead.telecallerId !== user.id) {
-      throw new ForbiddenException('Only the telecaller who handled this lead (or an admin) can change its salesperson');
+    // Admin only (the controller checks the tag too; this keeps the service safe on its own).
+    if (!user.permissions.includes(PERMISSIONS.LEADS_ASSIGN)) {
+      throw new ForbiddenException('Only an admin can reassign a lead to a different salesperson');
     }
     if (!lead.qualifiedAt || TELECALLER_STAGES.includes(lead.status)) {
       throw new BadRequestException('This lead has not been handed to sales yet; use Qualify to hand it over');
@@ -269,10 +277,16 @@ export class LeadActionsService {
         leadId,
         userId: user.id,
         type: 'ASSIGNED',
-        summary: `Salesperson changed: ${lead.assignedTo?.fullName ?? 'nobody'} → ${target.fullName}`,
+        summary: `Reassigned by ${user.fullName}: ${lead.assignedTo?.fullName ?? 'nobody'} → ${target.fullName}`,
         changes: [{ field: 'assignedTo', label: 'Salesperson', from: lead.assignedTo?.fullName ?? null, to: target.fullName }],
       });
-      await notifyLeadHandedOver(tx, { userId: target.id, leadId, leadName: lead.name, fromName: user.fullName, actorId: user.id });
+      await notifyLeadAssigned(tx, {
+        userId: target.id,
+        leadId,
+        leadName: lead.name,
+        actorId: user.id,
+        how: `Reassigned to you by ${user.fullName}${lead.assignedTo ? ` (was ${lead.assignedTo.fullName})` : ''}`,
+      });
     });
     return { leadId, salesperson: { id: target.id, fullName: target.fullName } };
   }

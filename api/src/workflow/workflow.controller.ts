@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   CurrentUser,
@@ -9,7 +9,8 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { CheckInsService } from './check-ins.service.js';
 import { DashboardsService } from './dashboards.service.js';
-import { ChangeSalespersonDto, CheckInDto, LogCallDto, NextCallbackDto, QualifyLeadDto } from './dto/workflow.dto.js';
+import { ChangeSalespersonDto, CheckInDto, LogCallDto, NextCallbackDto, PeriodQueryDto, QualifyLeadDto } from './dto/workflow.dto.js';
+import { PeriodReportService } from './period-report.service.js';
 import { LeadActionsService } from './lead-actions.service.js';
 
 const SCOPE = 'Only leads you can see (404 otherwise).';
@@ -60,10 +61,12 @@ export class LeadActionsController {
   }
 
   @Put('leads/:id/salesperson')
-  @RequireAnyPermission(PERMISSIONS.LEADS_QUALIFY, PERMISSIONS.LEADS_ASSIGN)
+  @RequirePermissions(PERMISSIONS.LEADS_ASSIGN)
   @ApiOperation({
-    summary: 'Change the salesperson on a handed-over lead (the telecaller who handled it, or leads.assign)',
-    description: 'Only after handover (Qualified or later). Notifies the new salesperson and records it in the history.',
+    summary: 'Reassign a handed-over lead to a different salesperson (admin: leads.assign)',
+    description:
+      'Only after handover (Qualified or later). The old salesperson loses the lead, the new one gets it and a notification, ' +
+      'and the change history records who reassigned it, from whom, to whom and when.',
   })
   changeSalesperson(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeSalespersonDto) {
     return this.actions.changeSalesperson(user, id, dto.salesUserId);
@@ -108,7 +111,22 @@ export class LeadActionsController {
 @ApiBearerAuth()
 @Controller('dashboards')
 export class DashboardsController {
-  constructor(private readonly dashboards: DashboardsService) {}
+  constructor(
+    private readonly dashboards: DashboardsService,
+    private readonly periods: PeriodReportService,
+  ) {}
+
+  @Get('period')
+  @RequirePermissions(PERMISSIONS.LEADS_READ)
+  @ApiOperation({
+    summary: 'Dashboard numbers for a date range: leads, calls, conversions, wins, revenue, follow-up compliance, talk-time, site visits',
+    description:
+      'Admins (leads.read_all) get team totals, leads by source and a row per telecaller and salesperson; everyone else only their own. ' +
+      'Default range: this month so far. Revenue needs sales.read (own) or sales.read_all / finance.dashboard (team).',
+  })
+  period(@CurrentUser() user: AuthenticatedUser, @Query() query: PeriodQueryDto) {
+    return this.periods.report(user, query.from, query.to);
+  }
 
   @Get('telecaller')
   @RequirePermissions(PERMISSIONS.LEADS_READ)

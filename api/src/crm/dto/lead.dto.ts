@@ -142,6 +142,16 @@ export class ListLeadsQueryDto {
   @IsDateOnly()
   wonTo?: string;
 
+  @ApiPropertyOptional({ example: '2026-11-01', description: 'Added on or after this day (createdAt, business time zone)' })
+  @IsOptional()
+  @IsDateOnly()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-30', description: 'Added on or before this day (inclusive)' })
+  @IsOptional()
+  @IsDateOnly()
+  createdTo?: string;
+
   @ApiPropertyOptional({ description: 'Matches name, phone or city' })
   @IsOptional()
   @Transform(trim)

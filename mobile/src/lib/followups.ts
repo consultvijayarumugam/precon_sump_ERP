@@ -1,6 +1,7 @@
 // Follow-ups (the web Follow-ups page and calendar) and the notification feed,
 // mirroring GET /follow-ups, POST /follow-ups/:id/complete, GET /notifications.
 import type { LeadStatus, ProductInterest, StageRef } from './workflow.ts';
+import type { DateRange } from './date-range.ts';
 
 export type FollowUpOutcome = 'CONNECTED' | 'NO_ANSWER' | 'CALL_BACK' | 'INTERESTED' | 'NOT_INTERESTED' | 'QUOTE_SENT' | 'OTHER';
 
@@ -43,7 +44,10 @@ export const FOLLOW_UP_TABS: { key: FollowUpTab; label: string }[] = [
 ];
 
 /** My follow-ups in one state (only leads assigned to me, as on the web page's "mine"). */
-export const followUpsPath = (state: FollowUpTab) => `/follow-ups?state=${state}&assignedTo=me`;
+export const followUpsPath = (state: FollowUpTab, range?: DateRange) => {
+  const days = range && range.preset !== 'all' ? `${range.from ? `&fromDate=${range.from}` : ''}${range.to ? `&toDate=${range.to}` : ''}` : '';
+  return `/follow-ups?state=${state}&assignedTo=me${days}`;
+};
 
 /** Local calendar day as YYYY-MM-DD (the phone is on India time). */
 export function dayKey(at: Date): string {
@@ -89,7 +93,7 @@ export function calendarPath(weeks: { date: Date }[][]) {
 
 export interface NotificationItem {
   id: string;
-  type: 'LEAD_ASSIGNED' | 'LEAD_HANDED_OVER' | 'FOLLOW_UP_DUE';
+  type: 'LEAD_ASSIGNED' | 'LEAD_HANDED_OVER' | 'FOLLOW_UP_DUE' | 'NOTE_ADDED';
   title: string;
   body: string | null;
   readAt: string | null;

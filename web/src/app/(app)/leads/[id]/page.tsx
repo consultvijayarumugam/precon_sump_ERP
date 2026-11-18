@@ -8,6 +8,7 @@ import { FollowUpItem } from "@/components/follow-up-item";
 import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
 import { LeadHistoryTimeline, LeadOwners, LeadVisits } from "@/components/lead-handover";
+import { LeadNotes } from "@/components/lead-notes";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { pickableStages, useStages } from "@/lib/stages";
@@ -32,7 +33,7 @@ import {
   toDateTimeLocal,
 } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
-import { CALL_OUTCOME_LABELS, CallOutcome, CheckIn, CLOSING_OUTCOMES } from "@/lib/workflow";
+import { CALL_OUTCOME_LABELS, CallOutcome, CheckIn, CLOSING_OUTCOMES, PHONE_DIRECTION_LABELS, phoneCallResult, type PhoneCallDirection } from "@/lib/workflow";
 
 function AddFollowUp({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
   // Default: tomorrow at 11:00.
@@ -108,8 +109,18 @@ interface MessageRow {
   user: { id: string; fullName: string };
 }
 
+/** A real call read from the phone's call log by the mobile app (any direction, with its duration). */
+interface PhoneCallRow {
+  id: string;
+  direction: PhoneCallDirection;
+  startedAt: string;
+  durationSeconds: number;
+  user: { id: string; fullName: string };
+}
+
 type HistoryEntry =
   | { kind: "call"; id: string; at: string; by: string; call: CallLogRow }
+  | { kind: "phone"; id: string; at: string; by: string; phone: PhoneCallRow }
   | { kind: "attempt"; id: string; at: string; by: string }
   | { kind: "whatsapp"; id: string; at: string; by: string; msg: MessageRow }
   | { kind: "visit"; id: string; at: string; by: string; visit: CheckIn };
@@ -120,9 +131,11 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
   const attempts = useApi<CallAttemptRow[]>(`/leads/${leadId}/call-attempts?r=${refreshKey}`);
   const messages = useApi<MessageRow[]>(`/leads/${leadId}/messages?r=${refreshKey}`);
   const visits = useApi<CheckIn[]>(`/leads/${leadId}/visits?r=${refreshKey}`);
+  const phoneCalls = useApi<PhoneCallRow[]>(`/leads/${leadId}/device-calls?r=${refreshKey}`);
   const entries: HistoryEntry[] | null =
-    calls.data && attempts.data && messages.data && visits.data
+    calls.data && attempts.data && messages.data && visits.data && phoneCalls.data
       ? [
+          ...phoneCalls.data.map((p) => ({ kind: "phone" as const, id: p.id, at: p.startedAt, by: p.user.fullName, phone: p })),
           ...calls.data.map((c) => ({ kind: "call" as const, id: c.id, at: c.calledAt, by: c.caller.fullName, call: c })),
           ...attempts.data.map((a) => ({ kind: "attempt" as const, id: a.id, at: a.createdAt, by: a.user.fullName })),
           ...messages.data.map((m) => ({ kind: "whatsapp" as const, id: m.id, at: m.createdAt, by: m.user.fullName, msg: m })),
@@ -134,7 +147,7 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
       <h2 className="font-medium">
         Calls, messages &amp; visits{entries && entries.length > 0 && <span className="ml-1 text-neutral-500">· {entries.length}</span>}
       </h2>
-      <ErrorText error={calls.error ?? attempts.error ?? messages.error ?? visits.error} />
+      <ErrorText error={calls.error ?? attempts.error ?? messages.error ?? visits.error ?? phoneCalls.error} />
       {entries && entries.length === 0 && <p className="text-sm text-neutral-500">No calls or messages yet.</p>}
       {entries && entries.length > 0 && (
         <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white text-sm shadow-xs dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900">
@@ -155,6 +168,14 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
                     {CALL_OUTCOME_LABELS[e.call.outcome]}
                   </span>
                   {e.call.note && <span className="text-neutral-600 dark:text-neutral-400"> · {e.call.note}</span>}
+                </span>
+              ) : e.kind === "phone" ? (
+                <span>
+                  <span className={`mr-1.5 text-xs font-semibold uppercase tracking-wider ${e.phone.direction === "INCOMING" ? "text-emerald-600" : "text-[var(--ps-blue-600)]"}`}>
+                    {PHONE_DIRECTION_LABELS[e.phone.direction]}
+                  </span>
+                  <span className="font-semibold">{phoneCallResult(e.phone)}</span>
+                  <span className="text-neutral-600 dark:text-neutral-400"> · from the phone&apos;s call log</span>
                 </span>
               ) : e.kind === "attempt" ? (
                 <span>
@@ -284,11 +305,6 @@ export default function LeadDetailPage() {
           {lead.closedAt && (
             <Detail label={lead.status === "WON" ? "Won on" : "Closed on"}>{formatDateTime(lead.closedAt)}</Detail>
           )}
-          <div className="sm:col-span-2">
-            <Detail label="Notes">
-              <span className="whitespace-pre-wrap">{lead.notes ?? "-"}</span>
-            </Detail>
-          </div>
         </section>
       )}
 
@@ -332,6 +348,8 @@ export default function LeadDetailPage() {
           <ErrorText error={statusError} />
         </section>
       )}
+
+      <LeadNotes lead={lead} refreshKey={`${lead.updatedAt}-${historyVersion}`} />
 
       <ContactHistory leadId={lead.id} refreshKey={`${lead.updatedAt}-${historyVersion}`} />
       <LeadVisits lead={lead} refreshKey={`${lead.updatedAt}-${historyVersion}`} onCheckedIn={() => setHistoryVersion((v) => v + 1)} />

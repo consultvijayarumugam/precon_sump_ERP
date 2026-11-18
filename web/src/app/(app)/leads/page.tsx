@@ -5,7 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { DateRangeFilter } from "@/components/date-range-filter";
 import { LeadsTable, Pager } from "@/components/leads-table";
+import { rangeFromParams, type DateRange } from "@/lib/date-range";
 import {
   ErrorText,
   inputClass,
@@ -46,6 +48,20 @@ function LeadsView() {
     search: params.get("search") ?? "",
     page: Number(params.get("page") ?? 1),
   };
+  // "Added" date range (?period=month, or ?period=custom&createdFrom=..&createdTo=..); all time when absent.
+  const period = params.get("period") ?? "";
+  const added = rangeFromParams(period || null, params.get("createdFrom"), params.get("createdTo"));
+  const dates = { period: period || undefined, createdFrom: added.from, createdTo: added.to };
+
+  function setFilter(key: string, value: string | number) {
+    const next = { ...filters, [key]: value, ...(key === "page" ? {} : { page: 1 }) };
+    router.replace(`${pathname}${queryString({ ...next, ...dates, page: next.page > 1 ? next.page : undefined })}`);
+  }
+
+  function setAdded(r: DateRange) {
+    const keep = r.preset === "custom" ? { period: "custom", createdFrom: r.from, createdTo: r.to } : { period: r.preset === "all" ? undefined : r.preset };
+    router.replace(`${pathname}${queryString({ ...filters, ...keep, page: undefined })}`);
+  }
 
   // Debounce typing in the search box before it hits the URL/API.
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -56,16 +72,11 @@ function LeadsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  function setFilter(key: string, value: string | number) {
-    const next = { ...filters, [key]: value, ...(key === "page" ? {} : { page: 1 }) };
-    router.replace(`${pathname}${queryString({ ...next, page: next.page > 1 ? next.page : undefined })}`);
-  }
-
   const canAssign = can(TAGS.LEADS_ASSIGN);
   const assignees = useApi<{ id: string; fullName: string; role: { name: string } }[]>(canAssign ? "/leads/assignees" : null);
   const stages = useStages();
   const { data, error, reload } = useApi<Paginated<LeadListItem>>(
-    `/leads${queryString({ ...filters, pageSize: PAGE_SIZE })}`,
+    `/leads${queryString({ ...filters, createdFrom: added.from, createdTo: added.to, pageSize: PAGE_SIZE })}`,
   );
 
   return (
@@ -107,7 +118,7 @@ function LeadsView() {
           onChange={(e) => {
             // Picking a stage replaces an older ?status= filter from a link.
             const next = { ...filters, stageId: e.target.value, status: "", page: 1 };
-            router.replace(`${pathname}${queryString({ ...next, page: undefined })}`);
+            router.replace(`${pathname}${queryString({ ...next, ...dates, page: undefined })}`);
           }}
           aria-label="Stage"
         >
@@ -150,6 +161,7 @@ function LeadsView() {
           </select>
         )}
       </div>
+      <DateRangeFilter key={period} value={added} onChange={setAdded} count={data?.total} noun={["lead added", "leads added"]} />
       <ErrorText error={error} />
       {data && (
         <>

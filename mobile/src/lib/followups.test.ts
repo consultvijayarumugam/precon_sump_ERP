@@ -33,3 +33,8 @@ test('requests: my follow-ups by state, and the whole visible calendar range', (
   assert.equal(dayKey(new Date(params.get('from')!)), '2026-10-26');
   assert.equal(dayKey(new Date(params.get('to')!)), '2026-12-07'); // the day after the last cell
 });
+
+test('follow-ups can be narrowed to the days they were due', () => {
+  assert.equal(followUpsPath('completed', { preset: 'week', from: '2026-11-16', to: '2026-11-22' }), '/follow-ups?state=completed&assignedTo=me&fromDate=2026-11-16&toDate=2026-11-22');
+  assert.equal(followUpsPath('overdue', { preset: 'all' }), '/follow-ups?state=overdue&assignedTo=me');
+});

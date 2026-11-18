@@ -24,7 +24,11 @@ type Open = 'log' | 'callback' | 'qualify' | 'whatsapp' | null;
  * Call, WhatsApp, log outcome, callback and qualify for one lead, shared by
  * the worklist and the lead page. Render `sheets` once alongside the buttons.
  */
-export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => void; onHandedOver?: () => void }) {
+export function useLeadActions(
+  lead: ActionLead,
+  handlers: { onChanged: () => void; onHandedOver?: () => void },
+  options: { incomingCall?: { calledAt: string; durationSeconds: number } } = {},
+) {
   const { api } = useSession();
   const { can } = useUser();
   const [open, setOpen] = useState<Open>(null);
@@ -74,6 +78,7 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
       <LogCallSheet
         leadId={lead.id}
         leadName={lead.name}
+        incomingCall={options.incomingCall}
         noun={followUpNoun}
         onClose={close}
         onDone={({ interested }) => {
@@ -135,6 +140,8 @@ export function useLeadActions(lead: ActionLead, handlers: { onChanged: () => vo
     callback: () => setOpen('callback'),
     qualify: () => setOpen('qualify'),
     sheets,
+    /** Whether one of the sheets is showing. */
+    sheetOpen: open !== null,
     canLog,
     canQualify: can('leads.qualify'),
   };

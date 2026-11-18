@@ -43,6 +43,8 @@ export class LeadsService {
           stageId: query.stageId,
           // "Won on" date range (narrows what the user can already see).
           closedAt: dayRangeFilter(query.wonFrom, query.wonTo),
+          // "Added on" date range; combines with every filter above.
+          createdAt: dayRangeFilter(query.createdFrom, query.createdTo),
         },
         query.search
           ? {

@@ -23,7 +23,7 @@ function RootNavigator() {
       }}
     >
       <Stack.Protected guard={state.status === 'in'}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="lead/[id]" options={{ title: 'Lead' }} />
         <Stack.Screen name="leads" options={{ title: 'All my leads' }} />
         <Stack.Screen name="follow-ups" options={{ title: 'Follow-ups' }} />

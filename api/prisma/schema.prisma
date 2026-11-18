@@ -116,6 +116,7 @@ model User {
   qualifiedLeads       Lead[]             @relation("LeadQualifier")
   callLogs             CallLog[]          @relation("CallLogCaller")
   leadActivities       LeadActivity[]     @relation("LeadActivityUser")
+  leadNotes            LeadNote[]         @relation("LeadNoteAuthor")
   deviceCalls          DeviceCall[]
   notifications        Notification[]     @relation("NotificationRecipient")
   lastLoginAt          DateTime?          @map("last_login_at")
@@ -229,6 +230,8 @@ model Lead {
   calls           CallLog[]
   deviceCalls     DeviceCall[]
   activities      LeadActivity[]
+  // The shared notes thread the telecaller, salesperson and admin all see.
+  sharedNotes     LeadNote[]
   notifications   Notification[]
   siteVisits      SiteVisit[]
   createdById     String           @map("created_by_id") @db.Uuid
@@ -825,6 +828,24 @@ model LeadActivity {
   @@map("lead_activities")
 }
 
+// A note in a lead's shared thread: the telecaller who worked the lead, its
+// salesperson and admins all see every note, so they can coordinate. Authors
+// can edit their own; every add and edit is also in the lead's change history.
+model LeadNote {
+  id        String    @id @default(uuid()) @db.Uuid
+  leadId    String    @map("lead_id") @db.Uuid
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId  String    @map("author_id") @db.Uuid
+  author    User      @relation("LeadNoteAuthor", fields: [authorId], references: [id])
+  body      String
+  // Set when the text is changed after it was first written.
+  editedAt  DateTime? @map("edited_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([leadId, createdAt])
+  @@map("lead_notes")
+}
+
 // Reusable WhatsApp messages the admin manages; {name}-style placeholders fill from the lead.
 model MessageTemplate {
   id         String         @id @default(uuid()) @db.Uuid
@@ -844,6 +865,7 @@ enum NotificationType {
   LEAD_ASSIGNED // a lead was given to you (round-robin, import, or by hand)
   LEAD_HANDED_OVER // a telecaller qualified a lead and handed it to you
   FOLLOW_UP_DUE // one of your callbacks / follow-ups is due today or overdue
+  NOTE_ADDED // the telecaller or salesperson on your lead added a shared note
 }
 
 model Notification {

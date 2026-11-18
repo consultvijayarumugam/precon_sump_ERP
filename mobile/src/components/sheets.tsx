@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSession } from '../session';
+import { incomingCallLine } from '../lib/call-sync';
 import { CALL_OUTCOME_LABELS, CALL_OUTCOMES, CallOutcome, callbackPresets, CLOSING_OUTCOMES, defaultCallbackFor, formatLitres, LibraryFile, MessageTemplate, ProductInterest, SalesTeam, SUMP_SIZES_LITRES } from '../lib/workflow';
 import { colors, space } from '../theme';
 import { CallbackPicker } from './callback-picker';
@@ -24,6 +25,7 @@ export function LogCallSheet({
   leadId,
   leadName,
   noun = 'callback',
+  incomingCall,
   onClose,
   onDone,
 }: {
@@ -31,6 +33,8 @@ export function LogCallSheet({
   leadName: string;
   /** "callback" for telecallers, "follow-up" for sales. */
   noun?: 'callback' | 'follow-up';
+  /** The customer called in (found in the phone's call log): logged at the time it happened. */
+  incomingCall?: { calledAt: string; durationSeconds: number };
   onClose: () => void;
   onDone: (result: { interested: boolean }) => void;
 }) {
@@ -49,7 +53,12 @@ export function LogCallSheet({
     try {
       await api(`/leads/${leadId}/calls`, {
         method: 'POST',
-        body: { outcome, note: note.trim() || undefined, nextCallbackAt: !closes && callback ? callback.toISOString() : undefined },
+        body: {
+          outcome,
+          note: note.trim() || undefined,
+          nextCallbackAt: !closes && callback ? callback.toISOString() : undefined,
+          ...(incomingCall && { calledAt: incomingCall.calledAt, incoming: true }),
+        },
       });
       onDone({ interested: outcome === 'INTERESTED' });
     } catch (err) {
@@ -60,6 +69,12 @@ export function LogCallSheet({
 
   return (
     <Sheet title={`How did the call go? ${leadName}`} onClose={onClose}>
+      {incomingCall && (
+        <View style={styles.incoming} testID="incoming-call">
+          <Ionicons name="call" size={18} color={colors.green} />
+          <Text style={styles.incomingText}>{incomingCallLine(leadName, incomingCall)}</Text>
+        </View>
+      )}
       <View style={styles.grid}>
         {CALL_OUTCOMES.map((o) => (
           <Pressable
@@ -93,6 +108,7 @@ export function LogCallSheet({
       )}
       <ErrorBanner message={error} />
       <Button testID="save-call" label="Save call" style={styles.save} onPress={save} disabled={!outcome} busy={busy} />
+      {incomingCall && <Button testID="skip-call" label="Skip, don't log it" tone="secondary" style={styles.skip} onPress={onClose} />}
     </Sheet>
   );
 }
@@ -300,6 +316,9 @@ const styles = StyleSheet.create({
   outcomeTextOn: { color: '#FFFFFF' },
   warning: { marginTop: 14, color: colors.red, fontSize: 14, fontWeight: '600' },
   save: { marginTop: 16, marginBottom: 4 },
+  skip: { marginTop: 8, marginBottom: 4 },
+  incoming: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.greenLight, borderColor: colors.greenLine, borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 },
+  incomingText: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.ink },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   multiline: { minHeight: 84, paddingTop: 12, textAlignVertical: 'top' },
   fileRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: space.tap, paddingVertical: 6 },

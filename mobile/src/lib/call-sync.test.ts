@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { callKey, formatDuration, leadsByKey, OVERLAP_MS, phoneKey, runCallSync, toUploads, type CallUpload, type RawCall, type SyncDeps, type SyncState } from './call-sync.ts';
+import { callKey, formatDuration, incomingCallLine, latestPerLead, leadsByKey, mergePrompts, OVERLAP_MS, phoneKey, runCallSync, toUploads, type CallUpload, type OutcomePrompt, type RawCall, type SyncDeps, type SyncState } from './call-sync.ts';
 import { telNumber } from './phone.ts';
 
 const NOW = 1_800_000_000_000;
@@ -38,7 +38,7 @@ test('a number matches however it is written', () => {
 
 test('the first sync only starts the clock: no past calls are read', async () => {
   const { deps, log } = harness(null, [raw('1')]);
-  assert.deepEqual(await runCallSync(deps), { first: true, found: 0, stored: 0 });
+  assert.deepEqual(await runCallSync(deps), { first: true, found: 0, stored: 0, toLog: [] });
   assert.equal(log.reads.length, 0);
   assert.deepEqual(log.state, { enabledAt: NOW, cursor: NOW, lastSyncAt: NOW, lastStored: 0 });
 });
@@ -57,7 +57,7 @@ test('nothing older than when tracking was turned on is ever read', async () => 
 
 test('a call is sent with its lead, duration and +91 number, and the cursor moves on', async () => {
   const { deps, log } = harness(existing(NOW - 1000), [raw('7')]);
-  assert.deepEqual(await runCallSync(deps), { first: false, found: 1, stored: 1 });
+  assert.deepEqual(await runCallSync(deps), { first: false, found: 1, stored: 1, toLog: [] });
   assert.deepEqual(log.posted[0], [{ deviceCallId: '7', phone: '+919876543210', direction: 'OUTGOING', startedAt: new Date(NOW - 60_000).toISOString(), durationSeconds: 95, leadId: 'lead-1' }]);
   assert.equal(log.state?.cursor, NOW);
 });
@@ -137,4 +137,28 @@ test('durations read naturally', () => {
   assert.equal(formatDuration(45), '45s');
   assert.equal(formatDuration(192), '3m 12s');
   assert.equal(formatDuration(3725), '1h 02m');
+});
+
+test('incoming calls that need an outcome: one per lead, newest first, never asked twice', () => {
+  const p = (leadId: string, startedAt: string): OutcomePrompt => ({ leadId, leadName: leadId, phone: '9876543210', startedAt, durationSeconds: 60 });
+  assert.deepEqual(
+    latestPerLead([p('ravi', '2026-11-18T09:00:00.000Z'), p('meena', '2026-11-18T09:30:00.000Z'), p('ravi', '2026-11-18T10:00:00.000Z')]).map((x) => [x.leadId, x.startedAt]),
+    [['ravi', '2026-11-18T10:00:00.000Z'], ['meena', '2026-11-18T09:30:00.000Z']],
+  );
+  const waiting = [p('ravi', '2026-11-18T10:00:00.000Z')];
+  assert.equal(mergePrompts(waiting, [p('ravi', '2026-11-18T10:00:00.000Z')]).length, 1); // the same call again
+  assert.deepEqual(mergePrompts(waiting, [p('meena', '2026-11-18T11:00:00.000Z')]).map((x) => x.leadId), ['meena', 'ravi']);
+});
+
+test('the server’s outcome prompts come back from a sync (an older server sends none)', async () => {
+  const prompt: OutcomePrompt = { leadId: 'L1', leadName: 'Ravi', phone: '9876543210', startedAt: '2026-11-18T10:00:00.000Z', durationSeconds: 95 };
+  const withPrompts = harness(existing(NOW - 60_000), [raw('1')], { post: async (batch) => ({ stored: batch.length, toLog: [prompt] }) });
+  assert.deepEqual((await runCallSync(withPrompts.deps)).toLog, [prompt]);
+  const older = harness(existing(NOW - 60_000), [raw('1')]);
+  assert.deepEqual((await runCallSync(older.deps)).toLog, []);
+});
+
+test('the outcome form says who called and for how long', () => {
+  const line = incomingCallLine('Ravi', { calledAt: new Date(2026, 10, 18, 15, 40).toISOString(), durationSeconds: 192 });
+  assert.match(line, /^Ravi called you at 18 Nov, 3:40 pm · you talked 3m 12s$/);
 });

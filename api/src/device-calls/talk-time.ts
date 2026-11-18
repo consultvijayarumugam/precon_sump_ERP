@@ -91,3 +91,42 @@ export function buildTalkTime(
     );
   return { rows, totals: { today: sum('today'), week: sum('week'), month: sum('month') } };
 }
+
+/** Answered incoming calls older than this don't ask for an outcome any more (the app was closed for days). */
+export const PROMPT_WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+
+export interface OutcomePrompt {
+  leadId: string;
+  leadName: string;
+  phone: string;
+  startedAt: Date;
+  durationSeconds: number;
+}
+
+/**
+ * Which newly synced calls should ask "How did the call go?" on the phone:
+ * answered incoming calls on an open lead, from the last two days, that the
+ * person hasn't already logged an outcome for since the call started. One per
+ * lead (the latest call), newest first.
+ */
+export function outcomePrompts(
+  stored: { leadId: string | null; direction: DeviceCallDirection; durationSeconds: number; startedAt: Date }[],
+  openLeads: Map<string, { name: string; phone: string }>,
+  lastLoggedAt: Map<string, Date>,
+  now: Date,
+): OutcomePrompt[] {
+  const latest = new Map<string, OutcomePrompt>();
+  for (const call of stored) {
+    if (call.direction !== 'INCOMING' || call.durationSeconds <= 0 || !call.leadId) continue;
+    if (now.getTime() - call.startedAt.getTime() > PROMPT_WINDOW_MS) continue;
+    const lead = openLeads.get(call.leadId);
+    if (!lead) continue;
+    const logged = lastLoggedAt.get(call.leadId);
+    if (logged && logged >= call.startedAt) continue;
+    const seen = latest.get(call.leadId);
+    if (!seen || seen.startedAt < call.startedAt) {
+      latest.set(call.leadId, { leadId: call.leadId, leadName: lead.name, phone: lead.phone, startedAt: call.startedAt, durationSeconds: call.durationSeconds });
+    }
+  }
+  return [...latest.values()].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+}

@@ -121,3 +121,20 @@ export function formatRupees(amount: string | number): string {
 
 /** A free OpenStreetMap link to a point (no Google Maps). */
 export const osmLink = (lat: number, lng: number) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
+
+/**
+ * The Pipeline tab: my open leads under each sales stage, in the admin's stage
+ * order. Within a stage, overdue and soonest follow-ups first. Leads whose
+ * stage isn't in the list (none set, or a stage since removed) come last.
+ */
+export function leadsByStage(stages: SalesDashboardData['stages'], leads: SalesLead[]) {
+  const known = new Set(stages.map((s) => s.id));
+  const order = (l: SalesLead) => l.nextFollowUp?.scheduledAt ?? '9999';
+  const sorted = [...leads].sort((a, b) => order(a).localeCompare(order(b)));
+  const groups = stages
+    .map((s) => ({ key: s.id, title: s.name, isActive: s.isActive, data: sorted.filter((l) => l.stage?.id === s.id) }))
+    .filter((g) => g.data.length > 0);
+  const other = sorted.filter((l) => !l.stage || !known.has(l.stage.id));
+  if (other.length) groups.push({ key: 'other', title: 'Other', isActive: true, data: other });
+  return groups;
+}

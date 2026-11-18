@@ -5,6 +5,7 @@ import { IntakeModule } from '../intake/intake.module.js';
 import { CheckInsService } from './check-ins.service.js';
 import { DashboardsService } from './dashboards.service.js';
 import { LeadActionsService } from './lead-actions.service.js';
+import { PeriodReportService } from './period-report.service.js';
 import { CheckInsController, DashboardsController, LeadActionsController } from './workflow.controller.js';
 
 /**
@@ -15,6 +16,6 @@ import { CheckInsController, DashboardsController, LeadActionsController } from 
 @Module({
   imports: [AccessControlModule, IntakeModule, DeviceCallsModule],
   controllers: [LeadActionsController, DashboardsController, CheckInsController],
-  providers: [LeadActionsService, DashboardsService, CheckInsService],
+  providers: [LeadActionsService, DashboardsService, CheckInsService, PeriodReportService],
 })
 export class WorkflowModule {}

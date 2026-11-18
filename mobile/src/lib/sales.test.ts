@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatRupees, osmLink, salesBucket, salesCounts, salesSections, salesStages, type PipelineStage, type SalesDashboardData, type SalesLead } from './sales.ts';
+import { formatRupees, leadsByStage, osmLink, salesBucket, salesCounts, salesSections, salesStages, type PipelineStage, type SalesDashboardData, type SalesLead } from './sales.ts';
 
 const now = new Date(2026, 10, 17, 11, 0); // 17 Nov 2026, 11:00 local
 const at = (h: number, dayOffset = 0) => new Date(2026, 10, 17 + dayOffset, h, 0).toISOString();
@@ -50,4 +50,25 @@ test('rupees use Indian grouping', () => {
 
 test('map links go to OpenStreetMap', () => {
   assert.equal(osmLink(13.05499, 80.27343), 'https://www.openstreetmap.org/?mlat=13.05499&mlon=80.27343#map=17/13.05499/80.27343');
+});
+
+test('the Pipeline tab groups my leads by stage in stage order, soonest follow-up first', () => {
+  const stages = [
+    { id: 's1', name: 'Site visit', isActive: true, isHandover: false, leads: 2 },
+    { id: 's2', name: 'Quoted', isActive: true, isHandover: false, leads: 0 },
+    { id: 's3', name: 'Negotiation', isActive: false, isHandover: false, leads: 1 },
+  ];
+  const withStage = (id: string, stageId: string | null, followUp: string | null) => ({ ...lead(id, followUp), stage: stageId ? { id: stageId, name: stageId, phase: 'QUALIFIED' } : null }) as SalesLead;
+  const groups = leadsByStage(stages, [
+    withStage('late', 's1', at(10, 2)),
+    withStage('none', 's1', null),
+    withStage('soon', 's1', at(9)),
+    withStage('neg', 's3', null),
+    withStage('lost-stage', 'gone', null),
+    withStage('no-stage', null, null),
+  ]);
+  assert.deepEqual(groups.map((g) => g.title), ['Site visit', 'Negotiation', 'Other']); // empty stages left out
+  assert.deepEqual(groups[0].data.map((l) => l.id), ['soon', 'late', 'none']);
+  assert.deepEqual(groups[2].data.map((l) => l.id), ['lost-stage', 'no-stage']);
+  assert.deepEqual(leadsByStage(stages, []), []);
 });

@@ -1,24 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { Stack, useRouter } from 'expo-router';
 import { memo, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AccountSheet } from '../components/account-sheet';
-import { DailyQuoteCard, PipelineCard, RemindersCard, ShortcutRow } from '../components/dashboard-cards';
-import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
+import { DateRangeBar } from '../components/date-range-bar';
+import { Button, Centered, ErrorBanner, SearchLeadsLink, StageBadge } from '../components/ui';
+import { ALL_TIME, inRange, rangeLabel, type DateRange } from '../lib/date-range';
 import { useLeadActions } from '../components/use-lead-actions';
-import { pipelineRows, type LeadsSummary } from '../lib/dashboard';
-import type { PipelineStage } from '../lib/sales';
 import { CALL_OUTCOME_LABELS, formatDateTime, productLabel, TelecallerData, toSections, WorklistBucket, WorklistItem } from '../lib/workflow';
-import { useUser } from '../session';
-import { colors, space } from '../theme';
-import { useCallSync } from '../use-call-sync';
+import { colors } from '../theme';
+import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
-import { NotificationBell } from './NotificationsScreen';
 
-const BUCKET_COLOR: Record<WorklistBucket, string> = {
+export const BUCKET_COLOR: Record<WorklistBucket, string> = {
   overdue: colors.red,
   today: colors.amber,
   new: colors.blue,
@@ -26,7 +19,7 @@ const BUCKET_COLOR: Record<WorklistBucket, string> = {
   later: colors.ink3,
 };
 
-const WorkCard = memo(function WorkCard({ item, onChanged }: { item: WorklistItem; onChanged: () => void }) {
+export const WorkCard = memo(function WorkCard({ item, onChanged }: { item: WorklistItem; onChanged: () => void }) {
   const router = useRouter();
   const actions = useLeadActions({ ...item, nextCallbackAt: item.nextCallback?.scheduledAt ?? null }, { onChanged });
   const overdue = item.bucket === 'overdue';
@@ -67,87 +60,40 @@ const WorkCard = memo(function WorkCard({ item, onChanged }: { item: WorklistIte
   );
 });
 
-function Tile({ value, label, alert }: { value: number | undefined; label: string; alert?: boolean }) {
-  return (
-    <View style={[styles.tile, alert && styles.tileAlert]}>
-      <Text style={styles.tileValue}>{value ?? '–'}</Text>
-      <Text style={styles.tileLabel}>{label}</Text>
-    </View>
-  );
-}
-
 /**
- * The telecaller's dashboard, as on web: today's counts, the quote, my
- * reminders, then who to call next (most urgent first), and my pipeline.
+ * My Leads (telecaller tab): who to call, most urgent first — overdue
+ * callbacks, due today, new, no callback set, later. Call and WhatsApp on
+ * every card; tap a card for the lead page.
  */
 export function WorklistScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user } = useUser();
+  const pad = useBottomPad();
   const { data, error, refreshing, refresh, reload } = useResource<TelecallerData>('/dashboards/telecaller');
-  const summary = useResource<LeadsSummary>('/leads/summary');
-  const stages = useResource<PipelineStage[]>('/pipeline-stages');
-  const [account, setAccount] = useState(false);
-  useCallSync();
-  const sections = useMemo(() => toSections(data?.items ?? []), [data]);
-  const pipeline = useMemo(() => (summary.data && stages.data ? pipelineRows(stages.data, summary.data.leadsByStage) : null), [summary.data, stages.data]);
-  const c = data?.counts;
-  const refreshAll = () => {
-    refresh();
-    summary.reload();
-    stages.reload();
-  };
-
-  const header = (
-    <>
-      <LinearGradient colors={[colors.navy950, colors.ocean]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.heroTop}>
-          <View style={styles.flex}>
-            <Text style={styles.greeting}>Hi {user.fullName.split(/\s+/)[0]}</Text>
-            <Text style={styles.heroSub}>{c ? `${c.overdue + c.callbacksDueToday + c.notCalledYet} leads to call now` : 'Your call list, most urgent first'}</Text>
-          </View>
-          <NotificationBell />
-          <Pressable testID="account" onPress={() => setAccount(true)} style={styles.accountButton} accessibilityRole="button" accessibilityLabel="Account">
-            <Ionicons name="person-circle-outline" size={32} color="#FFFFFF" />
-          </Pressable>
-        </View>
-        <View style={styles.tiles}>
-          <Tile value={c?.newToday} label="New today" />
-          <Tile value={c?.callbacksDueToday} label="Due today" />
-          <Tile value={c?.overdue} label="Overdue" alert={(c?.overdue ?? 0) > 0} />
-          <Tile value={c?.callsToday} label="Calls today" />
-        </View>
-        {c && (
-          <Text style={styles.hints}>
-            {c.notCalledYet} not called yet · {c.callsThisWeek} calls this week · {c.qualifiedToday} qualified today
-          </Text>
-        )}
-        <Pressable testID="all-leads-button" onPress={() => router.push('/leads')} style={({ pressed }) => [styles.allLeads, pressed && styles.pressed]} accessibilityRole="button">
-          <Ionicons name="list" size={20} color="#FFFFFF" />
-          <Text style={styles.allLeadsText}>All my leads</Text>
-        </Pressable>
-      </LinearGradient>
-      <ShortcutRow />
-      <DailyQuoteCard />
-      <RemindersCard />
-      {error && (
-        <View style={styles.pad}>
-          <ErrorBanner message={error} />
-        </View>
-      )}
-    </>
-  );
+  // Date filter: when the lead arrived; the list keeps its most-urgent-first order.
+  const [range, setRange] = useState<DateRange>(ALL_TIME);
+  const shown = useMemo(() => (data?.items ?? []).filter((l) => inRange(l.createdAt, range)), [data, range]);
+  const sections = useMemo(() => toSections(shown), [shown]);
 
   return (
     <View style={styles.page}>
-      <StatusBar style="light" />
+      <Stack.Screen options={{ title: data ? `My leads · ${data.items.length}` : 'My leads' }} />
       <SectionList
         testID="worklist"
         sections={sections}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={header}
+        ListHeaderComponent={
+          <>
+            <SearchLeadsLink onPress={() => router.push('/leads')} />
+            <DateRangeBar value={range} onChange={setRange} caption={`Arrived: ${rangeLabel(range)} · ${shown.length} of ${(data?.items ?? []).length}`} />
+            {error && (
+              <View style={styles.pad}>
+                <ErrorBanner message={error} />
+              </View>
+            )}
+          </>
+        }
         stickySectionHeadersEnabled={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshAll} colors={[colors.blue]} progressViewOffset={insets.top} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.blue]} />}
         renderSectionHeader={({ section }) => (
           <Text style={[styles.section, { color: BUCKET_COLOR[section.bucket] }]}>
             {section.title} · {section.data.length}
@@ -158,7 +104,7 @@ export function WorklistScreen() {
           data ? (
             <Centered>
               <Ionicons name="checkmark-circle-outline" size={44} color={colors.ink3} />
-              <Text style={styles.empty}>Nothing to call right now. New leads appear here as they arrive.</Text>
+              <Text style={styles.empty}>{range.preset !== 'all' ? 'None in these dates. Pick All time to see every lead.' : 'Nothing to call right now. New leads appear here as they arrive.'}</Text>
             </Centered>
           ) : error ? (
             <View style={styles.pad}>
@@ -170,14 +116,8 @@ export function WorklistScreen() {
             </View>
           )
         }
-        ListFooterComponent={
-          pipeline ? (
-            <PipelineCard title="My pipeline" subtitle={summary.data ? `${summary.data.openLeads} open of ${summary.data.totalLeads} leads · tap a stage to see its leads` : undefined} rows={pipeline} />
-          ) : undefined
-        }
-        contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+        contentContainerStyle={{ paddingBottom: pad }}
       />
-      {account && <AccountSheet onClose={() => setAccount(false)} />}
     </View>
   );
 }
@@ -187,20 +127,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   pad: { paddingHorizontal: 12, paddingTop: 8 },
   loading: { paddingTop: 64 },
-  hero: { paddingHorizontal: 16, paddingBottom: 16 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  greeting: { color: '#FFFFFF', fontSize: 24, fontWeight: '700' },
-  heroSub: { color: '#C9DDF5', fontSize: 14, marginTop: 2 },
-  accountButton: { width: space.tap, height: space.tap, alignItems: 'center', justifyContent: 'center' },
-  tiles: { flexDirection: 'row', gap: 8 },
-  tile: { flex: 1, backgroundColor: '#FFFFFF1F', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
-  tileAlert: { backgroundColor: '#DC2626' },
-  tileValue: { color: '#FFFFFF', fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  tileLabel: { color: '#E6F0FC', fontSize: 12, marginTop: 1 },
-  hints: { color: '#C9DDF5', fontSize: 13, marginTop: 10 },
-  allLeads: { marginTop: 12, minHeight: space.tap, borderRadius: space.radius, borderWidth: 1.5, borderColor: '#FFFFFF66', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  allLeadsText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-  pressed: { opacity: 0.8 },
   section: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8 },
   card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: 14, marginHorizontal: 12, marginBottom: 10 },
   cardOverdue: { borderColor: colors.redLine },

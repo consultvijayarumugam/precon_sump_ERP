@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CalendarClock, UserPlus, Sparkles } from "lucide-react";
+import { Bell, CalendarClock, UserPlus, Sparkles, MessagesSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiPost } from "@/lib/api";
@@ -9,7 +9,7 @@ import { useApi } from "@/lib/use-api";
 
 interface Item {
   id: string;
-  type: "LEAD_ASSIGNED" | "LEAD_HANDED_OVER" | "FOLLOW_UP_DUE";
+  type: "LEAD_ASSIGNED" | "LEAD_HANDED_OVER" | "FOLLOW_UP_DUE" | "NOTE_ADDED";
   title: string;
   body: string | null;
   readAt: string | null;
@@ -128,6 +128,8 @@ export function NotificationBell() {
                       <button type="button" onClick={() => openItem(u)} className="flex w-full gap-3 px-4 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/60">
                         {u.type === "LEAD_HANDED_OVER" ? (
                           <Sparkles className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden />
+                        ) : u.type === "NOTE_ADDED" ? (
+                          <MessagesSquare className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
                         ) : (
                           <UserPlus className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden />
                         )}

@@ -2,70 +2,10 @@
 
 import { CalendarRange, X } from "lucide-react";
 import { useState } from "react";
-import { dayKey } from "@/lib/crm";
+import { ALL_TIME, PRESETS, presetRange, rangeLabel, type DateRange, type PresetKey } from "@/lib/date-range";
 
-/** A chosen period: both ends are calendar days (YYYY-MM-DD, inclusive); none = all time. */
-export interface DateRange {
-  preset: PresetKey | "custom";
-  from?: string;
-  to?: string;
-}
-
-const PRESETS = [
-  { key: "today", label: "Today" },
-  { key: "week", label: "This week" },
-  { key: "month", label: "This month" },
-  { key: "lastMonth", label: "Last month" },
-  { key: "year", label: "This year" },
-  { key: "all", label: "All time" },
-] as const;
-export type PresetKey = (typeof PRESETS)[number]["key"];
-
-export const ALL_TIME: DateRange = { preset: "all" };
-
-/** The days a preset covers, in local time (weeks start on Monday). */
-export function presetRange(key: PresetKey, now = new Date()): DateRange {
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const d = (date: Date) => dayKey(date);
-  switch (key) {
-    case "today":
-      return { preset: key, from: d(now), to: d(now) };
-    case "week": {
-      const monday = new Date(y, m, now.getDate() - ((now.getDay() + 6) % 7));
-      return { preset: key, from: d(monday), to: d(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)) };
-    }
-    case "month":
-      return { preset: key, from: d(new Date(y, m, 1)), to: d(new Date(y, m + 1, 0)) };
-    case "lastMonth":
-      return { preset: key, from: d(new Date(y, m - 1, 1)), to: d(new Date(y, m, 0)) };
-    case "year":
-      return { preset: key, from: d(new Date(y, 0, 1)), to: d(new Date(y, 11, 31)) };
-    default:
-      return ALL_TIME;
-  }
-}
-
-const short = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" });
-const full = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" });
-const asDate = (k: string) => new Date(`${k}T00:00:00`);
-
-/** "This month (1 Oct - 31 Oct 2026)", "1 Sep - 30 Sep 2026", "From 1 Sep 2026", "All time". */
-export function rangeLabel(r: DateRange): string {
-  const span =
-    r.from && r.to
-      ? r.from === r.to
-        ? full.format(asDate(r.from))
-        : `${(r.from.slice(0, 4) === r.to.slice(0, 4) ? short : full).format(asDate(r.from))} - ${full.format(asDate(r.to))}`
-      : r.from
-        ? `From ${full.format(asDate(r.from))}`
-        : r.to
-          ? `Up to ${full.format(asDate(r.to))}`
-          : "";
-  if (r.preset === "all" || !span) return "All time";
-  if (r.preset === "custom") return span;
-  return `${PRESETS.find((p) => p.key === r.preset)?.label} (${span})`;
-}
+export { ALL_TIME, DASHBOARD_PRESETS, presetRange, rangeLabel } from "@/lib/date-range";
+export type { DateRange, PresetKey } from "@/lib/date-range";
 
 /**
  * Preset buttons (Today ... All time) plus a custom from/to that overrides
@@ -76,6 +16,7 @@ export function DateRangeFilter({
   onChange,
   count,
   noun,
+  presets,
 }: {
   value: DateRange;
   onChange: (r: DateRange) => void;
@@ -83,6 +24,8 @@ export function DateRangeFilter({
   count?: number;
   /** e.g. ["won lead", "won leads"] */
   noun: [string, string];
+  /** Which presets to offer (default: all of them). Without "all", there is no Clear. */
+  presets?: PresetKey[];
 }) {
   const [from, setFrom] = useState(value.preset === "custom" ? (value.from ?? "") : "");
   const [to, setTo] = useState(value.preset === "custom" ? (value.to ?? "") : "");
@@ -92,7 +35,10 @@ export function DateRangeFilter({
     setFrom(nextFrom);
     setTo(nextTo);
     if (nextFrom && nextTo && nextTo < nextFrom) return; // wait for a valid range
-    if (!nextFrom && !nextTo) onChange(ALL_TIME);
+    if (!nextFrom && !nextTo) {
+      if (!presets || presets.includes("all")) onChange(ALL_TIME);
+      return;
+    }
     else onChange({ preset: "custom", from: nextFrom || undefined, to: nextTo || undefined });
   }
 
@@ -100,7 +46,7 @@ export function DateRangeFilter({
     <div className="mb-4 space-y-3 rounded-xl border border-[var(--ps-line)] bg-[var(--ps-card)] p-3 shadow-xs sm:p-4">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Date presets">
-          {PRESETS.map((p) => {
+          {PRESETS.filter((p) => !presets || presets.includes(p.key)).map((p) => {
             const active = value.preset === p.key;
             return (
               <button
@@ -156,7 +102,7 @@ export function DateRangeFilter({
             {count.toLocaleString("en-IN")} {count === 1 ? noun[0] : noun[1]}
           </span>
         )}
-        {value.preset !== "all" && (
+        {value.preset !== "all" && (!presets || presets.includes("all")) && (
           <button
             type="button"
             onClick={() => {

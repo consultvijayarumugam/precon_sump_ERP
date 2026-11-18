@@ -112,12 +112,17 @@ export function NewLeadScreen() {
             <TextInput testID="qa-message" style={[inputStyle, styles.multi]} value={message} onChangeText={setMessage} placeholder="Paste it here" placeholderTextColor={colors.ink3} multiline maxLength={2000} />
 
             {result?.status === 'created' && result.lead && (
-              <View style={[styles.result, styles.resultGood]} accessibilityLiveRegion="polite">
-                <Ionicons name="checkmark-circle" size={22} color={colors.green} />
+              <View style={[styles.result, result.assignedTo ? styles.resultGood : styles.resultWarn]} accessibilityLiveRegion="polite">
+                <Ionicons name={result.assignedTo ? 'checkmark-circle' : 'alert-circle'} size={22} color={result.assignedTo ? colors.green : colors.amber} />
                 <View style={styles.flex}>
                   <Text style={styles.resultTitle}>
-                    {result.lead.name} added{result.assignedTo ? ` for ${result.assignedTo.fullName}` : ''}
+                    {result.lead.name} added{result.assignedTo ? `, assigned to ${result.assignedTo.fullName}` : ''}
                   </Text>
+                  {!result.assignedTo && (
+                    <Text testID="qa-unassigned" style={styles.unassigned}>
+                      Not assigned: no telecaller is taking leads right now. An admin can switch one on in Lead assignment (web), then assign this lead.
+                    </Text>
+                  )}
                   {result.previous && <Text style={styles.resultBody}>Past customer: earlier lead {result.previous.name} ({result.previous.status.toLowerCase()}).</Text>}
                   <Text style={styles.resultBody}>You&apos;ve added {result.addedToday} today.</Text>
                 </View>
@@ -129,7 +134,7 @@ export function NewLeadScreen() {
                 <View style={styles.flex}>
                   <Text style={styles.resultTitle}>Already an open lead: {result.existing.name}</Text>
                   <Text style={styles.resultBody}>
-                    {result.existing.assignedTo ? `With ${result.existing.assignedTo.fullName}. ` : ''}Nothing new was added.
+                    {result.existing.assignedTo ? `With ${result.existing.assignedTo.fullName}. ` : 'Not assigned to anyone yet. '}Nothing new was added.
                   </Text>
                   <Button label="Open that lead" tone="secondary" onPress={() => router.push(`/lead/${result.existing!.id}`)} style={styles.gapSmall} />
                 </View>
@@ -171,5 +176,6 @@ const styles = StyleSheet.create({
   resultWarn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
   resultTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
   resultBody: { fontSize: 14, color: colors.ink2, marginTop: 2 },
+  unassigned: { fontSize: 14, fontWeight: '700', color: colors.amber, marginTop: 4 },
   empty: { fontSize: 15, color: colors.ink2, textAlign: 'center', margin: 24 },
 });

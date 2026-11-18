@@ -101,6 +101,9 @@ export interface LeadDetail {
   notes: string | null;
   createdAt: string;
   assignedTo: { id: string; fullName: string } | null;
+  /** The telecaller who worked it (kept after handover) and when it was handed to sales. */
+  telecaller?: { id: string; fullName: string } | null;
+  qualifiedAt?: string | null;
   followUps: FollowUp[];
 }
 

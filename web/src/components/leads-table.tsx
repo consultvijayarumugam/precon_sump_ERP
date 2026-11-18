@@ -15,14 +15,19 @@ import {
   thClass,
   theadClass,
 } from "@/components/ui";
+import { isHandedOver, ReassignSalesperson } from "@/components/lead-handover";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { formatDate, formatDateTime, LeadListItem, productInterestLabel, SOURCE_LABELS, TAGS } from "@/lib/crm";
 
 /** Lead list used by the Leads and Won pages. `variant="won"` shows the close date. */
 export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadListItem[]; variant?: "all" | "won"; onChanged?: () => void }) {
   const { can } = useAuth();
-  // Admins see every owner; telecallers see who has the leads they handed over.
-  const showOwner = can(TAGS.LEADS_READ_ALL) || can(TAGS.LEADS_QUALIFY);
+  // Everyone sees who has each lead (admins every owner, telecallers who has the leads
+  // they handed over, salespeople their own), and a lead with nobody on it stands out.
+  const showOwner = true;
+  // Admins can hand a lead to a different salesperson right from the list.
+  const canReassign = can(TAGS.LEADS_ASSIGN);
+  const [reassigning, setReassigning] = useState<string | null>(null);
   const [now] = useState(() => Date.now()); // fixed per render pass so rows agree
 
   if (leads.length === 0) return <p className="text-sm text-neutral-500">No leads match.</p>;
@@ -42,7 +47,7 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                 {variant === "all" && <StatusBadge status={lead.status} stage={lead.stage} />}
               </div>
               <p className="mt-0.5 text-xs text-neutral-500">
-                {[lead.city, productInterestLabel(lead), SOURCE_LABELS[lead.source], showOwner ? (lead.assignedTo?.fullName ?? "Unassigned") : null].filter(Boolean).join(" · ")}
+                {[lead.city, productInterestLabel(lead), SOURCE_LABELS[lead.source], showOwner ? (lead.assignedTo?.fullName ?? "Not assigned") : null].filter(Boolean).join(" · ")}
               </p>
               {variant === "won" ? (
                 lead.closedAt && <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">Won on {formatDate(lead.closedAt)}</p>
@@ -104,8 +109,25 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                 )}
                 {showOwner && (
                   <td className={tdClass}>
-                    {lead.assignedTo?.fullName ?? <em>Unassigned</em>}
+                    {lead.assignedTo?.fullName ?? <span className="font-semibold text-amber-700 dark:text-amber-300">Not assigned</span>}
                     {lead.autoAssigned && <div className="text-xs text-neutral-500">round-robin</div>}
+                    {canReassign && isHandedOver(lead) && (
+                      reassigning === lead.id ? (
+                        <ReassignSalesperson
+                          leadId={lead.id}
+                          currentId={lead.assignedTo?.id ?? null}
+                          onCancel={() => setReassigning(null)}
+                          onDone={() => {
+                            setReassigning(null);
+                            onChanged?.();
+                          }}
+                        />
+                      ) : (
+                        <button type="button" onClick={() => setReassigning(lead.id)} className="block text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">
+                          Reassign
+                        </button>
+                      )
+                    )}
                   </td>
                 )}
                 <td className={tdClass}>

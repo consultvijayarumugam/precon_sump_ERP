@@ -3,8 +3,10 @@ import { Stack, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DateRangeBar } from '../components/date-range-bar';
 import { Chip, ErrorBanner, inputStyle, StageBadge } from '../components/ui';
-import { LEAD_FILTERS, leadListQuery, type LeadListItem, type LeadListPage } from '../lib/dashboard';
+import { ALL_TIME, leadDateNoun, leadDateParams, rangeLabel, type DateRange } from '../lib/date-range';
+import { LEAD_FILTERS, leadListQuery, ownerLine, type LeadListItem, type LeadListPage } from '../lib/dashboard';
 import { formatDateTime, productLabel } from '../lib/workflow';
 import { useSession, useUser } from '../session';
 import { colors } from '../theme';
@@ -20,7 +22,7 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { api } = useSession();
-  const { can } = useUser();
+  const { user, can } = useUser();
   const canAdd = can('leads.write') || can('leads.quick_add');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
@@ -33,6 +35,8 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(0);
   const status = LEAD_FILTERS.find((f) => f.key === filter)?.status;
+  // Date filter: with Won / Lost, by the day it closed; otherwise by the day it was added.
+  const [range, setRange] = useState<DateRange>(ALL_TIME);
 
   // Search after a short pause in typing.
   useEffect(() => {
@@ -46,7 +50,7 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
       setLoading(true);
       if (pulled) setRefreshing(true);
       try {
-        const result = await api<LeadListPage>(leadListQuery({ search: term, status, stageId, page: nextPage, pageSize: PAGE_SIZE }));
+        const result = await api<LeadListPage>(leadListQuery({ search: term, status, stageId, dates: leadDateParams(range, status), page: nextPage, pageSize: PAGE_SIZE }));
         if (run !== latest.current) return;
         setItems((prev) => (nextPage === 1 ? result.items : [...prev, ...result.items]));
         setTotal(result.total);
@@ -61,7 +65,7 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
         }
       }
     },
-    [api, term, status, stageId],
+    [api, term, status, stageId, range],
   );
 
   useEffect(() => {
@@ -114,11 +118,13 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
                 ))}
               </ScrollView>
             )}
+            <DateRangeBar value={range} onChange={setRange} caption={`${leadDateNoun(status) === 'added' ? 'Added' : leadDateNoun(status) === 'won' ? 'Won' : 'Closed'}: ${rangeLabel(range)}`} />
             <ErrorBanner message={error} />
             {total !== null && (
               <Text style={styles.count}>
                 {total} lead{total === 1 ? '' : 's'}
                 {term.trim() ? ` matching "${term.trim()}"` : ''}
+                {range.preset !== 'all' ? ` · ${leadDateNoun(status)} ${rangeLabel(range).replace(/^This /, 'this ').replace(/^Last /, 'last ').replace(/^Today$/, 'today')}` : ''}
               </Text>
             )}
           </View>
@@ -134,6 +140,7 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
                 ? `Next follow-up ${formatDateTime(item.nextFollowUpAt)}`
                 : 'No follow-up planned';
           const late = item.nextFollowUpAt !== null && new Date(item.nextFollowUpAt) < new Date() && item.status !== 'WON' && item.status !== 'LOST';
+          const owner = ownerLine(item, user.id);
           return (
             <Pressable testID={`row-${item.name}`} onPress={() => router.push(`/lead/${item.id}`)} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button">
               <View style={styles.flex}>
@@ -145,6 +152,9 @@ export function AllLeadsScreen({ stageId, status: initialStatus, title }: { stag
                 </View>
                 <Text style={styles.details}>{[item.phone, details].filter(Boolean).join(' · ')}</Text>
                 {when && <Text style={[styles.when, late && styles.late]}>{when}</Text>}
+                <Text testID={`owner-${item.name}`} style={[styles.owner, owner.warn && styles.ownerWarn]}>
+                  {owner.text}
+                </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.ink3} />
             </Pressable>
@@ -173,6 +183,8 @@ const styles = StyleSheet.create({
   details: { fontSize: 13, color: colors.ink3, marginTop: 3 },
   when: { fontSize: 13, fontWeight: '600', color: colors.ink2, marginTop: 3 },
   late: { color: colors.red },
+  owner: { fontSize: 13, color: colors.ink3, marginTop: 3 },
+  ownerWarn: { color: colors.amber, fontWeight: '700' },
   empty: { fontSize: 15, color: colors.ink2, textAlign: 'center', marginTop: 40 },
   spinner: { marginVertical: 16 },
   headerButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },

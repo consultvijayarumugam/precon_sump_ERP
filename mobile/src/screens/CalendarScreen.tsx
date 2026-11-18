@@ -2,12 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, ToastAndroid, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FollowUpSheet } from '../components/follow-up-sheet';
 import { ErrorBanner } from '../components/ui';
 import { byDay, calendarPath, dayKey, monthGrid, type FollowUpWithLead } from '../lib/followups';
 import { useUser } from '../session';
 import { colors, space } from '../theme';
+import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
 import { FollowUpRow } from './FollowUpsScreen';
 
@@ -18,7 +18,7 @@ const dayTitle = (d: Date) => d.toLocaleDateString('en-IN', { weekday: 'long', d
 /** My follow-ups on a month calendar, as on the web Calendar page. Tap a day to see (and act on) its follow-ups. */
 export function CalendarScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const pad = useBottomPad();
   const { can } = useUser();
   const today = new Date();
   const [month, setMonth] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -41,7 +41,7 @@ export function CalendarScreen() {
   return (
     <View style={styles.page}>
       <Stack.Screen options={{ title: 'Calendar' }} />
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.blue]} />} contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.blue]} />} contentContainerStyle={{ paddingBottom: pad }}>
         <View style={styles.monthBar}>
           <Pressable testID="prev-month" onPress={() => shift(-1)} style={styles.navButton} accessibilityRole="button" accessibilityLabel="Previous month">
             <Ionicons name="chevron-back" size={24} color={colors.blue} />

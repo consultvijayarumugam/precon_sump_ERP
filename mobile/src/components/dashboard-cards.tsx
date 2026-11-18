@@ -31,29 +31,6 @@ export function DailyQuoteCard() {
   );
 }
 
-/** Shortcuts under the hero: my follow-ups, the calendar, and adding a lead (when the account may). */
-export function ShortcutRow() {
-  const router = useRouter();
-  const { can } = useUser();
-  const sales = can('leads.receive_qualified');
-  const canAdd = can('leads.write') || can('leads.quick_add');
-  const items: { key: string; label: string; icon: 'alarm-outline' | 'calendar-outline' | 'person-add-outline'; href: '/follow-ups' | '/calendar' | '/new-lead' }[] = [
-    { key: 'follow-ups', label: sales ? 'Follow-ups' : 'Callbacks', icon: 'alarm-outline', href: '/follow-ups' },
-    { key: 'calendar', label: 'Calendar', icon: 'calendar-outline', href: '/calendar' },
-    ...(canAdd ? [{ key: 'new-lead', label: 'New lead', icon: 'person-add-outline' as const, href: '/new-lead' as const }] : []),
-  ];
-  return (
-    <View style={styles.shortcuts}>
-      {items.map((i) => (
-        <Pressable key={i.key} testID={`go-${i.key}`} onPress={() => router.push(i.href)} style={({ pressed }) => [styles.shortcut, pressed && styles.pressed]} accessibilityRole="button">
-          <Ionicons name={i.icon} size={22} color={colors.blue} />
-          <Text style={styles.shortcutText}>{i.label}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 /** "My reminders today", as on web: overdue and due-today follow-ups (tap one to open it) and what's new for you. */
 export function RemindersCard() {
   const router = useRouter();
@@ -248,8 +225,5 @@ const styles = StyleSheet.create({
   extraGood: { borderColor: colors.greenLine, backgroundColor: colors.greenLight },
   extraCount: { fontSize: 22, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
   extraLabel: { fontSize: 12, color: colors.ink3, marginTop: 1 },
-  shortcuts: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginTop: 12 },
-  shortcut: { flex: 1, minHeight: 64, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  shortcutText: { fontSize: 13, fontWeight: '700', color: colors.ink },
   map: { marginHorizontal: 12, marginTop: 12, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: colors.line },
 });

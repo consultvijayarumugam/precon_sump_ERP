@@ -1,4 +1,4 @@
-import { buildTalkTime, callSummary, formatDuration, phoneKey } from './talk-time.js';
+import { buildTalkTime, callSummary, formatDuration, outcomePrompts, phoneKey } from './talk-time.js';
 
 describe('phoneKey', () => {
   it('matches a number however it was written', () => {
@@ -63,5 +63,48 @@ describe('buildTalkTime', () => {
   it('adds up team totals per period', () => {
     expect(result.totals.month).toEqual({ calls: 10, connected: 7, talkSeconds: 930 });
     expect(result.totals.today).toEqual({ calls: 2, connected: 1, talkSeconds: 60 });
+  });
+});
+
+describe('outcomePrompts', () => {
+  const now = new Date('2026-11-18T10:00:00Z');
+  const at = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * 60_000);
+  const call = (leadId: string | null, direction: 'INCOMING' | 'OUTGOING' | 'MISSED', durationSeconds: number, minutesAgo: number) => ({ leadId, direction, durationSeconds, startedAt: at(minutesAgo) });
+  const open = new Map([
+    ['ravi', { name: 'Ravi', phone: '9876543210' }],
+    ['meena', { name: 'Meena', phone: '9566778899' }],
+  ]);
+
+  it('asks about answered incoming calls on open leads, latest per lead, newest first', () => {
+    const prompts = outcomePrompts(
+      [call('ravi', 'INCOMING', 120, 90), call('ravi', 'INCOMING', 45, 30), call('meena', 'INCOMING', 200, 60)],
+      open,
+      new Map(),
+      now,
+    );
+    expect(prompts.map((p) => [p.leadName, p.durationSeconds])).toEqual([['Ravi', 45], ['Meena', 200]]);
+  });
+
+  it('skips outgoing, missed and unanswered calls, closed or unknown leads, and old calls', () => {
+    const prompts = outcomePrompts(
+      [
+        call('ravi', 'OUTGOING', 120, 10), // the app already asks after the user's own Call
+        call('ravi', 'MISSED', 0, 10),
+        call('ravi', 'INCOMING', 0, 10), // rang, not answered
+        call('won-lead', 'INCOMING', 60, 10), // not in openLeads (won/lost or out of scope)
+        call(null, 'INCOMING', 60, 10),
+        call('meena', 'INCOMING', 60, 3 * 24 * 60), // three days ago
+      ],
+      open,
+      new Map(),
+      now,
+    );
+    expect(prompts).toEqual([]);
+  });
+
+  it("doesn't ask again once an outcome was logged after the call started", () => {
+    const logged = new Map([['ravi', at(5)]]);
+    expect(outcomePrompts([call('ravi', 'INCOMING', 60, 20)], open, logged, now)).toEqual([]);
+    expect(outcomePrompts([call('ravi', 'INCOMING', 60, 2)], open, logged, now)).toHaveLength(1); // a newer call
   });
 });

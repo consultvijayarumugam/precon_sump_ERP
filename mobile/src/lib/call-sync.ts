@@ -30,6 +30,15 @@ export interface CallUpload {
   leadId: string;
 }
 
+/** An answered incoming call on an open lead that still needs an outcome (the server decides which). */
+export interface OutcomePrompt {
+  leadId: string;
+  leadName: string;
+  phone: string;
+  startedAt: string;
+  durationSeconds: number;
+}
+
 /** Kept on the phone, per user. */
 export interface SyncState {
   /** When tracking first ran here: nothing older is ever read. */
@@ -46,7 +55,7 @@ export interface SyncDeps {
   saveState: (state: SyncState) => Promise<void>;
   fetchLeads: () => Promise<LeadNumber[]>;
   readCalls: (sinceMs: number, numberKeys: string[], limit: number) => Promise<CallLogRead>;
-  post: (calls: CallUpload[]) => Promise<{ stored: number }>;
+  post: (calls: CallUpload[]) => Promise<{ stored: number; toLog?: OutcomePrompt[] }>;
   toE164: (raw: string) => string | null;
   /** Calls the server already has, this session, so they aren't sent again. */
   sent: Set<string>;
@@ -107,12 +116,12 @@ export function toUploads(calls: RawCall[], leads: Map<string, string>, sent: Se
  * is the queue. If anything fails this throws and the cursor stays put, so the
  * same calls are read and sent next time.
  */
-export async function runCallSync(deps: SyncDeps): Promise<{ first: boolean; found: number; stored: number }> {
+export async function runCallSync(deps: SyncDeps): Promise<{ first: boolean; found: number; stored: number; toLog: OutcomePrompt[] }> {
   const startedAt = deps.now();
   const state = await deps.loadState();
   if (!state) {
     await deps.saveState({ enabledAt: startedAt, cursor: startedAt, lastSyncAt: startedAt, lastStored: 0 });
-    return { first: true, found: 0, stored: 0 };
+    return { first: true, found: 0, stored: 0, toLog: [] };
   }
 
   const leads = leadsByKey(await deps.fetchLeads());
@@ -121,15 +130,26 @@ export async function runCallSync(deps: SyncDeps): Promise<{ first: boolean; fou
   const uploads = toUploads(read.calls, leads, deps.sent, deps.toE164);
 
   let stored = 0;
+  const toLog: OutcomePrompt[] = [];
   for (let i = 0; i < uploads.length; i += BATCH_SIZE) {
     const batch = uploads.slice(i, i + BATCH_SIZE);
-    stored += (await deps.post(batch.map((u) => u.upload))).stored;
+    const result = await deps.post(batch.map((u) => u.upload));
+    stored += result.stored;
+    toLog.push(...(result.toLog ?? [])); // an older server sends none
     for (const u of batch) deps.sent.add(u.key);
   }
 
   const reachedTo = read.truncated ? (read.calls.at(-1)?.startedAtMs ?? state.cursor) : startedAt;
   await deps.saveState({ ...state, cursor: Math.max(state.cursor, reachedTo), lastSyncAt: startedAt, lastStored: stored });
-  return { first: false, found: read.calls.length, stored };
+  return { first: false, found: read.calls.length, stored, toLog: latestPerLead(toLog) };
+}
+
+/** "Ravi called you at 3:40 pm, 18 Nov · you talked 3m 12s" (above the outcome form for an incoming call). */
+export function incomingCallLine(name: string, call: { calledAt: string; durationSeconds: number }): string {
+  const at = new Date(call.calledAt)
+    .toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' })
+    .replace(/\b(AM|PM)\b/gi, (m) => m.toLowerCase());
+  return `${name} called you at ${at} · you talked ${formatDuration(call.durationSeconds)}`;
 }
 
 /** "3m 12s", "45s", "1h 02m" */
@@ -138,4 +158,21 @@ export function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/** One prompt per lead (its latest call), newest first: batches can each return one for the same lead. */
+export function latestPerLead(prompts: OutcomePrompt[]): OutcomePrompt[] {
+  const byLead = new Map<string, OutcomePrompt>();
+  for (const p of prompts) {
+    const seen = byLead.get(p.leadId);
+    if (!seen || seen.startedAt < p.startedAt) byLead.set(p.leadId, p);
+  }
+  return [...byLead.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+/** Prompts waiting on the phone plus new ones, without asking twice about the same call. */
+export function mergePrompts(waiting: OutcomePrompt[], incoming: OutcomePrompt[]): OutcomePrompt[] {
+  const key = (p: OutcomePrompt) => `${p.leadId}@${p.startedAt}`;
+  const have = new Set(waiting.map(key));
+  return latestPerLead([...waiting, ...incoming.filter((p) => !have.has(key(p)))]);
 }

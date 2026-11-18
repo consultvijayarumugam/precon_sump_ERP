@@ -495,28 +495,35 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 - **Log call** (`followups.write`): outcome No answer, Busy, Call back later, Interested, Not interested or Wrong number, with an optional note and next callback. Logging a call completes the lead's open callback. A first call moves New → Contacted; **Not interested** and **Wrong number** close the lead as Lost (it leaves the worklist).
 - **Callbacks** are ordinary follow-ups, so they show on Follow-ups and the Calendar too. "Set/Change callback" moves the open one instead of adding another.
 - **Qualify** (`leads.qualify` on your own leads, or `leads.write`): product (required), sump size, city and notes; status becomes Qualified and the lead is **handed to sales**: the next salesperson in the sales round-robin (holders of `leads.receive_qualified` who are switched on), or one the telecaller picks. The telecaller's callbacks close, an optional "when should sales call" follow-up goes on the salesperson's list, and the notes record who qualified it. The lead leaves the telecaller's worklist; who received and qualified it is kept for the scorecards.
-- **Change the salesperson afterwards:** on a handed-over lead, the telecaller who handled it (or an admin) can click **Change** next to "Salesperson". The new salesperson must be able to receive qualified leads and is notified; the old one loses access.
+- **Reassign to a different salesperson (admin only, `leads.assign`):** on a handed-over lead, click **Reassign** next to "Salesperson" on the lead page, or **Reassign** in the Assigned column of the Leads list (`PUT /leads/:id/salesperson`). The new salesperson must be able to receive qualified leads and is notified ("Reassigned to you by …, was …"); the old one loses access. The change history records who reassigned it, from whom, to whom and when. Telecallers and salespeople can't reassign (403).
+- **Shared notes:** every lead has a **Shared notes** thread (web lead page and the app). The telecaller who worked the lead, its salesperson and admins all see every note, each with its author and time, so they can coordinate. Anyone who can work the lead adds notes (`leads.write` or `leads.qualify`); authors edit their own (marked "edited"). Adding a note notifies the other people on the lead (bell, in-app only). Every add and edit is in the change history with the old and new text. The lead's original notes (from when it was added) show first. API: `GET/POST /leads/:id/notes`, `PATCH /leads/:id/notes/:noteId`.
 - **After handover both can work the lead:** the salesperson owns it (their dashboard, follow-ups, reminders); the telecaller still sees it in their Leads list and can open and edit it. Each sees the other's updates on the lead page. A telecaller's call on a handed lead doesn't close the salesperson's follow-ups.
 - **Sales rotation:** Admin → Lead assignment has a second table, "Salespeople receiving qualified leads", with the same on/off switch and "next" marker as the telecallers.
 - **Call history** of every lead (who, when, outcome, note) is on the lead page.
 - **GPS check-in** ("I'm at site", `sitevisit.write`): the browser reads the location **once** when the button is pressed and stores latitude, longitude, accuracy and time on a site visit **for a lead**. You must pick the lead, and the list holds only the leads assigned to you (not lost). It's on the sales dashboard, the Site visits page, and the lead's own page. The visit shows on that lead ("Calls, messages & visits", plus a Site visits section with a map) for everyone connected to it, and in its change history. No tracking. Maps are OpenStreetMap with Leaflet (no Google, no API key). Browsers only share location on a secure page: it works on `http://localhost:3001` on the Mac and on HTTPS later, but **not on the LAN address** (`http://192.168.x.x`); there the button says so.
 - **Sidebar:** telecallers and sales see Dashboard, Leads, Follow-ups, Calendar (sales also Won and Site visits) and their own leave/allowances. The Finance section needs `finance.dashboard`, so it is off their screens; stock and service need their own tags. Pages and APIs are unchanged.
 
-## Date filters (Won and Follow-ups)
+## Date filters (Leads, Won and Follow-ups)
 
-- **Won** filters by the date each lead was won; **Follow-ups** by the date each follow-up is due.
+- **Leads** filters by the date each lead was added (`createdFrom` / `createdTo` on `GET /leads`; in the URL as `?period=`), **Won** by the date each lead was won (`wonFrom` / `wonTo`), **Follow-ups** by the date each follow-up is due. The phone app has the same filter on All my leads (Won and Lost by the day they closed, others by the day added), Follow-ups / Callbacks, and both My Leads tabs (when the lead arrived, or was handed to you).
 - **Presets:** Today, This week (Monday to Sunday), This month, Last month, This year, and All time (the default). Or pick a custom **From / To** range, which overrides the presets. Either end can be left open.
 - **Display:** the bar shows what's active ("Showing: Last month (1 Sept - 30 Sept 2026)") with a count of matching records ("4 won leads", "7 overdue follow-ups"). **Clear (all time)** resets it.
 - **Narrowing only:** the filter narrows what you can already see, so a salesperson still sees only their own and admin sees all. It combines with the other filters (Follow-ups' Overdue / Upcoming / Completed tabs and "Only my leads"; the API's status, source, product, salesperson and search on leads). Won stays sorted newest win first, and follow-ups by due date.
 - **Days** are calendar days in the business time zone, so 00:10 on 1 April belongs to April. Both ends are inclusive.
 - **Export:** these two pages have no export. The Reports page has its own date range and CSV / Excel export.
 
+## Dashboards by date range
+
+- Every dashboard (admin, telecaller, sales; web and the phone's Home) has a **results** panel with **Today, This week, This month (default), Last month** or a custom range. The numbers recalculate for that range: leads in, calls logged (and leads called), qualified and conversion, won / lost and win rate, revenue (when operations are on), follow-ups done on time, talk-time from the phones' call logs, and site visits.
+- **Who sees what:** admins (`leads.read_all`) see the team totals, a row per telecaller and salesperson, and new leads by source. Everyone else sees only their own numbers: a telecaller the leads they received, calls, qualified, and wins from leads they worked; a salesperson the leads handed to them, wins, revenue (`sales.read`), follow-ups, calls and site visits.
+- API: `GET /dashboards/period?from=YYYY-MM-DD&to=YYYY-MM-DD` (business days, both inclusive; default this month so far; at most 400 days). Live "today" items (worklists, reminders, overdue) stay as they are.
+
 ## Lead change history (admin only)
 
 - Every meaningful change on a lead is recorded with **who**, **what** (from → to where it applies) and **when**:
   - lead created (by hand, import, API, Meta);
-  - assignment and round-robin; handover to a salesperson; salesperson changed;
-  - status changes; field edits (name, phone, email, city, source, product, size); notes edits;
+  - assignment and round-robin; handover to a salesperson; salesperson reassigned (by whom, from, to);
+  - status changes; field edits (name, phone, email, city, source, product, size); notes edits; shared notes added and edited (old and new text);
   - follow-ups created, moved, completed (with outcome) and reopened;
   - calls logged (with outcome and any status change); WhatsApp messages started; site visits (GPS, accuracy, note).
 - Entries are written in the same database transaction as the change, so the history can't miss one or show one that didn't happen.
@@ -612,7 +619,7 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | GET    | `/leads/quick-add/today` | `leads.quick_add`      | `{addedByYou, addedByEveryone, nextUp, telecallers:[{fullName, inRotation, leadsToday}]}` |
 | GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
 | POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
-| POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?}`. Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
+| POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?, calledAt?, incoming?}` (`calledAt`: when it happened, up to 7 days back, for an incoming call found in the call log). Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
 | GET    | `/leads/:id/calls`       | `leads.read`           | The lead's call history, newest first |
 | GET    | `/leads/:id/history`     | `leads.audit`          | Full change history (admin): `[{type, message, changes[{field, label, from, to}], createdAt, user}]`, newest first |
 | GET    | `/leads/:id/visits`      | `leads.read`           | Site visits (GPS check-ins) recorded on the lead |
@@ -645,8 +652,8 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | POST   | `/leads/:id/call-attempts` | `leads.read`         | Records that Call was tapped (who, when); leads you can see only (404 otherwise) |
 | GET    | `/leads/:id/call-attempts` | `leads.read`         | Times Call was tapped, newest first |
 | GET    | `/device-calls/lead-numbers` | `leads.read`       | `{leads:[{id, phone}]}`: the only numbers the mobile app looks for in the phone's call log; leads you can see |
-| POST   | `/device-calls/sync`     | `leads.read`           | `{calls:[{deviceCallId, phone, direction, startedAt, durationSeconds, leadId?}]}` (up to 200) → `{received, stored, duplicates, rejected, matchedToLeads}`. Always stored as your own calls; re-sending a call stores it once; `leadId` counts only if you can see that lead and the number is on it |
-| GET    | `/leads/:id/device-calls` | `leads.read`          | Real calls on a lead with durations, newest first; leads you can see only (404 otherwise) |
+| POST   | `/device-calls/sync`     | `leads.read`           | `{calls:[{deviceCallId, phone, direction, startedAt, durationSeconds, leadId?}]}` (up to 200) → `{received, stored, duplicates, rejected, matchedToLeads, toLog}`. `toLog`: answered incoming calls on your open leads from the last 2 days with no outcome logged since, one per lead (the app asks "How did the call go?" for each). Always stored as your own calls; re-sending a call stores it once; `leadId` counts only if you can see that lead and the number is on it |
+| GET    | `/leads/:id/device-calls` | `leads.read`          | Real calls on a lead with durations, newest first (also shown in the web lead page's "Calls, messages & visits"); leads you can see only (404 otherwise) |
 | POST   | `/leads/:id/whatsapp`    | `leads.read`           | `{templateId?, message?, fileIds?}` → `{url, message, phone, files}`; each file adds a `Title: <link>` line; logs the message (and shared files) on the lead. 400 if the number can't be used |
 | GET    | `/leads/:id/messages`    | `leads.read`           | WhatsApp messages started on the lead |
 | GET    | `/reports`               | `reports.view` or `reports.view_all` | Reports you can open, and your scope (`all` / `own`) |
