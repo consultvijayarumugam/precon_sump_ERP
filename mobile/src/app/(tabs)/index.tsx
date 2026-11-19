@@ -1,15 +1,16 @@
 import { appRole } from '../../lib/tabs';
+import { AdminHomeScreen } from '../../screens/AdminHomeScreen';
 import { HomeScreen } from '../../screens/HomeScreen';
 import { SalesHomeScreen } from '../../screens/SalesHomeScreen';
 import { TelecallerHomeScreen } from '../../screens/TelecallerHomeScreen';
-import { useSession, useUser } from '../../session';
+import { useUser } from '../../session';
 
-/** Home: each role's dashboard. Other roles have no phone screens yet. */
+/** Home: each role's dashboard (admin: the team's). Other roles have no phone screens yet. */
 export default function HomeTab() {
   const { user, apiUrl } = useUser();
-  const { signOut } = useSession();
   const role = appRole(user.role.key);
   if (role === 'telecaller') return <TelecallerHomeScreen />;
   if (role === 'sales') return <SalesHomeScreen />;
-  return <HomeScreen user={user} apiUrl={apiUrl} onLogout={signOut} />;
+  if (role === 'admin') return <AdminHomeScreen />;
+  return <HomeScreen user={user} apiUrl={apiUrl} />;
 }

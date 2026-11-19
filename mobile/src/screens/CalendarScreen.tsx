@@ -24,7 +24,9 @@ export function CalendarScreen() {
   const [month, setMonth] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [selected, setSelected] = useState(dayKey(today));
   const weeks = useMemo(() => monthGrid(month.y, month.m), [month]);
-  const { data, error, refreshing, refresh, reload } = useResource<FollowUpWithLead[]>(calendarPath(weeks));
+  // Admins see the whole team's follow-ups; everyone else their own.
+  const team = can('leads.read_all');
+  const { data, error, refreshing, refresh, reload } = useResource<FollowUpWithLead[]>(calendarPath(weeks, team));
   const days = useMemo(() => byDay(data ?? []), [data]);
   const [open, setOpen] = useState<FollowUpWithLead | null>(null);
   const noun = can('leads.receive_qualified') ? 'follow-up' : 'callback';
@@ -95,7 +97,7 @@ export function CalendarScreen() {
         </Text>
         {chosen.length === 0 && <Text style={styles.empty}>Nothing planned this day.</Text>}
         {chosen.map((f) => (
-          <FollowUpRow key={f.id} f={f} onPress={() => (f.completedAt || !can('followups.write') ? router.push(`/lead/${f.lead.id}`) : setOpen(f))} />
+          <FollowUpRow key={f.id} f={f} showOwner={team} onPress={() => (f.completedAt || !can('followups.write') ? router.push(`/lead/${f.lead.id}`) : setOpen(f))} />
         ))}
       </ScrollView>
       {open && (

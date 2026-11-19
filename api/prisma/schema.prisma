@@ -853,6 +853,9 @@ model MessageTemplate {
   body       String
   sortOrder  Int            @default(0) @map("sort_order")
   isActive   Boolean        @default(true) @map("is_active")
+  // Library files (brochure, price list, photos) that go with this message: their
+  // links are added automatically whenever the template is sent.
+  files      LibraryFile[]  @relation("TemplateFiles")
   activities LeadActivity[]
   createdAt  DateTime       @default(now()) @map("created_at")
   updatedAt  DateTime       @updatedAt @map("updated_at")
@@ -943,6 +946,8 @@ model LibraryFile {
   storedName   String       @map("stored_name")
   uploadedById String?      @map("uploaded_by_id") @db.Uuid
   uploadedBy   User?        @relation("LibraryFileUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  // Message templates that send this file with them.
+  templates    MessageTemplate[] @relation("TemplateFiles")
   createdAt    DateTime     @default(now()) @map("created_at")
 
   @@index([category, title])

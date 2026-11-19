@@ -85,19 +85,10 @@ export function pipelineRows(stages: PipelineStage[], counts: Record<string, num
     .filter((r) => r.isActive || r.count > 0);
 }
 
-/** Filters on the lead list: status chips, as on the web Leads page. */
-export const LEAD_FILTERS: { key: string; label: string; status?: LeadStatus }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'NEW', label: 'New', status: 'NEW' },
-  { key: 'CONTACTED', label: 'Contacted', status: 'CONTACTED' },
-  { key: 'QUALIFIED', label: 'Qualified', status: 'QUALIFIED' },
-  { key: 'QUOTED', label: 'Quoted', status: 'QUOTED' },
-  { key: 'WON', label: 'Won', status: 'WON' },
-  { key: 'LOST', label: 'Lost', status: 'LOST' },
-];
-
-/** The query string for one page of the lead list. */
-/** `dates`: the date filter's params (see leadDateParams in date-range.ts), so it combines with the status filter. */
+/**
+ * The query string for one page of the lead list. `dates`: the date filter's
+ * params (see leadDateParams in date-range.ts), so it combines with the stage and status filters.
+ */
 export function leadListQuery({ search, status, stageId, dates = [], page, pageSize = 30 }: { search?: string; status?: LeadStatus; stageId?: string; dates?: [string, string][]; page: number; pageSize?: number }) {
   const params: [string, string][] = [];
   const term = search?.trim();

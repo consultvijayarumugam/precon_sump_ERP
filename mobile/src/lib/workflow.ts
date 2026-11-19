@@ -141,6 +141,8 @@ export interface MessageTemplate {
   id: string;
   name: string;
   body: string;
+  /** Library files that always go with it (the server adds their links when it's sent). */
+  files?: { id: string; title: string }[];
 }
 export interface LibraryFile {
   id: string;

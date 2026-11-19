@@ -14,7 +14,7 @@ import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
 
 /** One follow-up: lead, when, note; tap to mark it done or move it (or open the lead, once done). */
-export function FollowUpRow({ f, onPress }: { f: FollowUpWithLead; onPress: () => void }) {
+export function FollowUpRow({ f, onPress, showOwner }: { f: FollowUpWithLead; onPress: () => void; showOwner?: boolean }) {
   const late = !f.completedAt && new Date(f.scheduledAt) < new Date();
   const product = productLabel(f.lead);
   return (
@@ -32,6 +32,7 @@ export function FollowUpRow({ f, onPress }: { f: FollowUpWithLead; onPress: () =
         </Text>
         {f.note ? <Text style={styles.note}>{f.note}</Text> : null}
         <Text style={styles.meta}>{[f.lead.phone, product].filter(Boolean).join(' · ')}</Text>
+        {showOwner && <Text style={styles.meta}>{f.lead.assignedTo ? `With ${f.lead.assignedTo.fullName}` : 'Not assigned to anyone'}</Text>}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.ink3} />
     </Pressable>
@@ -46,7 +47,9 @@ export function FollowUpsScreen({ calendarLink = true }: { calendarLink?: boolea
   const [tab, setTab] = useState<FollowUpTab>('overdue');
   // Date filter: the days they were (or are) due, combined with the tab.
   const [range, setRange] = useState<DateRange>(ALL_TIME);
-  const { data, error, refreshing, refresh, reload } = useResource<FollowUpWithLead[]>(followUpsPath(tab, range));
+  // Admins (leads.read_all) see the whole team's; everyone else their own.
+  const team = can('leads.read_all');
+  const { data, error, refreshing, refresh, reload } = useResource<FollowUpWithLead[]>(followUpsPath(tab, range, team));
   const [open, setOpen] = useState<FollowUpWithLead | null>(null);
   const canWrite = can('followups.write');
   const noun = can('leads.receive_qualified') ? 'follow-up' : 'callback';
@@ -55,7 +58,7 @@ export function FollowUpsScreen({ calendarLink = true }: { calendarLink?: boolea
     <View style={styles.page}>
       <Stack.Screen
         options={{
-          title: noun === 'follow-up' ? 'My follow-ups' : 'My callbacks',
+          title: team ? 'Team follow-ups' : noun === 'follow-up' ? 'My follow-ups' : 'My callbacks',
           // On the telecaller's Callbacks tab the calendar is its own tab.
           ...(calendarLink && {
             headerRight: () => (
@@ -81,7 +84,7 @@ export function FollowUpsScreen({ calendarLink = true }: { calendarLink?: boolea
           data={data ?? []}
           keyExtractor={(f) => f.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.blue]} />}
-          renderItem={({ item }) => <FollowUpRow f={item} onPress={() => (item.completedAt || !canWrite ? router.push(`/lead/${item.lead.id}`) : setOpen(item))} />}
+          renderItem={({ item }) => <FollowUpRow f={item} showOwner={team} onPress={() => (item.completedAt || !canWrite ? router.push(`/lead/${item.lead.id}`) : setOpen(item))} />}
           ListHeaderComponent={data && data.length > 0 ? <Text style={styles.count}>{data.length} {tab === 'completed' ? 'done' : tab}</Text> : undefined}
           ListEmptyComponent={
             <Text style={styles.empty}>{tab === 'overdue' ? 'Nothing overdue. 🎉' : tab === 'upcoming' ? `No ${noun}s planned yet.` : `No ${noun}s done yet.`}</Text>

@@ -5,7 +5,7 @@ import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ReminderSummary } from '../../lib/dashboard';
 import type { NotificationFeed } from '../../lib/followups';
-import { appRole, badge, tabVisible, type TabKey } from '../../lib/tabs';
+import { appRole, badge, tabLabel, tabVisible, type TabKey } from '../../lib/tabs';
 import { NotificationBell } from '../../screens/NotificationsScreen';
 import { useUser } from '../../session';
 import { colors } from '../../theme';
@@ -17,16 +17,18 @@ type Icon = keyof typeof Ionicons.glyphMap;
 
 /**
  * The bottom tab bar. Telecallers: Home, My Leads, Callbacks, Calendar, More.
- * Sales: Home, My Leads, Pipeline, Site Visits, More. A lead, the searchable
+ * Sales: Home, My Leads, Pipeline, Site Visits, More. Admin: Home, Leads,
+ * Follow-ups, Site Visits, More. A lead, the searchable
  * list, New lead and the other full screens open above the tabs.
  */
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { user } = useUser();
   const role = appRole(user.role.key);
-  // Work calls keep syncing to the server whichever tab is open.
-  useCallSync(role !== 'other');
-  const reminders = useResource<ReminderSummary>(role === 'other' ? null : '/notifications/summary');
+  // The people who call leads: their work calls keep syncing whichever tab is open.
+  const calls = role === 'telecaller' || role === 'sales';
+  useCallSync(calls);
+  const reminders = useResource<ReminderSummary>(calls ? '/notifications/summary' : null);
   const feed = useResource<NotificationFeed>('/notifications');
   const due = reminders.data ? reminders.data.overdue.length + reminders.data.dueToday.length : 0;
 
@@ -73,16 +75,16 @@ export default function TabsLayout() {
           tabBarHideOnKeyboard: true,
         }}
       >
-        {tab('index', 'Home', 'home', { header: false })}
-        {tab('my-leads', 'My Leads', 'people', { badge: role === 'sales' ? badge(due) : undefined })}
-        {tab('callbacks', 'Callbacks', 'alarm', { badge: badge(due) })}
-        {tab('schedule', 'Calendar', 'calendar')}
-        {tab('pipeline', 'Pipeline', 'git-commit')}
-        {tab('visits', 'Site Visits', 'location')}
-        {tab('more', 'More', 'grid', { badge: badge(feed.data?.unread) })}
+        {tab('index', tabLabel(role, 'index'), 'home', { header: false })}
+        {tab('my-leads', tabLabel(role, 'my-leads'), 'people', { badge: role === 'sales' ? badge(due) : undefined })}
+        {tab('callbacks', tabLabel(role, 'callbacks'), 'alarm', { badge: role === 'telecaller' ? badge(due) : undefined })}
+        {tab('schedule', tabLabel(role, 'schedule'), 'calendar')}
+        {tab('pipeline', tabLabel(role, 'pipeline'), 'git-commit')}
+        {tab('visits', tabLabel(role, 'visits'), 'location')}
+        {tab('more', tabLabel(role, 'more'), 'grid', { badge: badge(feed.data?.unread) })}
       </Tabs>
       {/* "How did the call go?" for answered incoming calls from your leads, found by call sync. */}
-      {role !== 'other' && <IncomingCallPrompts />}
+      {calls && <IncomingCallPrompts />}
     </>
   );
 }

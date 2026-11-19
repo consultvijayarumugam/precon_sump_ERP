@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
-import { memo, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { memo, useMemo, useState, type ReactElement } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { DateRangeBar } from '../components/date-range-bar';
-import { Button, Centered, ErrorBanner, SearchLeadsLink, StageBadge } from '../components/ui';
+import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { ALL_TIME, inRange, rangeLabel, type DateRange } from '../lib/date-range';
 import { useLeadActions } from '../components/use-lead-actions';
 import { salesBucket, salesSections, type SalesBucket, type SalesDashboardData, type SalesLead } from '../lib/sales';
@@ -69,8 +69,7 @@ export const SalesCard = memo(function SalesCard({ lead, onChanged }: { lead: Sa
  * My Leads (sales tab): the open leads handed to me. Overdue follow-ups first,
  * then today's, then leads with nothing planned, then later ones.
  */
-export function SalesLeadsScreen() {
-  const router = useRouter();
+export function SalesLeadsScreen({ header }: { header?: ReactElement }) {
   const pad = useBottomPad();
   const { data, error, refreshing, refresh, reload } = useResource<SalesDashboardData>('/dashboards/sales');
   // Date filter: when the lead was handed to you; the list keeps its most-urgent-first order.
@@ -80,14 +79,13 @@ export function SalesLeadsScreen() {
 
   return (
     <View style={styles.page}>
-      <Stack.Screen options={{ title: data ? `My leads · ${data.open.length}` : 'My leads' }} />
       <SectionList
         testID="sales-leads"
         sections={sections}
         keyExtractor={(l) => l.id}
         ListHeaderComponent={
           <>
-            <SearchLeadsLink onPress={() => router.push('/leads')} />
+            {header}
             <DateRangeBar value={range} onChange={setRange} caption={`Handed to you: ${rangeLabel(range)} · ${shown.length} of ${(data?.open ?? []).length}`} />
             {error && (
               <View style={styles.pad}>

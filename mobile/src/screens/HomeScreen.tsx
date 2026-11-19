@@ -1,12 +1,11 @@
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { User } from '../api';
 import { PeriodReportCard } from '../components/period-report-card';
 import { colors } from '../theme';
 
-export function HomeScreen({ user, apiUrl, onLogout }: { user: User; apiUrl: string; onLogout: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false);
+/** Home for roles with no phone screens yet (e.g. factory supervisor). Log out is in More, as for everyone. */
+export function HomeScreen({ user, apiUrl }: { user: User; apiUrl: string }) {
   return (
     <SafeAreaView style={styles.page} edges={['top']}>
       <ScrollView contentContainerStyle={styles.body}>
@@ -20,18 +19,6 @@ export function HomeScreen({ user, apiUrl, onLogout }: { user: User; apiUrl: str
           <Text style={styles.detail}>{user.email}</Text>
           <Text style={styles.detail}>Server: {apiUrl}</Text>
         </View>
-        <Pressable
-          testID="logout"
-          style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-          disabled={busy}
-          onPress={async () => {
-            setBusy(true);
-            await onLogout();
-          }}
-          accessibilityRole="button"
-        >
-          {busy ? <ActivityIndicator color={colors.blue} /> : <Text style={styles.buttonText}>Log out</Text>}
-        </Pressable>
         {/* Admins (leads.read_all) see the team's results; others with leads.read their own. */}
         {user.permissions?.includes('leads.read') && (
           <View style={styles.report}>
@@ -52,7 +39,4 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: 20 },
   title: { fontSize: 20, fontWeight: '700', color: colors.ink },
   detail: { marginTop: 6, fontSize: 14, color: colors.ink3 },
-  button: { height: 52, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
-  pressed: { opacity: 0.8 },
-  buttonText: { color: colors.blue, fontSize: 16, fontWeight: '700' },
 });

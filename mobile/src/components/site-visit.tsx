@@ -100,7 +100,7 @@ export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string;
 }
 
 /** One recorded visit: lead, time, note, and a tap to see it on OpenStreetMap. */
-export function VisitRow({ visit, onOpenLead }: { visit: CheckIn; onOpenLead?: () => void }) {
+export function VisitRow({ visit, onOpenLead, showPerson }: { visit: CheckIn; onOpenLead?: () => void; showPerson?: boolean }) {
   return (
     <View style={styles.visit}>
       <Ionicons name="location" size={22} color={colors.blue} style={styles.pin} />
@@ -111,6 +111,7 @@ export function VisitRow({ visit, onOpenLead }: { visit: CheckIn; onOpenLead?: (
         <Text style={styles.leadMeta}>
           {formatDateTime(visit.checkedInAt)}
           {visit.accuracyMeters !== null ? ` · ±${visit.accuracyMeters} m` : ''}
+          {showPerson ? ` · ${visit.person.fullName}` : ''}
         </Text>
         {visit.notes ? <Text style={styles.note}>{visit.notes}</Text> : null}
       </View>

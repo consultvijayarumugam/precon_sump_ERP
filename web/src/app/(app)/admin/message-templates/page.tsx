@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageCircle, Plus } from "lucide-react";
+import { MessageCircle, Paperclip, Plus } from "lucide-react";
 import { FormEvent, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import type { MessageTemplate } from "@/components/whatsapp-button";
 import { api, apiPatch, apiPost } from "@/lib/api";
+import { fileTypeLabel, type LibraryFile } from "@/lib/files";
 import { TAGS } from "@/lib/tags";
 import { useAction, useApi } from "@/lib/use-api";
 
@@ -45,7 +46,7 @@ function TemplateForm({
   placeholders: Placeholder[];
   /** This is the only template switched on: warn before switching it off. */
   lastActive?: boolean;
-  onSave: (v: { name: string; body: string; sortOrder: number; isActive: boolean }) => Promise<unknown>;
+  onSave: (v: { name: string; body: string; sortOrder: number; isActive: boolean; fileIds: string[] }) => Promise<unknown>;
   onCancel?: () => void;
   submitLabel: string;
 }) {
@@ -53,6 +54,10 @@ function TemplateForm({
   const [body, setBody] = useState(initial?.body ?? "");
   const [sortOrder, setSortOrder] = useState(String(initial?.sortOrder ?? 0));
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  // Files from the library that go with this message (links added when it's sent).
+  const [fileIds, setFileIds] = useState<string[]>(() => initial?.files?.map((f) => f.id) ?? []);
+  const library = useApi<LibraryFile[]>("/files");
+  const toggleFile = (id: string) => setFileIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : ids.length >= 5 ? ids : [...ids, id]));
   const [problems, setProblems] = useState<string[]>([]);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const save = useAction();
@@ -81,7 +86,7 @@ function TemplateForm({
     setProblems(found);
     if (found.length) return;
     if (lastActive && !isActive && !window.confirm("This is the only template switched on. Turn it off and telecallers and sales will have no templates to pick. Continue?")) return;
-    await save.run(() => onSave({ name: name.trim(), body: body.trim(), sortOrder: Number(sortOrder) || 0, isActive }));
+    await save.run(() => onSave({ name: name.trim(), body: body.trim(), sortOrder: Number(sortOrder) || 0, isActive, fileIds }));
   }
 
   return (
@@ -130,6 +135,27 @@ function TemplateForm({
           {preview(body)}
         </div>
       )}
+      <fieldset className="text-sm">
+        <legend className="mb-1.5 flex items-center gap-1.5 font-medium text-neutral-700 dark:text-neutral-300">
+          <Paperclip className="size-4" aria-hidden /> Attach files from the library (optional)
+        </legend>
+        <p className="mb-2 text-xs text-neutral-500">Their links are added to the message automatically whenever anyone sends this template, on the web and in the app. Up to 5.</p>
+        <ErrorText error={library.error} />
+        {library.data?.length === 0 && <p className="text-xs text-neutral-500">The file library is empty. Upload a brochure in Admin → Files first.</p>}
+        {library.data && library.data.length > 0 && (
+          <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-neutral-200 p-1.5 dark:border-neutral-800">
+            {library.data.map((f) => (
+              <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                <input type="checkbox" checked={fileIds.includes(f.id)} onChange={() => toggleFile(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 5} />
+                <span className="min-w-0 flex-1 truncate">{f.title}</span>
+                <span className="shrink-0 text-xs text-neutral-500">
+                  {fileTypeLabel(f)} · {f.categoryLabel}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </fieldset>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Active: show it in the WhatsApp picker
       </label>
@@ -264,6 +290,16 @@ export default function MessageTemplatesPage() {
                     <span className="block text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Preview (sample lead)</span>
                     {preview(t.body)}
                   </p>
+                  {t.files && t.files.length > 0 && (
+                    <p className="mt-2 flex flex-wrap items-center gap-1.5 text-sm text-neutral-700 dark:text-neutral-300">
+                      <Paperclip className="size-4 text-emerald-600" aria-hidden /> Sends with:
+                      {t.files.map((f) => (
+                        <Badge key={f.id} tone="green">
+                          {f.title}
+                        </Badge>
+                      ))}
+                    </p>
+                  )}
                 </>
               )}
             </section>

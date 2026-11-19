@@ -21,6 +21,8 @@ export interface MessageTemplate {
   sortOrder: number;
   isActive: boolean;
   updatedAt: string;
+  /** Library files that always go with this template (their links are added when it's sent). */
+  files?: { id: string; title: string; category: string; mimeType: string }[];
 }
 
 const WA_LOOK: Record<ContactVariant, string> = {
@@ -224,6 +226,11 @@ export function WhatsAppButton({
               <span className="line-clamp-2 block text-xs text-neutral-500">
                 {t.body}
               </span>
+              {t.files && t.files.length > 0 && (
+                <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                  <Paperclip className="size-3" aria-hidden /> With {t.files.map((f) => f.title).join(", ")}
+                </span>
+              )}
             </button>
           ))}
           <button

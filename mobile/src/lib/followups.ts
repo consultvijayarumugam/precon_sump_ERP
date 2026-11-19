@@ -44,9 +44,10 @@ export const FOLLOW_UP_TABS: { key: FollowUpTab; label: string }[] = [
 ];
 
 /** My follow-ups in one state (only leads assigned to me, as on the web page's "mine"). */
-export const followUpsPath = (state: FollowUpTab, range?: DateRange) => {
+export const followUpsPath = (state: FollowUpTab, range?: DateRange, team = false) => {
   const days = range && range.preset !== 'all' ? `${range.from ? `&fromDate=${range.from}` : ''}${range.to ? `&toDate=${range.to}` : ''}` : '';
-  return `/follow-ups?state=${state}&assignedTo=me${days}`;
+  // `team` (admin): everyone's; otherwise only follow-ups on leads assigned to me.
+  return `/follow-ups?state=${state}${team ? '' : '&assignedTo=me'}${days}`;
 };
 
 /** Local calendar day as YYYY-MM-DD (the phone is on India time). */
@@ -84,11 +85,11 @@ export function byDay<T extends { scheduledAt: string }>(items: T[]): Map<string
 }
 
 /** The calendar's request: every follow-up from the grid's first day to the day after its last. */
-export function calendarPath(weeks: { date: Date }[][]) {
+export function calendarPath(weeks: { date: Date }[][], team = false) {
   const from = weeks[0][0].date;
   const lastDay = weeks[weeks.length - 1][6].date;
   const to = new Date(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate() + 1);
-  return `/follow-ups?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&assignedTo=me`;
+  return `/follow-ups?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}${team ? '' : '&assignedTo=me'}`;
 }
 
 export interface NotificationItem {

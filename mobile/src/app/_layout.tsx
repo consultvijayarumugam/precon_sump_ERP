@@ -31,6 +31,7 @@ function RootNavigator() {
         <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
         <Stack.Screen name="new-lead" options={{ title: 'New lead' }} />
         <Stack.Screen name="call-tracking" options={{ title: 'Call tracking' }} />
+        <Stack.Screen name="reports" options={{ title: 'Reports' }} />
       </Stack.Protected>
       <Stack.Protected guard={state.status === 'out' || state.status === 'loading'}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

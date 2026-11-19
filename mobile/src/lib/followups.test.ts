@@ -38,3 +38,10 @@ test('follow-ups can be narrowed to the days they were due', () => {
   assert.equal(followUpsPath('completed', { preset: 'week', from: '2026-11-16', to: '2026-11-22' }), '/follow-ups?state=completed&assignedTo=me&fromDate=2026-11-16&toDate=2026-11-22');
   assert.equal(followUpsPath('overdue', { preset: 'all' }), '/follow-ups?state=overdue&assignedTo=me');
 });
+
+test("an admin's follow-ups and calendar cover the whole team", () => {
+  assert.equal(followUpsPath('overdue', undefined, true), '/follow-ups?state=overdue');
+  const weeks = monthGrid(2026, 10);
+  assert.ok(!calendarPath(weeks, true).includes('assignedTo'));
+  assert.ok(calendarPath(weeks).endsWith('&assignedTo=me'));
+});

@@ -32,6 +32,16 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Library files (brochure, PDF, image) that go with this template: their links are added whenever it is sent. On update, the full list (empty removes all).',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5, { message: 'Attach at most 5 files to a template' })
+  @IsUUID('all', { each: true })
+  fileIds?: string[];
 }
 
 export class UpdateTemplateDto extends PartialType(CreateTemplateDto) {}

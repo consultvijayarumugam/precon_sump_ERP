@@ -21,13 +21,15 @@ export function SiteVisitsScreen() {
   const pad = useBottomPad();
   const { can } = useUser();
   const canVisit = can('sitevisit.write');
-  const { data, error, refreshing, refresh, reload } = useResource<SalesDashboardData>('/dashboards/sales');
+  // Admins see the whole team's visits (last 30 days); a salesperson their own.
+  const team = can('leads.read_all');
+  const { data, error, refreshing, refresh, reload } = useResource<Pick<SalesDashboardData, 'visits'>>(team ? '/dashboards/master' : '/dashboards/sales');
   const [visiting, setVisiting] = useState(false);
   const visits = data?.visits ?? [];
 
   return (
     <View style={styles.page}>
-      <Stack.Screen options={{ title: 'Site visits' }} />
+      <Stack.Screen options={{ title: team ? 'Team site visits' : 'Site visits' }} />
       <FlatList
         testID="sales-visits"
         data={visits}
@@ -47,12 +49,12 @@ export function SiteVisitsScreen() {
               </View>
             )}
             {data && <VisitsMap visits={visits} height={280} />}
-            {visits.length > 0 && <Text style={[salesStyles.section, { color: colors.blue }]}>Your recent site visits · {visits.length}</Text>}
+            {visits.length > 0 && <Text style={[salesStyles.section, { color: colors.blue }]}>{team ? 'Last 30 days' : 'Your recent site visits'} · {visits.length}</Text>}
           </>
         }
         renderItem={({ item }) => (
           <View style={salesStyles.rowCard}>
-            <VisitRow visit={item} onOpenLead={item.lead ? () => router.push(`/lead/${item.lead!.id}`) : undefined} />
+            <VisitRow visit={item} showPerson={team} onOpenLead={item.lead ? () => router.push(`/lead/${item.lead!.id}`) : undefined} />
           </View>
         )}
         ListEmptyComponent={

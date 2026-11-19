@@ -301,6 +301,11 @@ export function WhatsAppSheet({ leadId, leadName, onClose, onDone }: { leadId: s
           <Text style={styles.templateBody} numberOfLines={2}>
             {t.body}
           </Text>
+          {t.files && t.files.length > 0 && (
+            <Text style={styles.templateFiles} numberOfLines={2}>
+              📎 Sends with {t.files.map((f) => f.title).join(', ')}
+            </Text>
+          )}
         </Pressable>
       ))}
       <ErrorBanner message={error ?? templates.error ?? files.error} />
@@ -328,4 +333,5 @@ const styles = StyleSheet.create({
   template: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, borderRadius: space.radius, padding: 12, marginBottom: 8 },
   templateName: { fontSize: 15, fontWeight: '700', color: colors.ink },
   templateBody: { marginTop: 2, fontSize: 13, color: colors.ink2 },
+  templateFiles: { marginTop: 4, fontSize: 13, fontWeight: '600', color: colors.whatsapp },
 });

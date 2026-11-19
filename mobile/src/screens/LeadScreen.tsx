@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FollowUpSheet } from '../components/follow-up-sheet';
 import { EditLeadSheet } from '../components/lead-form';
 import { SharedNotes } from '../components/lead-notes';
+import { ReassignSheet } from '../components/reassign-sheet';
 import { SiteVisitSheet, VisitRow } from '../components/site-visit';
 import { StageSheet } from '../components/stage-sheet';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
@@ -50,9 +51,12 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
   const { user, can } = useUser();
   // Sales: GPS site visits on this lead, moving it along the pipeline. Telecallers have neither tag.
   const visits = useResource<CheckIn[]>(can('sitevisit.read') ? `/leads/${id}/visits` : null);
-  const canMoveStage = can('leads.write');
+  // Telecallers move leads through their own (pre-handover) stages too; sales and admin theirs.
+  const canMoveStage = can('leads.write') || can('leads.qualify');
   const canVisit = can('sitevisit.write') && lead.assignedTo?.id === user.id;
-  const [salesSheet, setSalesSheet] = useState<'stage' | 'visit' | null>(null);
+  // Admin only, once the lead is with sales (as on the web).
+  const canReassign = can('leads.assign') && Boolean(lead.qualifiedAt) && lead.status !== 'NEW' && lead.status !== 'CONTACTED';
+  const [salesSheet, setSalesSheet] = useState<'stage' | 'visit' | 'reassign' | null>(null);
   // Telecallers edit their own leads with leads.qualify (the server checks the scope), as on web.
   const canEdit = can('leads.write') || can('leads.qualify');
   const [editing, setEditing] = useState(false);
@@ -162,6 +166,12 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           <Info label="Source">{`${SOURCE_LABELS[lead.source] ?? lead.source}${lead.sourceDetail ? ` · ${lead.sourceDetail}` : ''}`}</Info>
           {lead.email && <Info label="Email">{lead.email}</Info>}
           <Info label={lead.qualifiedAt ? 'Salesperson' : 'Assigned to'}>{lead.assignedTo?.fullName ?? 'Unassigned'}</Info>
+          {canReassign && (
+            <Pressable testID="reassign" onPress={() => setSalesSheet('reassign')} style={styles.reassign} accessibilityRole="button" accessibilityLabel="Reassign to a different salesperson">
+              <Ionicons name="swap-horizontal" size={18} color={colors.blue} />
+              <Text style={styles.editText}>Reassign salesperson</Text>
+            </Pressable>
+          )}
           {lead.telecaller && lead.qualifiedAt ? <Info label="Telecaller">{lead.telecaller.fullName}</Info> : null}
           <Info label="Created">{formatDateTime(lead.createdAt)}</Info>
         </View>
@@ -260,6 +270,17 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           }}
         />
       )}
+      {salesSheet === 'reassign' && (
+        <ReassignSheet
+          lead={lead}
+          onClose={() => setSalesSheet(null)}
+          onDone={(to) => {
+            setSalesSheet(null);
+            ToastAndroid.show(`${lead.name} is now with ${to}`, ToastAndroid.LONG);
+            reloadAll();
+          }}
+        />
+      )}
       {salesSheet === 'visit' && (
         <SiteVisitSheet
           lead={lead}
@@ -306,6 +327,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 15, fontWeight: '700', color: colors.navy900, marginTop: 14, marginBottom: 8 },
   headingRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   editButton: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingHorizontal: 10, marginBottom: -2 },
+  reassign: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, alignSelf: 'flex-start' },
   editText: { fontSize: 15, fontWeight: '700', color: colors.blue },
   pressed: { opacity: 0.7 },
   doneLink: { fontSize: 13, fontWeight: '700', color: colors.blue, alignSelf: 'center' },

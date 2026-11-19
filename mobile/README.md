@@ -40,6 +40,12 @@ Reads real call durations from the telecaller's phone and sends them to the API,
 | 4th | **Calendar**: my callbacks by month (`CalendarScreen`) | **Site Visits** (`SiteVisitsScreen`): I'm at site, my visits on an OpenStreetMap map and as a list |
 | **More** | Profile, Notifications, All my leads (search), New lead (if allowed), Call tracking, server, Log out | The same, plus Follow-ups and Calendar |
 
+**My Leads opens on every lead you can see, loaded at once** (`components/leads-list.tsx`): a telecaller's assigned leads and the ones they handed to sales, a salesperson's own, everyone's for an admin. Search, the stage chips and the date filter only narrow it, and combine; "All time" applies no date filter. Each row has Call and WhatsApp. **Call order** (telecaller) / **Follow-up order** (sales) switches to the working queue, most urgent first.
+
+**Admin in the app:** Home (today's team numbers, who needs attention: tap one for that person's leads, team results for any dates), **Leads** (all leads), **Follow-ups** (the whole team's), **Site Visits** (the team's, last 30 days), **More** (Calendar for the team, Reports, Notifications, New lead / Quick add, server, Log out last). Admins can **reassign** a handed-over lead from its page. Users, permissions, pipeline stages, templates and files are set up on the web only.
+
+**Nothing is built into the app that the admin can change on the web.** Pipeline stages (`GET /pipeline-stages`), WhatsApp templates and their attached files (`GET /message-templates`, `GET /files`) are fetched from the server every time a screen or sheet opens, so new or renamed stages and templates show at once, without a new APK. "Move stage" offers: telecallers New, the stages before the handover and Lost; sales the stages after it, Won and Lost; admins all (`lib/stages.ts`, tested).
+
 Badges: Callbacks (telecaller) and My Leads (sales) show follow-ups overdue or due today; More shows unread notifications. Both lead lists start with a "Search all my leads" bar (`GET /leads`, any status). Other roles (admin) get Home and More only.
 
 The OSM map is Leaflet in a WebView (`react-native-webview`), loading OpenStreetMap tiles. No Google Maps and no API key.

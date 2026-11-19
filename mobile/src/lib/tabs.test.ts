@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ALL_TABS, appRole, badge, TAB_SETS, tabVisible } from './tabs.ts';
+import { ALL_TABS, appRole, badge, TAB_SETS, tabLabel, tabVisible } from './tabs.ts';
 
 test('telecallers get call-focused tabs, sales get pipeline and field tabs', () => {
   assert.deepEqual(TAB_SETS.telecaller, ['index', 'my-leads', 'callbacks', 'schedule', 'more']);
@@ -18,10 +18,18 @@ test('every role has Home first and More last, five tabs at most, all real route
   }
 });
 
+test('admins get the full CRM: dashboard, all leads, follow-ups, site visits, More', () => {
+  assert.equal(appRole('admin'), 'admin');
+  assert.deepEqual(TAB_SETS.admin, ['index', 'my-leads', 'callbacks', 'visits', 'more']);
+  assert.equal(tabLabel('admin', 'my-leads'), 'Leads');
+  assert.equal(tabLabel('admin', 'callbacks'), 'Follow-ups');
+  assert.equal(tabLabel('telecaller', 'callbacks'), 'Callbacks');
+  assert.equal(tabLabel('sales', 'my-leads'), 'My Leads');
+});
+
 test('unknown roles fall back to Home and More', () => {
   assert.equal(appRole('telecaller'), 'telecaller');
   assert.equal(appRole('sales'), 'sales');
-  assert.equal(appRole('admin'), 'other');
   assert.deepEqual(TAB_SETS[appRole('factory_supervisor')], ['index', 'more']);
 });
 

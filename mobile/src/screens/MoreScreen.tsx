@@ -43,7 +43,11 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/** More: profile, notifications, the screens that aren't a tab for this role, call tracking, server and log out. */
+/**
+ * More: profile, notifications, the screens that aren't a tab for this role
+ * (calendar, reports, new lead), call tracking, server, and Log out last.
+ * Admin setup (users, permissions, stages, templates, files) stays on the web.
+ */
 export function MoreScreen() {
   const pad = useBottomPad();
   const { user, apiUrl, can } = useUser();
@@ -90,18 +94,20 @@ export function MoreScreen() {
 
       <Group title="My work">
         <Row testID="more-notifications" icon="notifications-outline" label="Notifications" detail="Reminders and leads handed to you" href="/notifications" count={notifications.data?.unread} />
+        {role === 'sales' && <Row testID="go-follow-ups" icon="alarm-outline" label="Follow-ups" detail="Overdue, upcoming and done" href="/follow-ups" />}
         {role !== 'telecaller' && (
-          <>
-            <Row testID="go-follow-ups" icon="alarm-outline" label={can('leads.receive_qualified') ? 'Follow-ups' : 'Callbacks'} detail="Overdue, upcoming and done" href="/follow-ups" />
-            <Row testID="go-calendar" icon="calendar-outline" label="Calendar" detail="Your follow-ups by month" href="/calendar" />
-          </>
+          <Row testID="go-calendar" icon="calendar-outline" label="Calendar" detail={role === 'admin' ? "The team's follow-ups by month" : 'Your follow-ups by month'} href="/calendar" />
         )}
-        <Row testID="more-all-leads" icon="search-outline" label="All my leads" detail="Search by name, phone or city; filter by status" href="/leads" />
+        {(can('reports.view') || can('reports.view_all')) && (
+          <Row testID="go-reports" icon="bar-chart-outline" label="Reports" detail={role === 'admin' ? 'Leads, telecallers, pipeline, revenue, follow-ups' : 'Your numbers for any dates'} href="/reports" />
+        )}
         {canAdd && <Row testID="more-new-lead" icon="person-add-outline" label="New lead" detail={can('leads.quick_add') ? 'Quick add a WhatsApp enquiry, or the full form' : 'Add a lead to your list'} href="/new-lead" />}
       </Group>
 
       <Group title="Settings">
-        <Row testID="call-tracking" icon="timer-outline" label="Call tracking" detail="Talk-time from your work calls" href="/call-tracking" />
+        {(role === 'telecaller' || role === 'sales') && (
+          <Row testID="call-tracking" icon="timer-outline" label="Call tracking" detail="Talk-time from your work calls" href="/call-tracking" />
+        )}
         <View style={styles.row}>
           <View style={styles.rowIcon}>
             <Ionicons name="server-outline" size={22} color={colors.blue} />

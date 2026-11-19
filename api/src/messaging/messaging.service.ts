@@ -8,7 +8,21 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateTemplateDto, StartWhatsAppDto, UpdateTemplateDto } from './dto/messaging.dto.js';
 import { renderTemplate, waLink, waPhone } from './whatsapp.js';
 
-const TEMPLATE_SELECT = { id: true, name: true, body: true, sortOrder: true, isActive: true, updatedAt: true } as const;
+const TEMPLATE_SELECT = {
+  id: true,
+  name: true,
+  body: true,
+  sortOrder: true,
+  isActive: true,
+  updatedAt: true,
+  // Files that go with the message (their links are added when it's sent).
+  files: { select: { id: true, title: true, category: true, mimeType: true }, orderBy: { title: 'asc' } },
+} as const;
+
+/** Library files to send: the template's own, then any picked, each once (at most 10 links in a message). */
+export function filesToSend(templateFileIds: string[], pickedIds: string[]): string[] {
+  return [...new Set([...templateFileIds, ...pickedIds])].slice(0, 10);
+}
 const sizeFormat = new Intl.NumberFormat('en-IN');
 
 /** WhatsApp quick-contact: admin-managed templates, and starting (and logging) a message to a lead. */
@@ -30,7 +44,13 @@ export class MessagingService {
   async createTemplate(dto: CreateTemplateDto) {
     try {
       return await this.prisma.messageTemplate.create({
-        data: { name: dto.name, body: dto.body, sortOrder: dto.sortOrder ?? 0, isActive: dto.isActive ?? true },
+        data: {
+          name: dto.name,
+          body: dto.body,
+          sortOrder: dto.sortOrder ?? 0,
+          isActive: dto.isActive ?? true,
+          files: dto.fileIds?.length ? { connect: (await this.files.pick(dto.fileIds)).map((f) => ({ id: f.id })) } : undefined,
+        },
         select: TEMPLATE_SELECT,
       });
     } catch (error) {
@@ -41,7 +61,9 @@ export class MessagingService {
   async updateTemplate(id: string, dto: UpdateTemplateDto) {
     await this.ensureTemplate(id);
     try {
-      return await this.prisma.messageTemplate.update({ where: { id }, data: dto, select: TEMPLATE_SELECT });
+      const { fileIds, ...fields } = dto;
+      const files = fileIds === undefined ? undefined : { set: (await this.files.pick(fileIds)).map((f) => ({ id: f.id })) };
+      return await this.prisma.messageTemplate.update({ where: { id }, data: { ...fields, files }, select: TEMPLATE_SELECT });
     } catch (error) {
       throw this.nameClash(error);
     }
@@ -69,11 +91,11 @@ export class MessagingService {
     if (!lead) throw new NotFoundException('Lead not found');
     if (!waPhone(lead.phone)) throw new BadRequestException(`${lead.phone} isn't a mobile number WhatsApp can use`);
 
-    let template: { id: string; name: string; body: string } | null = null;
+    let template: { id: string; name: string; body: string; files: { id: string }[] } | null = null;
     if (dto.templateId) {
       template = await this.prisma.messageTemplate.findFirst({
         where: { id: dto.templateId, isActive: true },
-        select: { id: true, name: true, body: true },
+        select: { id: true, name: true, body: true, files: { select: { id: true }, orderBy: { title: 'asc' } } },
       });
       if (!template) throw new BadRequestException('That template is not available');
     }
@@ -86,7 +108,9 @@ export class MessagingService {
         : lead.productInterest === 'MICROBES'
           ? 'Microbes'
           : '';
-    const shared = (await this.files.pick(dto.fileIds ?? [])).map((f) => ({
+    // The template's own files always go with it (so older app versions get them too), plus any picked.
+    const fileIds = filesToSend(template?.files.map((f) => f.id) ?? [], dto.fileIds ?? []);
+    const shared = (await this.files.pick(fileIds)).map((f) => ({
       id: f.id,
       title: f.title,
       category: CATEGORY_LABELS[f.category],

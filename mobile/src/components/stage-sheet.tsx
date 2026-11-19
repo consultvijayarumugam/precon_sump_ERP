@@ -1,16 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { salesStages, type PipelineStage } from '../lib/sales';
-import { useSession } from '../session';
+import type { PipelineStage } from '../lib/sales';
+import { stageChoices, stageRole } from '../lib/stages';
+import { useSession, useUser } from '../session';
 import { colors } from '../theme';
 import { Button, ErrorBanner, Sheet } from './ui';
 
 const KIND_COLOR: Partial<Record<PipelineStage['kind'], string>> = { WON: colors.green, LOST: colors.red };
 
-/** Move a lead along the sales pipeline (admin-defined stages), to Won, or to Lost. Same as the web lead page. */
+/** Move a lead to another pipeline stage (admin-defined, fetched live): which ones depends on who's moving it (see stageChoices). */
 export function StageSheet({ lead, onClose, onDone }: { lead: { id: string; name: string; stage: { id: string } | null }; onClose: () => void; onDone: (stage: PipelineStage) => void }) {
   const { api } = useSession();
+  const { can } = useUser();
+  const role = stageRole(can);
   const [stages, setStages] = useState<PipelineStage[] | null>(null);
   const [chosen, setChosen] = useState<string | null>(lead.stage?.id ?? null);
   const [busy, setBusy] = useState(false);
@@ -18,10 +21,11 @@ export function StageSheet({ lead, onClose, onDone }: { lead: { id: string; name
 
   useEffect(() => {
     api<PipelineStage[]>('/pipeline-stages').then(
-      (all) => setStages(salesStages(all, lead.stage?.id ?? null)),
+      // Fetched live every time, so stages the admin adds or renames show without an app update.
+      (all) => setStages(stageChoices(all, role, lead.stage?.id ?? null)),
       (err) => setError(err instanceof Error ? err.message : 'Could not load the stages.'),
     );
-  }, [api, lead.stage?.id]);
+  }, [api, lead.stage?.id, role]);
 
   const target = stages?.find((s) => s.id === chosen) ?? null;
   const unchanged = chosen === (lead.stage?.id ?? null);

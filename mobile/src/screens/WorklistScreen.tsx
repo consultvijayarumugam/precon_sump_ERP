@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
-import { memo, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { memo, useMemo, useState, type ReactElement } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { DateRangeBar } from '../components/date-range-bar';
-import { Button, Centered, ErrorBanner, SearchLeadsLink, StageBadge } from '../components/ui';
+import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { ALL_TIME, inRange, rangeLabel, type DateRange } from '../lib/date-range';
 import { useLeadActions } from '../components/use-lead-actions';
 import { CALL_OUTCOME_LABELS, formatDateTime, productLabel, TelecallerData, toSections, WorklistBucket, WorklistItem } from '../lib/workflow';
@@ -65,8 +65,7 @@ export const WorkCard = memo(function WorkCard({ item, onChanged }: { item: Work
  * callbacks, due today, new, no callback set, later. Call and WhatsApp on
  * every card; tap a card for the lead page.
  */
-export function WorklistScreen() {
-  const router = useRouter();
+export function WorklistScreen({ header }: { header?: ReactElement }) {
   const pad = useBottomPad();
   const { data, error, refreshing, refresh, reload } = useResource<TelecallerData>('/dashboards/telecaller');
   // Date filter: when the lead arrived; the list keeps its most-urgent-first order.
@@ -76,14 +75,13 @@ export function WorklistScreen() {
 
   return (
     <View style={styles.page}>
-      <Stack.Screen options={{ title: data ? `My leads · ${data.items.length}` : 'My leads' }} />
       <SectionList
         testID="worklist"
         sections={sections}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <>
-            <SearchLeadsLink onPress={() => router.push('/leads')} />
+            {header}
             <DateRangeBar value={range} onChange={setRange} caption={`Arrived: ${rangeLabel(range)} · ${shown.length} of ${(data?.items ?? []).length}`} />
             {error && (
               <View style={styles.pad}>
