@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { ROLE_DEFINITIONS } from '../../access-control/permission-catalog.js';
 
 const ROLE_KEYS = ROLE_DEFINITIONS.map((r) => r.key);
@@ -72,4 +72,13 @@ export class UpdateUserDto {
   @MinLength(8)
   @MaxLength(128)
   password?: string;
+}
+
+export class DeactivateUserDto {
+  @ApiPropertyOptional({
+    description: "Who takes this user's open leads (an active user with leads.read). Required when they hold any open leads.",
+  })
+  @IsOptional()
+  @IsUUID()
+  reassignToId?: string;
 }

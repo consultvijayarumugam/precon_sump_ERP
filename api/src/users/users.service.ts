@@ -4,12 +4,22 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
+import { PERMISSIONS } from '../access-control/permission-catalog.js';
+import { recordActivity } from '../crm/lead-history.js';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AccessControlService } from '../access-control/access-control.service.js';
-import { PermissionEffect } from '../generated/prisma/client.js';
+import { PermissionEffect, Prisma, type UserAuditAction } from '../generated/prisma/client.js';
 import { SetPermissionOverridesDto } from './dto/set-permission-overrides.dto.js';
-import { CreateUserDto, UpdateUserDto } from './dto/user.dto.js';
+import { CreateUserDto, DeactivateUserDto, UpdateUserDto } from './dto/user.dto.js';
+import { ATTACHED_DATA_COUNT, attachedData, LAST_ADMIN_MESSAGE, OPEN_LEAD_STATUSES, wouldRemoveLastAdmin } from './user-removal.js';
+
+type Tx = Prisma.TransactionClient;
+type Actor = Pick<AuthenticatedUser, 'id' | 'fullName'>;
+
+/** One lock for every change that could remove an admin, so two at once can't leave none. */
+const ADMIN_LOCK = 771_204_001;
 
 const USER_SELECT = {
   id: true,
@@ -35,7 +45,7 @@ export class UsersService {
   }
 
   /** New user: their tags come entirely from the chosen role's preset. */
-  async create(dto: CreateUserDto) {
+  async create(actor: Actor, dto: CreateUserDto) {
     const clash = await this.prisma.user.findUnique({ where: { email: dto.email }, select: { id: true } });
     if (clash) throw new ConflictException('A user with that email already exists');
     const role = await this.roleByKey(dto.roleKey);
@@ -49,27 +59,42 @@ export class UsersService {
       },
       select: { id: true },
     });
+    await this.audit(this.prisma, actor, { id: user.id, fullName: dto.fullName, email: dto.email }, 'CREATED', `Created as ${role.name} by ${actor.fullName}`, { role: role.name });
     return this.findOneRow(user.id);
   }
 
   /**
    * Edit a user. Changing the role resets their tags to the new role's preset:
    * any custom grants/revokes are cleared, so the role alone describes them.
+   * Switching someone off here only works when they hold no open leads (the
+   * Deactivate flow hands those over first); the last active admin can't be
+   * switched off or moved to another role.
    */
-  async update(actingUserId: string, userId: string, dto: UpdateUserDto) {
+  async update(actor: Actor, userId: string, dto: UpdateUserDto) {
     const existing = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, role: { select: { key: true } } },
+      select: { id: true, fullName: true, email: true, isActive: true, role: { select: { key: true, name: true } } },
     });
     if (!existing) throw new NotFoundException('User not found');
     const roleChanging = dto.roleKey !== undefined && dto.roleKey !== existing.role.key;
-    if (actingUserId === userId && (roleChanging || dto.isActive === false)) {
+    const deactivating = dto.isActive === false && existing.isActive;
+    const reactivating = dto.isActive === true && !existing.isActive;
+    if (actor.id === userId && (roleChanging || dto.isActive === false)) {
       throw new BadRequestException("You can't change your own role or deactivate yourself; ask another admin");
     }
     const role = roleChanging ? await this.roleByKey(dto.roleKey!) : null;
+    if (deactivating) {
+      const open = await this.openLeadCount(this.prisma, userId);
+      if (open > 0) {
+        throw new BadRequestException(
+          `${existing.fullName} still has ${open} open lead${open === 1 ? '' : 's'}. Use Remove on the Users page to hand them to someone else first.`,
+        );
+      }
+    }
     const passwordHash = dto.password ? await bcrypt.hash(dto.password, 12) : undefined;
 
     await this.prisma.$transaction(async (tx) => {
+      if ((roleChanging && existing.role.key === 'admin') || deactivating) await this.assertAdminRemains(tx, userId);
       await tx.user.update({
         where: { id: userId },
         data: {
@@ -80,9 +105,268 @@ export class UsersService {
           passwordHash,
         },
       });
-      if (role) await tx.userPermission.deleteMany({ where: { userId } });
+      if (role) {
+        await tx.userPermission.deleteMany({ where: { userId } });
+        await this.audit(tx, actor, existing, 'ROLE_CHANGED', `Role changed by ${actor.fullName}: ${existing.role.name} → ${role.name}`, { from: existing.role.name, to: role.name });
+      }
+      if (deactivating) await this.audit(tx, actor, existing, 'DEACTIVATED', `Deactivated by ${actor.fullName}`, { leadsReassigned: 0 });
+      if (reactivating) await this.audit(tx, actor, existing, 'REACTIVATED', `Reactivated by ${actor.fullName}`);
     });
     return this.findOneRow(userId);
+  }
+
+  /**
+   * What removing this user would involve, for the Remove dialog: their open
+   * leads (which must be handed over before deactivating), every kind of
+   * record attached to them (any at all means deactivate, never delete), who
+   * can take the leads, and whether the last-admin rule blocks it.
+   */
+  async removalCheck(actor: Actor, userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, email: true, isActive: true, role: { select: { key: true, name: true } }, _count: { select: ATTACHED_DATA_COUNT } },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const [byStatus, otherAdmins, assignees] = await Promise.all([
+      this.prisma.lead.groupBy({ by: ['status'], where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES } }, orderBy: { status: 'asc' }, _count: { _all: true } }),
+      this.otherActiveAdmins(this.prisma, userId),
+      this.leadOwners(userId),
+    ]);
+    const openLeadsByStatus = Object.fromEntries(byStatus.map((r) => [r.status, (r._count as { _all: number })._all]));
+    const openLeads = Object.values(openLeadsByStatus).reduce((a, b) => a + b, 0);
+    const data = attachedData(user._count as Record<string, number>);
+    const lastAdmin = wouldRemoveLastAdmin({ isActive: user.isActive, roleKey: user.role.key }, otherAdmins);
+    const isSelf = actor.id === userId;
+    return {
+      user: { id: user.id, fullName: user.fullName, email: user.email, isActive: user.isActive, role: user.role },
+      isSelf,
+      lastAdmin,
+      openLeads,
+      openLeadsByStatus,
+      data,
+      canDeactivate: user.isActive && !isSelf && !lastAdmin,
+      canDelete: data.length === 0 && !isSelf && !lastAdmin,
+      assignees,
+    };
+  }
+
+  /**
+   * Deactivate: they can't sign in (existing sessions stop on their next
+   * request) and get no more round-robin leads; everything they did stays.
+   * Open leads must go to someone first: pass `reassignToId` and they move in
+   * the same step, each with a history entry and a notification. On an
+   * already-inactive user this just hands over leads they still hold.
+   */
+  async deactivate(actor: Actor, userId: string, dto: DeactivateUserDto) {
+    if (actor.id === userId) throw new BadRequestException("You can't deactivate yourself; ask another admin");
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, email: true, isActive: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const target = dto.reassignToId ? await this.validLeadOwner(dto.reassignToId, userId) : null;
+
+    const moved = await this.prisma.$transaction(async (tx) => {
+      if (user.isActive) await this.assertAdminRemains(tx, userId);
+      const leads = await tx.lead.findMany({
+        where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES } },
+        select: { id: true, name: true, qualifiedAt: true },
+      });
+      if (leads.length > 0 && !target) {
+        throw new BadRequestException(
+          `${user.fullName} has ${leads.length} open lead${leads.length === 1 ? '' : 's'}. Pick who should take ${leads.length === 1 ? 'it' : 'them'} before deactivating.`,
+        );
+      }
+      if (leads.length > 0 && target) {
+        await this.handOver(tx, actor, user, target, leads);
+      }
+      if (user.isActive) {
+        await tx.user.update({ where: { id: userId }, data: { isActive: false } });
+        await this.audit(
+          tx,
+          actor,
+          user,
+          'DEACTIVATED',
+          `Deactivated by ${actor.fullName}${leads.length ? `; ${leads.length} open lead${leads.length === 1 ? '' : 's'} handed to ${target!.fullName}` : ''}`,
+          { leadsReassigned: leads.length, to: target?.fullName ?? null },
+        );
+      }
+      return leads.length;
+    });
+    return { ...(await this.findOneRow(userId)), leadsReassigned: moved, reassignedTo: moved ? target : null };
+  }
+
+  /** Undo a deactivation: they can sign in again and rejoin any round-robin they're switched on for. */
+  async reactivate(actor: Actor, userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, fullName: true, email: true, isActive: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.isActive) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: { id: userId }, data: { isActive: true } });
+        await this.audit(tx, actor, user, 'REACTIVATED', `Reactivated by ${actor.fullName}`);
+      });
+    }
+    return this.findOneRow(userId);
+  }
+
+  /**
+   * Permanent delete, only for an account nothing points at (made by mistake,
+   * never used). Anyone with leads, calls, visits, history, etc. can only be
+   * deactivated, so the records about them still say who did what.
+   */
+  async remove(actor: Actor, userId: string) {
+    if (actor.id === userId) throw new BadRequestException("You can't delete yourself; ask another admin");
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.assertAdminRemains(tx, userId);
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { id: true, fullName: true, email: true, role: { select: { name: true } }, _count: { select: ATTACHED_DATA_COUNT } },
+        });
+        if (!user) throw new NotFoundException('User not found');
+        const data = attachedData(user._count as Record<string, number>);
+        if (data.length > 0) throw new ConflictException(this.hasDataMessage(user.fullName, data));
+        await tx.user.delete({ where: { id: userId } });
+        await this.audit(tx, actor, { id: null, fullName: user.fullName, email: user.email }, 'DELETED', `Deleted permanently by ${actor.fullName} (had no data)`, { role: user.role.name });
+        return { id: userId, deleted: true };
+      });
+    } catch (err) {
+      // A record we don't count still points at them: keep the account.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new ConflictException('This user has records attached, so they can only be deactivated.');
+      }
+      throw err;
+    }
+  }
+
+  /** A user's account history (created, role changes, deactivated, leads handed over…), newest first. */
+  async history(userId: string) {
+    return this.prisma.userAuditEvent.findMany({
+      where: { targetUserId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { id: true, action: true, message: true, details: true, actorName: true, createdAt: true },
+    });
+  }
+
+  /** Recent account changes across all users, including deleted ones (they keep their name as text). */
+  async recentHistory() {
+    return this.prisma.userAuditEvent.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: { id: true, action: true, message: true, details: true, actorName: true, targetName: true, targetEmail: true, targetUserId: true, createdAt: true },
+    });
+  }
+
+  // --- helpers ---------------------------------------------------------------
+
+  private hasDataMessage(name: string, data: { label: string; count: number }[]) {
+    const list = data.slice(0, 4).map((d) => `${d.count} ${d.label}`).join(', ');
+    return `${name} can't be deleted because they have ${list}${data.length > 4 ? ' and more' : ''}. Deactivate them instead; their history stays.`;
+  }
+
+  /** Blocks the change if it would leave no active admin. Call inside the transaction. */
+  private async assertAdminRemains(tx: Tx, userId: string) {
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(${ADMIN_LOCK}::bigint)`;
+    const target = await tx.user.findUnique({ where: { id: userId }, select: { isActive: true, role: { select: { key: true } } } });
+    if (!target) throw new NotFoundException('User not found');
+    if (wouldRemoveLastAdmin({ isActive: target.isActive, roleKey: target.role.key }, await this.otherActiveAdmins(tx, userId))) {
+      throw new BadRequestException(LAST_ADMIN_MESSAGE);
+    }
+  }
+
+  private otherActiveAdmins(db: Tx, userId: string) {
+    return db.user.count({ where: { isActive: true, role: { key: 'admin' }, id: { not: userId } } });
+  }
+
+  private openLeadCount(db: Tx, userId: string) {
+    return db.lead.count({ where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES } } });
+  }
+
+  /** Active users (other than `exceptId`) who can hold leads: they have the leads.read tag. */
+  private async leadOwners(exceptId: string) {
+    const users = await this.prisma.user.findMany({
+      where: { isActive: true, id: { not: exceptId } },
+      orderBy: { fullName: 'asc' },
+      select: { id: true, fullName: true, role: { select: { key: true, name: true } } },
+    });
+    const result: (typeof users[number] & { telecaller: boolean })[] = [];
+    for (const u of users) {
+      const { permissions } = await this.accessControl.getEffectiveAccess(u.id);
+      if (permissions.includes(PERMISSIONS.LEADS_READ)) result.push({ ...u, telecaller: permissions.includes(PERMISSIONS.LEADS_AUTO_ASSIGN) });
+    }
+    return result;
+  }
+
+  private async validLeadOwner(id: string, leavingId: string) {
+    if (id === leavingId) throw new BadRequestException('Pick someone other than the person being deactivated');
+    const owner = (await this.leadOwners(leavingId)).find((u) => u.id === id);
+    if (!owner) throw new BadRequestException('The new owner must be an active user who can work leads');
+    return owner;
+  }
+
+  /** Moves open leads to `target`: one history entry and one notification per lead, plus an account-history line. */
+  private async handOver(
+    tx: Tx,
+    actor: Actor,
+    from: { id: string; fullName: string; email: string },
+    target: { id: string; fullName: string; telecaller: boolean },
+    leads: { id: string; name: string; qualifiedAt: Date | null }[],
+  ) {
+    const ids = leads.map((l) => l.id);
+    await tx.lead.updateMany({ where: { id: { in: ids } }, data: { assignedToId: target.id, autoAssigned: false } });
+    // A telecaller now working leads that weren't handed to sales yet: count them on their scorecard.
+    if (target.telecaller) {
+      const unqualified = leads.filter((l) => !l.qualifiedAt).map((l) => l.id);
+      if (unqualified.length) await tx.lead.updateMany({ where: { id: { in: unqualified } }, data: { telecallerId: target.id } });
+    }
+    for (const lead of leads) {
+      await recordActivity(tx, {
+        leadId: lead.id,
+        userId: actor.id,
+        type: 'ASSIGNED',
+        summary: `Reassigned by ${actor.fullName} when ${from.fullName} was deactivated: ${from.fullName} → ${target.fullName}`,
+        changes: [{ field: 'assignedTo', label: 'Assigned to', from: from.fullName, to: target.fullName }],
+      });
+    }
+    if (target.id !== actor.id) {
+      await tx.notification.createMany({
+        data: leads.map((l) => ({
+          userId: target.id,
+          type: 'LEAD_ASSIGNED' as const,
+          leadId: l.id,
+          title: `New lead: ${l.name}`,
+          body: `Reassigned to you by ${actor.fullName} (was ${from.fullName})`,
+        })),
+      });
+    }
+    await this.audit(tx, actor, from, 'LEADS_REASSIGNED', `${leads.length} open lead${leads.length === 1 ? '' : 's'} handed to ${target.fullName} by ${actor.fullName}`, {
+      leads: leads.length,
+      to: target.fullName,
+      toId: target.id,
+    });
+  }
+
+  private async audit(
+    db: Tx,
+    actor: Actor,
+    target: { id: string | null; fullName: string; email: string },
+    action: UserAuditAction,
+    message: string,
+    details?: Record<string, unknown>,
+  ) {
+    await db.userAuditEvent.create({
+      data: {
+        targetUserId: target.id,
+        targetName: target.fullName,
+        targetEmail: target.email,
+        actorId: actor.id,
+        actorName: actor.fullName,
+        action,
+        message,
+        details: details as Prisma.InputJsonValue | undefined,
+      },
+    });
   }
 
   private async findOneRow(id: string) {
@@ -91,7 +375,7 @@ export class UsersService {
   }
 
   private async roleByKey(key: string) {
-    const role = await this.prisma.role.findUnique({ where: { key }, select: { id: true } });
+    const role = await this.prisma.role.findUnique({ where: { key }, select: { id: true, name: true } });
     if (!role) throw new BadRequestException(`Unknown role: ${key}`);
     return role;
   }
@@ -150,8 +434,13 @@ export class UsersService {
       );
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, role: { select: { key: true } } } });
     if (!user) throw new NotFoundException('User not found');
+    // Taking user management away from the only admin would lock everyone out of Admin.
+    const adminTags: string[] = [PERMISSIONS.USERS_MANAGE, PERMISSIONS.PERMISSIONS_ASSIGN];
+    if (dto.revoke.some((k) => adminTags.includes(k)) && wouldRemoveLastAdmin({ isActive: user.isActive, roleKey: user.role.key }, await this.otherActiveAdmins(this.prisma, userId))) {
+      throw new BadRequestException(LAST_ADMIN_MESSAGE);
+    }
 
     const requestedKeys = [...dto.grant, ...dto.revoke];
     const permissions = await this.prisma.permission.findMany({

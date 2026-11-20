@@ -1,6 +1,6 @@
 "use client";
 
-import { UserPlus } from "lucide-react";
+import { History, UserMinus, UserPlus } from "lucide-react";
 import { FormEvent, Fragment, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
@@ -20,11 +20,12 @@ import {
   thClass,
   theadClass,
 } from "@/components/ui";
-import { apiPatch, apiPost } from "@/lib/api";
+import { api, apiPatch, apiPost } from "@/lib/api";
 import { formatDateTime } from "@/lib/crm";
 import { MODULES, ModuleKey, moduleForTagModule } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
 import { useAction, useApi } from "@/lib/use-api";
+import { blockedReason, dataLine, openLeadsLine, sortAssignees, type RemovalCheck, type UserAuditEvent } from "@/lib/user-removal";
 
 interface UserRow {
   id: string;
@@ -119,7 +120,6 @@ function UserForm({ user, onDone, onCancel }: { user?: UserRow; onDone: () => vo
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [roleKey, setRoleKey] = useState(user?.role.key ?? "sales");
-  const [isActive, setIsActive] = useState(user?.isActive ?? true);
   const [password, setPassword] = useState("");
   const { run, busy, error } = useAction();
   const isMe = user?.id === me.id;
@@ -133,7 +133,6 @@ function UserForm({ user, onDone, onCancel }: { user?: UserRow; onDone: () => vo
             fullName,
             phone: phone || null,
             ...(roleChanging ? { roleKey } : {}),
-            ...(isActive !== user.isActive ? { isActive } : {}),
             ...(password ? { password } : {}),
           })
         : apiPost("/users", { fullName, email, phone: phone || undefined, roleKey, password }),
@@ -182,14 +181,13 @@ function UserForm({ user, onDone, onCancel }: { user?: UserRow; onDone: () => vo
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        {user && (
-          <label className="flex items-center gap-2 self-end pb-2 text-sm">
-            <input type="checkbox" checked={isActive} disabled={isMe} onChange={(e) => setIsActive(e.target.checked)} />
-            Active (can sign in)
-          </label>
-        )}
       </div>
-      {isMe && <p className="text-xs text-neutral-500">You can&apos;t change your own role or deactivate yourself.</p>}
+      {isMe && <p className="text-xs text-neutral-500">You can&apos;t change your own role or remove yourself.</p>}
+      {!user && roleKey === "admin" && (
+        <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+          A new admin gets everything you have: every CRM screen plus Admin (users, tags, stages, templates, files, lead assignment).
+        </p>
+      )}
       {roleChanging && user!.customTagCount > 0 && (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           Changing the role resets {user!.fullName}&apos;s tags to the new preset. Their {user!.customTagCount} custom tag
@@ -250,13 +248,184 @@ function UserTags({ userId }: { userId: string }) {
 }
 
 /**
+ * Remove a user. Deactivate is the normal path: they can't sign in or get new
+ * leads, everything they did stays, and it can be undone. Their open leads
+ * must go to someone first. Delete is only offered for an account with no
+ * data at all (made by mistake, never used). The last admin can't be removed.
+ */
+function RemovePanel({ userId, onDone, onCancel }: { userId: string; onDone: (message: string) => void; onCancel: () => void }) {
+  const { data: check, error: loadError } = useApi<RemovalCheck>(`/users/${userId}/removal`);
+  const [to, setTo] = useState("");
+  const { run, busy, error } = useAction();
+  if (loadError) return <div className={`${panelClass} p-5`}><ErrorText error={loadError} /></div>;
+  if (!check) return <div className={`${panelClass} p-5 text-sm text-neutral-500`}>Checking their leads and records…</div>;
+
+  const name = check.user.fullName;
+  const blocked = blockedReason(check);
+  const needsOwner = check.openLeads > 0;
+  // An already-inactive user can still hold leads (switched off before this check existed).
+  const handOverOnly = !check.user.isActive && needsOwner;
+  const canAct = !blocked && (check.canDeactivate || handOverOnly);
+  const owners = sortAssignees(check);
+  const ownerName = owners.find((o) => o.id === to)?.fullName;
+
+  async function deactivate() {
+    const ok = await run(() => apiPost(`/users/${userId}/deactivate`, needsOwner ? { reassignToId: to } : {}));
+    if (ok) onDone(handOverOnly ? `${check!.openLeads} open leads handed to ${ownerName}.` : `${name} deactivated${needsOwner ? `; ${check!.openLeads} open leads handed to ${ownerName}` : ""}.`);
+  }
+  async function remove() {
+    if (!confirm(`Delete ${name} (${check!.user.email}) permanently? This can't be undone.`)) return;
+    const ok = await run(() => api(`/users/${userId}`, { method: "DELETE" }));
+    if (ok) onDone(`${name} deleted.`);
+  }
+
+  return (
+    <div className={`${panelClass} space-y-4 p-5`} data-testid="remove-panel">
+      <div>
+        <h2 className="text-[15px] font-semibold">Remove {name}</h2>
+        <p className="text-sm text-neutral-500">
+          {check.user.role.name} · {check.user.email} · {check.user.isActive ? "Active" : "Inactive"}
+        </p>
+      </div>
+      {blocked && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          {blocked}
+        </p>
+      )}
+
+      <section className="space-y-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <div>
+          <h3 className="text-sm font-semibold">
+            {handOverOnly ? "Hand over their open leads" : "Deactivate"} <Badge tone="green">Recommended</Badge>
+          </h3>
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+            {handOverOnly
+              ? `${name} is already inactive but still holds open leads. Give them to someone who can follow up.`
+              : `${name} won't be able to sign in and gets no more round-robin leads. Their leads, calls, site visits, follow-ups and history all stay, and you can reactivate them any time.`}
+          </p>
+        </div>
+        <p className="text-sm">
+          <span className="font-medium">{openLeadsLine(check)}</span>
+          {needsOwner && <span className="text-neutral-500"> must go to someone else first, so no lead is left without an owner. Closed (won/lost) leads stay with {name}.</span>}
+        </p>
+        {needsOwner && (
+          <Field label={`Hand ${check.openLeads === 1 ? "it" : `all ${check.openLeads}`} to *`}>
+            <select className={inputClass} value={to} disabled={!canAct} onChange={(e) => setTo(e.target.value)} data-testid="reassign-to">
+              <option value="">Pick who takes them…</option>
+              {owners.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.fullName} ({o.role.name})
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        {needsOwner && <p className="text-xs text-neutral-500">Each lead gets a line in its change history, and the new owner is notified.</p>}
+        {(check.canDeactivate || handOverOnly) && (
+          <button type="button" className={buttonClass} disabled={!canAct || busy || (needsOwner && !to)} onClick={deactivate} data-testid="confirm-deactivate">
+            {handOverOnly ? "Hand over leads" : needsOwner ? `Hand over ${check.openLeads} lead${check.openLeads === 1 ? "" : "s"} and deactivate` : `Deactivate ${name}`}
+          </button>
+        )}
+      </section>
+
+      <section className="space-y-2 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <h3 className="text-sm font-semibold">Delete permanently</h3>
+        {check.data.length === 0 ? (
+          <>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {dataLine(check.data)} is linked to this account, so it can be deleted (for example, one made by mistake). This can&apos;t be undone.
+            </p>
+            <button
+              type="button"
+              className={`${secondaryButtonClass} border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40`}
+              disabled={!check.canDelete || busy}
+              onClick={remove}
+              data-testid="confirm-delete"
+            >
+              Delete {name}
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-neutral-600 dark:text-neutral-400" data-testid="delete-unavailable">
+            Not available: {name} has {dataLine(check.data)}. Deleting would break that history, so deactivate instead.
+          </p>
+        )}
+      </section>
+
+      <ErrorText error={error} />
+      <button type="button" className={secondaryButtonClass} onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+const AUDIT_TONE: Record<UserAuditEvent["action"], "green" | "neutral" | "amber" | "blue" | "violet" | "red"> = {
+  CREATED: "green",
+  ROLE_CHANGED: "violet",
+  DEACTIVATED: "amber",
+  REACTIVATED: "green",
+  LEADS_REASSIGNED: "blue",
+  DELETED: "red",
+};
+const AUDIT_WORD: Record<UserAuditEvent["action"], string> = {
+  CREATED: "Created",
+  ROLE_CHANGED: "Role",
+  DEACTIVATED: "Deactivated",
+  REACTIVATED: "Reactivated",
+  LEADS_REASSIGNED: "Leads",
+  DELETED: "Deleted",
+};
+
+function AuditList({ events, showName }: { events: UserAuditEvent[]; showName?: boolean }) {
+  if (events.length === 0) return <p className="text-xs text-neutral-500">No account changes recorded yet.</p>;
+  return (
+    <ul className="space-y-1.5 text-sm">
+      {events.map((e) => (
+        <li key={e.id} className="flex flex-wrap items-baseline gap-2">
+          <span className="w-32 shrink-0 text-xs text-neutral-500">{formatDateTime(e.createdAt)}</span>
+          <Badge tone={AUDIT_TONE[e.action]}>{AUDIT_WORD[e.action]}</Badge>
+          {showName && e.targetName && <span className="font-medium">{e.targetName}:</span>}
+          <span>{e.message}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function UserHistory({ userId }: { userId: string }) {
+  const { data, error } = useApi<UserAuditEvent[]>(`/users/${userId}/history`);
+  if (error) return <ErrorText error={error} />;
+  if (!data) return <p className="text-xs text-neutral-500">Loading…</p>;
+  return <AuditList events={data} />;
+}
+
+/** Account changes across everyone, including people since deleted. */
+function RecentChanges() {
+  const { data, error } = useApi<UserAuditEvent[]>("/users/history");
+  return (
+    <div className={`${panelClass} space-y-3 p-5`}>
+      <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+        <History className="size-4" aria-hidden /> Recent account changes
+      </h2>
+      <ErrorText error={error} />
+      {data && <AuditList events={data.slice(0, 20)} showName />}
+    </div>
+  );
+}
+
+/**
  * Admin -> Users (#20). The normal flow is pick-a-role: a role's preset
  * decides every tag. Individual tags stay viewable under "View tags".
  */
 export default function UsersPage() {
   const { can } = useAuth();
-  const [open, setOpen] = useState<string | null>(null);
+  const { user: me } = useAuth();
+  const [open, setOpen] = useState<{ id: string; kind: "tags" | "history" } | null>(null);
   const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const reactivate = useAction();
   const { data, error, reload } = useApi<UserRow[]>(can(TAGS.USERS_READ) ? "/users" : null);
   if (!can(TAGS.USERS_READ)) return <NoAccess tag={TAGS.USERS_READ} />;
   const canSeeTags = can(TAGS.PERMISSIONS_READ);
@@ -265,17 +434,29 @@ export default function UsersPage() {
     setEditing(null);
     reload();
   };
+  const removed = (message: string) => {
+    setRemoving(null);
+    setNotice(message);
+    reload();
+  };
+  const toggle = (id: string, kind: "tags" | "history") => setOpen(open?.id === id && open.kind === kind ? null : { id, kind });
+  async function bringBack(u: UserRow) {
+    if (await reactivate.run(() => apiPost(`/users/${u.id}/reactivate`))) {
+      setNotice(`${u.fullName} can sign in again.`);
+      reload();
+    }
+  }
   const editingUser = data?.find((u) => u.id === editing);
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Users"
-        subtitle="Pick a role for each person; the role's preset decides what they can see and do."
+        subtitle="Pick a role for each person; the role's preset decides what they can see and do. Remove deactivates someone (their history stays); only unused accounts can be deleted."
         action={
           canManage &&
           editing === null && (
-            <button className={buttonClass} onClick={() => setEditing("new")}>
+            <button className={buttonClass} onClick={() => { setRemoving(null); setEditing("new"); }}>
               <UserPlus className="size-4" aria-hidden /> New user
             </button>
           )
@@ -283,7 +464,13 @@ export default function UsersPage() {
       />
       {editing === "new" && <UserForm onDone={done} onCancel={() => setEditing(null)} />}
       {editingUser && <UserForm key={editingUser.id} user={editingUser} onDone={done} onCancel={() => setEditing(null)} />}
-      <ErrorText error={error} />
+      {removing && <RemovePanel key={removing} userId={removing} onDone={removed} onCancel={() => setRemoving(null)} />}
+      {notice && (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200" role="status">
+          {notice}
+        </p>
+      )}
+      <ErrorText error={error ?? reactivate.error} />
       {data && (
         <div className={tableWrapClass}>
           <table className={tableClass}>
@@ -318,25 +505,58 @@ export default function UsersPage() {
                       {canManage && (
                         <button
                           className="mr-3 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300"
-                          onClick={() => setEditing(u.id)}
+                          onClick={() => { setRemoving(null); setEditing(u.id); }}
                         >
                           Edit
                         </button>
                       )}
+                      {canManage && u.id !== me.id && u.isActive && (
+                        <button
+                          className="mr-3 inline-flex items-center gap-1 text-xs font-semibold text-red-700 hover:underline dark:text-red-300"
+                          onClick={() => { setEditing(null); setNotice(null); setRemoving(u.id); }}
+                          data-testid={`remove-${u.email}`}
+                        >
+                          <UserMinus className="size-3.5" aria-hidden /> Remove
+                        </button>
+                      )}
+                      {canManage && !u.isActive && (
+                        <>
+                          <button
+                            className="mr-3 text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50 dark:text-emerald-300"
+                            disabled={reactivate.busy}
+                            onClick={() => bringBack(u)}
+                            data-testid={`reactivate-${u.email}`}
+                          >
+                            Reactivate
+                          </button>
+                          <button
+                            className="mr-3 text-xs font-medium text-neutral-500 hover:underline"
+                            onClick={() => { setEditing(null); setNotice(null); setRemoving(u.id); }}
+                          >
+                            Delete…
+                          </button>
+                        </>
+                      )}
+                      <button
+                        className="mr-3 text-xs font-medium text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-200"
+                        onClick={() => toggle(u.id, "history")}
+                      >
+                        {open?.id === u.id && open.kind === "history" ? "Hide history" : "History"}
+                      </button>
                       {canSeeTags && (
                         <button
                           className="text-xs font-medium text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-200"
-                          onClick={() => setOpen(open === u.id ? null : u.id)}
+                          onClick={() => toggle(u.id, "tags")}
                         >
-                          {open === u.id ? "Hide tags" : "View tags"}
+                          {open?.id === u.id && open.kind === "tags" ? "Hide tags" : "View tags"}
                         </button>
                       )}
                     </td>
                   </tr>
-                  {open === u.id && (
+                  {open?.id === u.id && (
                     <tr>
                       <td colSpan={6} className="bg-neutral-50 px-4 py-3 dark:bg-neutral-900/60">
-                        <UserTags userId={u.id} />
+                        {open.kind === "tags" ? <UserTags userId={u.id} /> : <UserHistory userId={u.id} />}
                       </td>
                     </tr>
                   )}
@@ -346,6 +566,7 @@ export default function UsersPage() {
           </table>
         </div>
       )}
+      {data && <RecentChanges key={data.map((u) => `${u.id}${u.isActive}${u.role.key}`).join()} />}
     </div>
   );
 }

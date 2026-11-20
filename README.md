@@ -605,9 +605,15 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | GET    | `/auth/me`               | logged in              | Current user, role, effective tags, modules |
 | GET    | `/users`                 | `users.read`           | List users, with role and `customTagCount` |
 | POST   | `/users`                 | `users.manage`         | Create: `{fullName, email, roleKey, password, phone?}`. Tags come from the role preset |
-| PATCH  | `/users/:id`             | `users.manage`         | `{fullName?, phone?, roleKey?, isActive?, password?}`. Changing `roleKey` resets tags to that preset. You can't change your own role or deactivate yourself |
+| PATCH  | `/users/:id`             | `users.manage`         | `{fullName?, phone?, roleKey?, isActive?, password?}`. Changing `roleKey` resets tags to that preset. You can't change your own role or deactivate yourself. `isActive: false` is refused while they hold open leads (use deactivate). The last active admin can't be demoted or switched off ("At least one admin is required") |
+| GET    | `/users/history`         | `users.read`           | Recent account changes across everyone (created, role changed, deactivated, reactivated, leads handed over, deleted), with who did it and when |
+| GET    | `/users/:id/history`     | `users.read`           | One user's account history, newest first |
+| GET    | `/users/:id/removal`     | `users.manage`         | For the Remove dialog: `openLeads` (+ by status), attached `data` lines, `assignees` who can take the leads, `canDeactivate`, `canDelete`, `lastAdmin`, `isSelf` |
+| POST   | `/users/:id/deactivate`  | `users.manage`         | `{reassignToId?}`. Required when they hold open leads (NEW/CONTACTED/QUALIFIED/QUOTED): those move to that active `leads.read` user first, each with an ASSIGNED history entry and a notification. They then can't sign in (open sessions stop on the next request) or get round-robin leads; all their history stays. Not yourself, not the last active admin |
+| POST   | `/users/:id/reactivate`  | `users.manage`         | Undo a deactivation |
+| DELETE | `/users/:id`             | `users.manage`         | Permanent delete, only for an account with no data at all (no leads, calls, visits, follow-ups, history, orders...). 409 otherwise: deactivate instead. Not yourself, not the last active admin |
 | GET    | `/users/:id/permissions` | `permissions.read`     | Role tags, overrides, effective tags |
-| PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. |
+| PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. Revoking `users.manage` / `permissions.assign` from the last active admin is refused. |
 | GET    | `/roles`                 | `permissions.read`     | Roles with default tags and user counts |
 | GET    | `/permissions`           | `permissions.read`     | Full tag catalog |
 | GET    | `/leads`                 | `leads.read`           | List leads in your scope. Filters: `status`, `source`, `productInterest`, `assignedToId`, `search` (name/phone/city), `wonFrom` / `wonTo` (YYYY-MM-DD, won-on date, inclusive), `page`, `pageSize`. `status=WON` = closed/won view, newest win first |
@@ -775,7 +781,7 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/orders` | `sales.read` | Sales orders. Balances and overdue flags appear with `payments.read`. Convert a lead to an order from a won lead's page |
 | `/orders/:id` | `sales.read` | Order details, edit, mark delivered (`stock.write`), cancel, payments (`payments.read`/`payments.write`) |
 | `/finance/revenue` | `finance.dashboard` or `sales.read` | Revenue by employee (or "My revenue" for sales) with date presets (this month, last month, this financial year, all time) or a custom range |
-| `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** and **Edit** (pick a role, which previews the preset's tags), activate or deactivate, reset password. "View tags" needs `permissions.read` |
+| `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** (any role, including more admins) and **Edit** (pick a role, which previews the preset's tags; reset password). **Remove** opens a panel: *Deactivate* (recommended: no sign-in, no new leads, history kept, reversible with **Reactivate**; their open leads must be handed to someone first) or *Delete permanently* (offered only when the account has no data). The last active admin can't be removed or demoted. **History** per user and *Recent account changes* show who changed what and when. "View tags" needs `permissions.read` |
 | `/admin/permissions` | `permissions.read` | Grid of each role's preset tags |
 | `/reports` | `reports.view` or `reports.view_all` | Five reports with date presets, each exportable to CSV and Excel; badge shows "Everyone's data" or "Your own data" |
 | `/admin/files` | `files.manage` | File library: upload (PDF/JPG/PNG ≤ 10 MB), title, category, open/copy link, rename, delete |
@@ -1130,9 +1136,15 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | GET    | `/auth/me`               | logged in              | Current user, role, effective tags, modules |
 | GET    | `/users`                 | `users.read`           | List users, with role and `customTagCount` |
 | POST   | `/users`                 | `users.manage`         | Create: `{fullName, email, roleKey, password, phone?}`. Tags come from the role preset |
-| PATCH  | `/users/:id`             | `users.manage`         | `{fullName?, phone?, roleKey?, isActive?, password?}`. Changing `roleKey` resets tags to that preset. You can't change your own role or deactivate yourself |
+| PATCH  | `/users/:id`             | `users.manage`         | `{fullName?, phone?, roleKey?, isActive?, password?}`. Changing `roleKey` resets tags to that preset. You can't change your own role or deactivate yourself. `isActive: false` is refused while they hold open leads (use deactivate). The last active admin can't be demoted or switched off ("At least one admin is required") |
+| GET    | `/users/history`         | `users.read`           | Recent account changes across everyone (created, role changed, deactivated, reactivated, leads handed over, deleted), with who did it and when |
+| GET    | `/users/:id/history`     | `users.read`           | One user's account history, newest first |
+| GET    | `/users/:id/removal`     | `users.manage`         | For the Remove dialog: `openLeads` (+ by status), attached `data` lines, `assignees` who can take the leads, `canDeactivate`, `canDelete`, `lastAdmin`, `isSelf` |
+| POST   | `/users/:id/deactivate`  | `users.manage`         | `{reassignToId?}`. Required when they hold open leads (NEW/CONTACTED/QUALIFIED/QUOTED): those move to that active `leads.read` user first, each with an ASSIGNED history entry and a notification. They then can't sign in (open sessions stop on the next request) or get round-robin leads; all their history stays. Not yourself, not the last active admin |
+| POST   | `/users/:id/reactivate`  | `users.manage`         | Undo a deactivation |
+| DELETE | `/users/:id`             | `users.manage`         | Permanent delete, only for an account with no data at all (no leads, calls, visits, follow-ups, history, orders...). 409 otherwise: deactivate instead. Not yourself, not the last active admin |
 | GET    | `/users/:id/permissions` | `permissions.read`     | Role tags, overrides, effective tags |
-| PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. |
+| PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. Revoking `users.manage` / `permissions.assign` from the last active admin is refused. |
 | GET    | `/roles`                 | `permissions.read`     | Roles with default tags and user counts |
 | GET    | `/permissions`           | `permissions.read`     | Full tag catalog |
 | GET    | `/leads`                 | `leads.read`           | List leads in your scope. Filters: `status`, `source`, `productInterest`, `assignedToId`, `search` (name/phone/city), `page`, `pageSize`. `status=WON` = closed/won view, newest win first |
@@ -1254,7 +1266,7 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/orders` | `sales.read` | Sales orders. Balances and overdue flags appear with `payments.read`. Convert a lead to an order from a won lead's page |
 | `/orders/:id` | `sales.read` | Order details, edit, mark delivered (`stock.write`), cancel, payments (`payments.read`/`payments.write`) |
 | `/finance/revenue` | `finance.dashboard` or `sales.read` | Revenue by employee (or "My revenue" for sales) with date presets (this month, last month, this financial year, all time) or a custom range |
-| `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** and **Edit** (pick a role, which previews the preset's tags), activate or deactivate, reset password. "View tags" needs `permissions.read` |
+| `/admin/users` | `users.read` | Users list. With `users.manage`: **New user** (any role, including more admins) and **Edit** (pick a role, which previews the preset's tags; reset password). **Remove** opens a panel: *Deactivate* (recommended: no sign-in, no new leads, history kept, reversible with **Reactivate**; their open leads must be handed to someone first) or *Delete permanently* (offered only when the account has no data). The last active admin can't be removed or demoted. **History** per user and *Recent account changes* show who changed what and when. "View tags" needs `permissions.read` |
 | `/admin/permissions` | `permissions.read` | Grid of each role's preset tags |
 | `/admin/lead-assignment` | `leads.assign` | A day's leads and their split across the telecallers (Even ✓ check), who is next, and on/off switches for the rotation. "Their leads →" opens the leads list filtered to that person |
 | `/admin/api-keys` | `apikeys.manage` | Generate (shown once, with a copy button), list and revoke API keys. API docs with a curl example, and Meta webhook status |

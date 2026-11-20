@@ -119,6 +119,9 @@ model User {
   leadNotes            LeadNote[]         @relation("LeadNoteAuthor")
   deviceCalls          DeviceCall[]
   notifications        Notification[]     @relation("NotificationRecipient")
+  // Admin -> Users history: what was done to this user, and what this user did to others.
+  auditEvents          UserAuditEvent[]   @relation("UserAuditTarget")
+  auditActions         UserAuditEvent[]   @relation("UserAuditActor")
   lastLoginAt          DateTime?          @map("last_login_at")
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
@@ -952,4 +955,35 @@ model LibraryFile {
 
   @@index([category, title])
   @@map("library_files")
+}
+
+enum UserAuditAction {
+  CREATED
+  ROLE_CHANGED
+  DEACTIVATED
+  REACTIVATED
+  LEADS_REASSIGNED // their open leads were handed to someone else (usually as part of deactivating)
+  DELETED // permanently removed (only possible for an account with no data)
+}
+
+// Who changed a user account, when, and how. Names and emails are kept as text
+// too, so the record still reads after an account is deleted.
+model UserAuditEvent {
+  id           String          @id @default(uuid()) @db.Uuid
+  targetUserId String?         @map("target_user_id") @db.Uuid
+  targetUser   User?           @relation("UserAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  targetName   String          @map("target_name")
+  targetEmail  String          @map("target_email")
+  actorId      String?         @map("actor_id") @db.Uuid
+  actor        User?           @relation("UserAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorName    String          @map("actor_name")
+  action       UserAuditAction
+  message      String
+  // Extra detail, e.g. { from: "Sales", to: "Admin" } or { leads: 12, to: "Meena" }.
+  details      Json?
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  @@index([targetUserId, createdAt])
+  @@index([createdAt])
+  @@map("user_audit_events")
 }
