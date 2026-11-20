@@ -10,6 +10,12 @@ export interface RemovalCheck {
   canDeactivate: boolean;
   canDelete: boolean;
   assignees: { id: string; fullName: string; role: { key: string; name: string }; telecaller: boolean }[];
+  shareOut: {
+    telecaller: { leads: number; people: string[] };
+    sales: { leads: number; people: string[] };
+    /** Why round-robin can't be used, or null. */
+    blocked: string | null;
+  };
 }
 
 export interface UserAuditEvent {
@@ -53,4 +59,30 @@ export function blockedReason(check: Pick<RemovalCheck, "isSelf" | "lastAdmin">)
   if (check.isSelf) return "You can't remove yourself. Ask another admin.";
   if (check.lastAdmin) return "At least one admin is required. Make someone else an admin first, then you can remove this one.";
   return null;
+}
+
+const names = (people: string[]) => (people.length <= 1 ? people.join("") : `${people.slice(0, -1).join(", ")} and ${people[people.length - 1]}`);
+
+/**
+ * What "share out by round-robin" would do, one line per rotation used:
+ * "3 not yet handed to sales: taking turns among Uma and Kavya (telecallers)".
+ */
+export function shareOutLines(shareOut: RemovalCheck["shareOut"]) {
+  const lines: string[] = [];
+  const { telecaller: t, sales: s } = shareOut;
+  if (t.leads > 0) {
+    lines.push(
+      t.people.length === 0
+        ? `${t.leads} not yet handed to sales: no telecaller is switched on`
+        : `${t.leads} not yet handed to sales: ${t.people.length === 1 ? `all to ${t.people[0]}` : `taking turns among ${names(t.people)}`} (telecallers)`,
+    );
+  }
+  if (s.leads > 0) {
+    lines.push(
+      s.people.length === 0
+        ? `${s.leads} handed over to sales: no salesperson is switched on`
+        : `${s.leads} handed over to sales: ${s.people.length === 1 ? `all to ${s.people[0]}` : `taking turns among ${names(s.people)}`} (sales)`,
+    );
+  }
+  return lines;
 }

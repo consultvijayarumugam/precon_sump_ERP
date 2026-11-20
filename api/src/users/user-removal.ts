@@ -66,3 +66,19 @@ export function attachedData(counts: Record<string, number>) {
 export function wouldRemoveLastAdmin(target: { isActive: boolean; roleKey: string }, otherActiveAdmins: number) {
   return target.isActive && target.roleKey === 'admin' && otherActiveAdmins === 0;
 }
+
+/**
+ * Why the open leads can't be shared out by round-robin, or null when they
+ * can: leads not yet handed to sales need a telecaller switched on, handed-over
+ * ones a salesperson switched on (Admin -> Lead assignment).
+ */
+export function shareOutGap(unqualified: number, telecallers: number, qualified: number, sales: number): string | null {
+  const plural = (n: number) => (n === 1 ? '' : 's');
+  if (unqualified > 0 && telecallers === 0) {
+    return `No telecaller is switched on in the round-robin to take the ${unqualified} lead${plural(unqualified)} not yet handed to sales. Pick one person instead, or switch someone on in Lead assignment.`;
+  }
+  if (qualified > 0 && sales === 0) {
+    return `No salesperson is switched on in the round-robin to take the ${qualified} handed-over lead${plural(qualified)}. Pick one person instead, or switch someone on in Lead assignment.`;
+  }
+  return null;
+}

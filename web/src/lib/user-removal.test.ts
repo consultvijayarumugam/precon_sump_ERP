@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blockedReason, dataLine, openLeadsLine, sortAssignees } from "./user-removal.ts";
+import { blockedReason, dataLine, openLeadsLine, shareOutLines, sortAssignees } from "./user-removal.ts";
 
 test("open leads read as a count with their stages", () => {
   assert.equal(openLeadsLine({ openLeads: 0, openLeadsByStatus: {} }), "No open leads");
@@ -34,4 +34,17 @@ test("yourself and the last admin can't be removed", () => {
   assert.match(blockedReason({ isSelf: true, lastAdmin: false })!, /yourself/);
   assert.match(blockedReason({ isSelf: false, lastAdmin: true })!, /^At least one admin is required/);
   assert.equal(blockedReason({ isSelf: false, lastAdmin: false }), null);
+});
+
+test("round-robin share-out says which rotation takes which leads", () => {
+  assert.deepEqual(
+    shareOutLines({ telecaller: { leads: 3, people: ["Uma", "Kavya", "Arjun"] }, sales: { leads: 1, people: ["Suresh"] }, blocked: null }),
+    ["3 not yet handed to sales: taking turns among Uma, Kavya and Arjun (telecallers)", "1 handed over to sales: all to Suresh (sales)"],
+  );
+  assert.deepEqual(shareOutLines({ telecaller: { leads: 0, people: [] }, sales: { leads: 2, people: ["Suresh", "Priya"] }, blocked: null }), [
+    "2 handed over to sales: taking turns among Suresh and Priya (sales)",
+  ]);
+  assert.deepEqual(shareOutLines({ telecaller: { leads: 2, people: [] }, sales: { leads: 0, people: [] }, blocked: "x" }), [
+    "2 not yet handed to sales: no telecaller is switched on",
+  ]);
 });

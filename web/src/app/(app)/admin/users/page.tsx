@@ -25,7 +25,7 @@ import { formatDateTime } from "@/lib/crm";
 import { MODULES, ModuleKey, moduleForTagModule } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
 import { useAction, useApi } from "@/lib/use-api";
-import { blockedReason, dataLine, openLeadsLine, sortAssignees, type RemovalCheck, type UserAuditEvent } from "@/lib/user-removal";
+import { blockedReason, dataLine, openLeadsLine, shareOutLines, sortAssignees, type RemovalCheck, type UserAuditEvent } from "@/lib/user-removal";
 
 interface UserRow {
   id: string;
@@ -256,6 +256,7 @@ function UserTags({ userId }: { userId: string }) {
 function RemovePanel({ userId, onDone, onCancel }: { userId: string; onDone: (message: string) => void; onCancel: () => void }) {
   const { data: check, error: loadError } = useApi<RemovalCheck>(`/users/${userId}/removal`);
   const [to, setTo] = useState("");
+  const [mode, setMode] = useState<"person" | "share">("person");
   const { run, busy, error } = useAction();
   if (loadError) return <div className={`${panelClass} p-5`}><ErrorText error={loadError} /></div>;
   if (!check) return <div className={`${panelClass} p-5 text-sm text-neutral-500`}>Checking their leads and records…</div>;
@@ -268,10 +269,20 @@ function RemovePanel({ userId, onDone, onCancel }: { userId: string; onDone: (me
   const canAct = !blocked && (check.canDeactivate || handOverOnly);
   const owners = sortAssignees(check);
   const ownerName = owners.find((o) => o.id === to)?.fullName;
+  const sharing = needsOwner && mode === "share";
+  const ready = !needsOwner || (sharing ? !check.shareOut.blocked : Boolean(to));
 
   async function deactivate() {
-    const ok = await run(() => apiPost(`/users/${userId}/deactivate`, needsOwner ? { reassignToId: to } : {}));
-    if (ok) onDone(handOverOnly ? `${check!.openLeads} open leads handed to ${ownerName}.` : `${name} deactivated${needsOwner ? `; ${check!.openLeads} open leads handed to ${ownerName}` : ""}.`);
+    const body = !needsOwner ? {} : sharing ? { shareOut: true } : { reassignToId: to };
+    let sharedOut: Record<string, number> | null = null;
+    const ok = await run(async () => {
+      ({ sharedOut } = await apiPost<{ sharedOut: Record<string, number> | null }>(`/users/${userId}/deactivate`, body));
+    });
+    if (!ok) return;
+    const where = sharing
+      ? `shared out by round-robin (${Object.entries(sharedOut ?? {}).map(([who, n]) => `${who} ${n}`).join(", ")})`
+      : `handed to ${ownerName}`;
+    onDone(handOverOnly ? `${check!.openLeads} open leads ${where}.` : `${name} deactivated${needsOwner ? `; ${check!.openLeads} open leads ${where}` : ""}.`);
   }
   async function remove() {
     if (!confirm(`Delete ${name} (${check!.user.email}) permanently? This can't be undone.`)) return;
@@ -309,21 +320,52 @@ function RemovePanel({ userId, onDone, onCancel }: { userId: string; onDone: (me
           {needsOwner && <span className="text-neutral-500"> must go to someone else first, so no lead is left without an owner. Closed (won/lost) leads stay with {name}.</span>}
         </p>
         {needsOwner && (
-          <Field label={`Hand ${check.openLeads === 1 ? "it" : `all ${check.openLeads}`} to *`}>
-            <select className={inputClass} value={to} disabled={!canAct} onChange={(e) => setTo(e.target.value)} data-testid="reassign-to">
-              <option value="">Pick who takes them…</option>
-              {owners.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.fullName} ({o.role.name})
-                </option>
-              ))}
-            </select>
-          </Field>
+          <div className="space-y-2" role="radiogroup" aria-label="Who takes the open leads">
+            <label className="flex items-start gap-2 text-sm">
+              <input type="radio" name="handover" className="mt-1" checked={mode === "person"} disabled={!canAct} onChange={() => setMode("person")} data-testid="mode-person" />
+              <span className="flex-1">
+                <span className="font-medium">Give {check.openLeads === 1 ? "it" : `all ${check.openLeads}`} to one person</span>
+                {mode === "person" && (
+                  <select className={`${inputClass} mt-1.5`} value={to} disabled={!canAct} onChange={(e) => setTo(e.target.value)} data-testid="reassign-to" aria-label="New owner">
+                    <option value="">Pick who takes them…</option>
+                    {owners.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.fullName} ({o.role.name})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </span>
+            </label>
+            <label className={`flex items-start gap-2 text-sm ${check.shareOut.blocked ? "text-neutral-500" : ""}`}>
+              <input type="radio" name="handover" className="mt-1" checked={mode === "share"} disabled={!canAct} onChange={() => setMode("share")} data-testid="mode-share" />
+              <span className="flex-1">
+                <span className="font-medium">Share out by round-robin</span>
+                <span className="block text-neutral-500">Each lead takes the next turn in the usual rotation, so the work is spread like new leads are.</span>
+                {mode === "share" && (
+                  <ul className="mt-1.5 list-disc space-y-0.5 pl-5" data-testid="share-preview">
+                    {shareOutLines(check.shareOut).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+                {mode === "share" && check.shareOut.blocked && (
+                  <span className="mt-1.5 block rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    {check.shareOut.blocked}
+                  </span>
+                )}
+              </span>
+            </label>
+          </div>
         )}
         {needsOwner && <p className="text-xs text-neutral-500">Each lead gets a line in its change history, and the new owner is notified.</p>}
         {(check.canDeactivate || handOverOnly) && (
-          <button type="button" className={buttonClass} disabled={!canAct || busy || (needsOwner && !to)} onClick={deactivate} data-testid="confirm-deactivate">
-            {handOverOnly ? "Hand over leads" : needsOwner ? `Hand over ${check.openLeads} lead${check.openLeads === 1 ? "" : "s"} and deactivate` : `Deactivate ${name}`}
+          <button type="button" className={buttonClass} disabled={!canAct || busy || !ready} onClick={deactivate} data-testid="confirm-deactivate">
+            {handOverOnly
+              ? sharing ? "Share out leads" : "Hand over leads"
+              : needsOwner
+                ? `${sharing ? "Share out" : "Hand over"} ${check.openLeads} lead${check.openLeads === 1 ? "" : "s"} and deactivate`
+                : `Deactivate ${name}`}
           </button>
         )}
       </section>

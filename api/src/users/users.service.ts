@@ -7,13 +7,14 @@ import {
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { recordActivity } from '../crm/lead-history.js';
+import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AccessControlService } from '../access-control/access-control.service.js';
 import { PermissionEffect, Prisma, type UserAuditAction } from '../generated/prisma/client.js';
 import { SetPermissionOverridesDto } from './dto/set-permission-overrides.dto.js';
 import { CreateUserDto, DeactivateUserDto, UpdateUserDto } from './dto/user.dto.js';
-import { ATTACHED_DATA_COUNT, attachedData, LAST_ADMIN_MESSAGE, OPEN_LEAD_STATUSES, wouldRemoveLastAdmin } from './user-removal.js';
+import { ATTACHED_DATA_COUNT, attachedData, LAST_ADMIN_MESSAGE, OPEN_LEAD_STATUSES, shareOutGap, wouldRemoveLastAdmin } from './user-removal.js';
 
 type Tx = Prisma.TransactionClient;
 type Actor = Pick<AuthenticatedUser, 'id' | 'fullName'>;
@@ -37,6 +38,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
+    private readonly assignment: LeadAssignmentService,
   ) {}
 
   async findAll() {
@@ -127,18 +129,28 @@ export class UsersService {
       select: { id: true, fullName: true, email: true, isActive: true, role: { select: { key: true, name: true } }, _count: { select: ATTACHED_DATA_COUNT } },
     });
     if (!user) throw new NotFoundException('User not found');
-    const [byStatus, otherAdmins, assignees] = await Promise.all([
+    const [byStatus, otherAdmins, assignees, unqualified, rotations] = await Promise.all([
       this.prisma.lead.groupBy({ by: ['status'], where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES } }, orderBy: { status: 'asc' }, _count: { _all: true } }),
       this.otherActiveAdmins(this.prisma, userId),
       this.leadOwners(userId),
+      this.prisma.lead.count({ where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES }, qualifiedAt: null } }),
+      this.rotations(userId),
     ]);
     const openLeadsByStatus = Object.fromEntries(byStatus.map((r) => [r.status, (r._count as { _all: number })._all]));
     const openLeads = Object.values(openLeadsByStatus).reduce((a, b) => a + b, 0);
     const data = attachedData(user._count as Record<string, number>);
     const lastAdmin = wouldRemoveLastAdmin({ isActive: user.isActive, roleKey: user.role.key }, otherAdmins);
     const isSelf = actor.id === userId;
+    const qualified = openLeads - unqualified;
+    const shareOut = {
+      telecaller: { leads: unqualified, people: rotations.telecallers.map((m) => m.fullName) },
+      sales: { leads: qualified, people: rotations.sales.map((m) => m.fullName) },
+      // Why share-out can't be used (a rotation it needs has nobody switched on), or null.
+      blocked: shareOutGap(unqualified, rotations.telecallers.length, qualified, rotations.sales.length),
+    };
     return {
       user: { id: user.id, fullName: user.fullName, email: user.email, isActive: user.isActive, role: user.role },
+      shareOut,
       isSelf,
       lastAdmin,
       openLeads,
@@ -164,7 +176,9 @@ export class UsersService {
       select: { id: true, fullName: true, email: true, isActive: true },
     });
     if (!user) throw new NotFoundException('User not found');
+    if (dto.shareOut && dto.reassignToId) throw new BadRequestException('Pick one person or share out by round-robin, not both');
     const target = dto.reassignToId ? await this.validLeadOwner(dto.reassignToId, userId) : null;
+    const rotations = dto.shareOut ? await this.rotations(userId) : null;
 
     const moved = await this.prisma.$transaction(async (tx) => {
       if (user.isActive) await this.assertAdminRemains(tx, userId);
@@ -172,13 +186,32 @@ export class UsersService {
         where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES } },
         select: { id: true, name: true, qualifiedAt: true },
       });
-      if (leads.length > 0 && !target) {
+      if (leads.length > 0 && !target && !rotations) {
         throw new BadRequestException(
-          `${user.fullName} has ${leads.length} open lead${leads.length === 1 ? '' : 's'}. Pick who should take ${leads.length === 1 ? 'it' : 'them'} before deactivating.`,
+          `${user.fullName} has ${leads.length} open lead${leads.length === 1 ? '' : 's'}. Pick who should take ${leads.length === 1 ? 'it' : 'them'}, or share them out by round-robin, before deactivating.`,
         );
       }
+      let summary = '';
+      let shared: Record<string, number> | null = null;
       if (leads.length > 0 && target) {
-        await this.handOver(tx, actor, user, target, leads);
+        await this.handOver(tx, actor, user, leads.map((lead) => ({ lead, to: target })), target.fullName);
+        summary = target.fullName;
+      }
+      if (leads.length > 0 && rotations) {
+        const unqualified = leads.filter((l) => !l.qualifiedAt);
+        const gap = shareOutGap(unqualified.length, rotations.telecallers.length, leads.length - unqualified.length, rotations.sales.length);
+        if (gap) throw new BadRequestException(gap);
+        const telecallerIds = rotations.telecallers.map((m) => m.id);
+        const salesIds = rotations.sales.map((m) => m.id);
+        const moves: { lead: (typeof leads)[number]; to: { id: string; fullName: string; telecaller: boolean } }[] = [];
+        for (const lead of leads) {
+          const telecallerTurn = !lead.qualifiedAt;
+          const next = await this.assignment.pickNext(tx, telecallerTurn ? telecallerIds : salesIds);
+          if (!next) throw new BadRequestException('Nobody in the round-robin could take a lead; pick one person instead.');
+          moves.push({ lead, to: { ...next, telecaller: telecallerTurn } });
+        }
+        summary = 'the round-robin';
+        shared = await this.handOver(tx, actor, user, moves, summary);
       }
       if (user.isActive) {
         await tx.user.update({ where: { id: userId }, data: { isActive: false } });
@@ -187,13 +220,13 @@ export class UsersService {
           actor,
           user,
           'DEACTIVATED',
-          `Deactivated by ${actor.fullName}${leads.length ? `; ${leads.length} open lead${leads.length === 1 ? '' : 's'} handed to ${target!.fullName}` : ''}`,
-          { leadsReassigned: leads.length, to: target?.fullName ?? null },
+          `Deactivated by ${actor.fullName}${leads.length ? `; ${leads.length} open lead${leads.length === 1 ? '' : 's'} ${rotations ? 'shared out by round-robin' : `handed to ${summary}`}` : ''}`,
+          { leadsReassigned: leads.length, to: target?.fullName ?? null, shareOut: Boolean(rotations) },
         );
       }
-      return leads.length;
+      return { count: leads.length, shared };
     });
-    return { ...(await this.findOneRow(userId)), leadsReassigned: moved, reassignedTo: moved ? target : null };
+    return { ...(await this.findOneRow(userId)), leadsReassigned: moved.count, reassignedTo: moved.count && target ? target : null, sharedOut: moved.shared };
   }
 
   /** Undo a deactivation: they can sign in again and rejoin any round-robin they're switched on for. */
@@ -305,46 +338,65 @@ export class UsersService {
     return owner;
   }
 
-  /** Moves open leads to `target`: one history entry and one notification per lead, plus an account-history line. */
+  /**
+   * Moves open leads to their new owners: one history entry and one
+   * notification per lead, plus an account-history line. Returns how many
+   * each person got, e.g. { Tara: 3, Kavya: 2 }.
+   */
   private async handOver(
     tx: Tx,
     actor: Actor,
     from: { id: string; fullName: string; email: string },
-    target: { id: string; fullName: string; telecaller: boolean },
-    leads: { id: string; name: string; qualifiedAt: Date | null }[],
+    moves: { lead: { id: string; name: string; qualifiedAt: Date | null }; to: { id: string; fullName: string; telecaller: boolean } }[],
+    toWords: string,
   ) {
-    const ids = leads.map((l) => l.id);
-    await tx.lead.updateMany({ where: { id: { in: ids } }, data: { assignedToId: target.id, autoAssigned: false } });
-    // A telecaller now working leads that weren't handed to sales yet: count them on their scorecard.
-    if (target.telecaller) {
-      const unqualified = leads.filter((l) => !l.qualifiedAt).map((l) => l.id);
-      if (unqualified.length) await tx.lead.updateMany({ where: { id: { in: unqualified } }, data: { telecallerId: target.id } });
+    const byOwner = new Map<string, { to: (typeof moves)[number]['to']; leads: (typeof moves)[number]['lead'][] }>();
+    for (const m of moves) {
+      const group = byOwner.get(m.to.id) ?? { to: m.to, leads: [] };
+      group.leads.push(m.lead);
+      byOwner.set(m.to.id, group);
     }
-    for (const lead of leads) {
-      await recordActivity(tx, {
-        leadId: lead.id,
-        userId: actor.id,
-        type: 'ASSIGNED',
-        summary: `Reassigned by ${actor.fullName} when ${from.fullName} was deactivated: ${from.fullName} → ${target.fullName}`,
-        changes: [{ field: 'assignedTo', label: 'Assigned to', from: from.fullName, to: target.fullName }],
-      });
+    for (const { to, leads } of byOwner.values()) {
+      const ids = leads.map((l) => l.id);
+      await tx.lead.updateMany({ where: { id: { in: ids } }, data: { assignedToId: to.id, autoAssigned: false } });
+      // A telecaller now working leads that weren't handed to sales yet: count them on their scorecard.
+      if (to.telecaller) {
+        const unqualified = leads.filter((l) => !l.qualifiedAt).map((l) => l.id);
+        if (unqualified.length) await tx.lead.updateMany({ where: { id: { in: unqualified } }, data: { telecallerId: to.id } });
+      }
+      for (const lead of leads) {
+        await recordActivity(tx, {
+          leadId: lead.id,
+          userId: actor.id,
+          type: 'ASSIGNED',
+          summary: `Reassigned by ${actor.fullName} when ${from.fullName} was deactivated: ${from.fullName} → ${to.fullName}`,
+          changes: [{ field: 'assignedTo', label: 'Assigned to', from: from.fullName, to: to.fullName }],
+        });
+      }
+      if (to.id !== actor.id) {
+        await tx.notification.createMany({
+          data: leads.map((l) => ({
+            userId: to.id,
+            type: 'LEAD_ASSIGNED' as const,
+            leadId: l.id,
+            title: `New lead: ${l.name}`,
+            body: `Reassigned to you by ${actor.fullName} (was ${from.fullName})`,
+          })),
+        });
+      }
     }
-    if (target.id !== actor.id) {
-      await tx.notification.createMany({
-        data: leads.map((l) => ({
-          userId: target.id,
-          type: 'LEAD_ASSIGNED' as const,
-          leadId: l.id,
-          title: `New lead: ${l.name}`,
-          body: `Reassigned to you by ${actor.fullName} (was ${from.fullName})`,
-        })),
-      });
-    }
-    await this.audit(tx, actor, from, 'LEADS_REASSIGNED', `${leads.length} open lead${leads.length === 1 ? '' : 's'} handed to ${target.fullName} by ${actor.fullName}`, {
-      leads: leads.length,
-      to: target.fullName,
-      toId: target.id,
-    });
+    const split = Object.fromEntries([...byOwner.values()].map((g) => [g.to.fullName, g.leads.length]));
+    const n = moves.length;
+    const who = byOwner.size > 1 ? `${toWords}: ${Object.entries(split).map(([name, c]) => `${name} ${c}`).join(', ')}` : [...byOwner.values()][0].to.fullName;
+    await this.audit(tx, actor, from, 'LEADS_REASSIGNED', `${n} open lead${n === 1 ? '' : 's'} handed to ${who} by ${actor.fullName}`, { leads: n, split });
+    return split;
+  }
+
+  /** Who is switched on in each round-robin now, leaving out `exceptId`. */
+  private async rotations(exceptId: string) {
+    const [telecallers, sales] = await Promise.all([this.assignment.members(ROTATIONS.telecallers), this.assignment.members(ROTATIONS.sales)]);
+    const on = (list: typeof telecallers) => list.filter((m) => m.autoAssignEnabled && m.id !== exceptId);
+    return { telecallers: on(telecallers), sales: on(sales) };
   }
 
   private async audit(

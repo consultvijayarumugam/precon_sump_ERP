@@ -81,4 +81,12 @@ export class DeactivateUserDto {
   @IsOptional()
   @IsUUID()
   reassignToId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Instead of one person: share the open leads out by round-robin. Leads not yet handed to sales go to the telecaller rotation, handed-over ones to the sales rotation (only people switched on). Leave reassignToId out.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  shareOut?: boolean;
 }

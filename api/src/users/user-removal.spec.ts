@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PERMISSION_DEFINITIONS, PERMISSIONS, ROLE_DEFINITIONS } from '../access-control/permission-catalog.js';
-import { attachedData, LAST_ADMIN_MESSAGE, wouldRemoveLastAdmin } from './user-removal.js';
+import { attachedData, LAST_ADMIN_MESSAGE, shareOutGap, wouldRemoveLastAdmin } from './user-removal.js';
 import { UsersService } from './users.service.js';
 
 interface FakeUser {
@@ -11,6 +11,8 @@ interface FakeUser {
   roleKey: string;
   counts?: Record<string, number>;
   tags?: string[];
+  autoAssignEnabled?: boolean;
+  lastAt?: number;
 }
 interface FakeLead {
   id: string;
@@ -43,7 +45,7 @@ function setup(users: FakeUser[], leads: FakeLead[] = []) {
     role: { key: u.roleKey, name: ROLE_NAMES[u.roleKey] },
     _count: { ...(u.counts ?? {}), permissionOverrides: 0 },
   });
-  type Where = { id?: string | { not?: string; in?: string[] }; isActive?: boolean; role?: { key: string }; assignedToId?: string; status?: { in: string[] } };
+  type Where = { id?: string | { not?: string; in?: string[] }; isActive?: boolean; role?: { key: string }; assignedToId?: string; status?: { in: string[] }; qualifiedAt?: null };
   const matchUser = (u: FakeUser, w: Where = {}) =>
     (typeof w.id !== 'object' || (w.id.not === undefined || u.id !== w.id.not)) &&
     (typeof w.id !== 'string' || u.id === w.id) &&
@@ -52,6 +54,7 @@ function setup(users: FakeUser[], leads: FakeLead[] = []) {
   const matchLead = (l: FakeLead, w: Where) =>
     (!w.assignedToId || l.assignedToId === w.assignedToId) &&
     (!w.status || w.status.in.includes(l.status)) &&
+    (w.qualifiedAt !== null || l.qualifiedAt === null) &&
     (!(typeof w.id === 'object' && w.id.in) || w.id.in.includes(l.id));
 
   const db = {
@@ -102,7 +105,22 @@ function setup(users: FakeUser[], leads: FakeLead[] = []) {
       return { permissions: u.tags ?? fromRole, modules: [] };
     }),
   };
-  return { service: new UsersService(db as never, accessControl as never), users, leads, audits, activities, notifications, deleted, db };
+  // The round-robin: telecallers take incoming leads, sales take handed-over ones; the one waiting longest goes next.
+  let clock = 1;
+  const assignment = {
+    members: vi.fn(async (tag: string) =>
+      users
+        .filter((u) => !deleted.includes(u.id) && u.isActive && u.roleKey === (tag === 'leads.auto_assign' ? 'telecaller' : 'sales'))
+        .map((u) => ({ id: u.id, fullName: u.fullName, autoAssignEnabled: u.autoAssignEnabled ?? true })),
+    ),
+    pickNext: vi.fn(async (_tx: unknown, ids: string[]) => {
+      const next = users.filter((u) => ids.includes(u.id)).sort((a, b) => (a.lastAt ?? 0) - (b.lastAt ?? 0))[0];
+      if (!next) return null;
+      next.lastAt = clock++;
+      return { id: next.id, fullName: next.fullName };
+    }),
+  };
+  return { service: new UsersService(db as never, accessControl as never, assignment as never), users, leads, audits, activities, notifications, deleted, db };
 }
 
 const people = (): FakeUser[] => [
@@ -176,7 +194,7 @@ describe('deactivating a user', () => {
 
   it('is refused while they hold open leads and nobody is picked to take them', async () => {
     const { service, users, leads } = setup(people(), salesLeads());
-    await expect(service.deactivate(admin, 's1', {})).rejects.toThrow('Suresh has 2 open leads. Pick who should take them before deactivating.');
+    await expect(service.deactivate(admin, 's1', {})).rejects.toThrow('Suresh has 2 open leads. Pick who should take them, or share them out by round-robin, before deactivating.');
     await expect(service.update(admin, 's1', { isActive: false })).rejects.toThrow(/still has 2 open leads/);
     expect(users.find((u) => u.id === 's1')!.isActive).toBe(true);
     expect(leads.every((l) => l.assignedToId === 's1')).toBe(true);
@@ -237,6 +255,61 @@ describe('deactivating a user', () => {
   });
 });
 
+describe('sharing open leads out by round-robin', () => {
+  const telecallerLeads = (): FakeLead[] => [
+    { id: 'N1', name: 'One', status: 'NEW', assignedToId: 't1', telecallerId: 't1', qualifiedAt: null },
+    { id: 'N2', name: 'Two', status: 'CONTACTED', assignedToId: 't1', telecallerId: 't1', qualifiedAt: null },
+    { id: 'N3', name: 'Three', status: 'NEW', assignedToId: 't1', telecallerId: 't1', qualifiedAt: null },
+    { id: 'Q1', name: 'Handed', status: 'QUALIFIED', assignedToId: 't1', telecallerId: 't1', qualifiedAt: new Date() },
+  ];
+  const team = () => [
+    ...people(),
+    { id: 't2', fullName: 'Uma', email: 't2@x.in', isActive: true, roleKey: 'telecaller' },
+    { id: 't3', fullName: 'Off Duty', email: 't3@x.in', isActive: true, roleKey: 'telecaller', autoAssignEnabled: false },
+  ];
+
+  it('new leads take turns among the telecallers switched on, handed-over ones go to the sales rotation', async () => {
+    const { service, leads, audits, notifications } = setup(team(), telecallerLeads());
+    const result = await service.deactivate(admin, 't1', { shareOut: true });
+    expect(result).toMatchObject({ isActive: false, leadsReassigned: 4, reassignedTo: null });
+    const owner = Object.fromEntries(leads.map((l) => [l.id, l.assignedToId]));
+    expect([owner.N1, owner.N2, owner.N3]).toEqual(['t2', 't2', 't2']); // Uma is the only telecaller switched on (Off Duty is off, Tara is leaving)
+    expect(owner.Q1).toBe('s1'); // first in the sales rotation
+    expect(leads.find((l) => l.id === 'N1')!.telecallerId).toBe('t2');
+    expect(leads.find((l) => l.id === 'Q1')!.telecallerId).toBe('t1'); // the telecaller who qualified it keeps the credit
+    expect(result.sharedOut).toEqual({ Uma: 3, Suresh: 1 });
+    expect(notifications.map((n) => n.userId).sort()).toEqual(['s1', 't2', 't2', 't2']);
+    expect(audits.map((a) => a.message)).toEqual([
+      '4 open leads handed to the round-robin: Uma 3, Suresh 1 by Precon Admin',
+      'Deactivated by Precon Admin; 4 open leads shared out by round-robin',
+    ]);
+  });
+
+  it('handed-over leads alternate between salespeople', async () => {
+    const qualified = (id: string): FakeLead => ({ id, name: id, status: 'QUOTED', assignedToId: 's1', telecallerId: 't1', qualifiedAt: new Date() });
+    const list = people();
+    list.push({ id: 's3', fullName: 'Arun', email: 's3@x.in', isActive: true, roleKey: 'sales' });
+    const { service, leads } = setup(list, [qualified('A'), qualified('B'), qualified('C'), qualified('D')]);
+    await service.deactivate(admin, 's1', { shareOut: true });
+    expect(leads.map((l) => l.assignedToId)).toEqual(['s2', 's3', 's2', 's3']);
+  });
+
+  it('is refused when a rotation it needs has nobody switched on, and nothing moves', async () => {
+    const { service, users, leads } = setup(people(), telecallerLeads()); // Tara is the only telecaller
+    await expect(service.deactivate(admin, 't1', { shareOut: true })).rejects.toThrow(/No telecaller is switched on/);
+    expect(users.find((u) => u.id === 't1')!.isActive).toBe(true);
+    expect(leads.every((l) => l.assignedToId === 't1')).toBe(true);
+    const check = await service.removalCheck(admin, 't1');
+    expect(check.shareOut).toMatchObject({ telecaller: { leads: 3, people: [] }, sales: { leads: 1, people: ['Suresh', 'Meena'] } });
+    expect(check.shareOut.blocked).toMatch(/No telecaller/);
+  });
+
+  it('one person or round-robin, not both', async () => {
+    const { service } = setup(team(), telecallerLeads());
+    await expect(service.deactivate(admin, 't1', { shareOut: true, reassignToId: 't2' })).rejects.toThrow(/not both/);
+  });
+});
+
 describe('deleting a user', () => {
   it('is only allowed when nothing points at them; it is recorded by name', async () => {
     const { service, deleted, audits } = setup(people());
@@ -261,6 +334,13 @@ describe('rules', () => {
       { key: 'assignedLeads', label: 'leads assigned to them', count: 9 },
       { key: 'callLogs', label: 'logged calls', count: 2 },
     ]);
+  });
+
+  it('shareOutGap names the rotation that is empty', () => {
+    expect(shareOutGap(2, 0, 0, 0)).toMatch(/^No telecaller is switched on in the round-robin to take the 2 leads/);
+    expect(shareOutGap(0, 0, 1, 0)).toMatch(/^No salesperson is switched on in the round-robin to take the 1 handed-over lead\./);
+    expect(shareOutGap(2, 1, 3, 2)).toBeNull();
+    expect(shareOutGap(0, 0, 0, 0)).toBeNull();
   });
 
   it('wouldRemoveLastAdmin', () => {
