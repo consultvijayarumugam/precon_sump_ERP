@@ -120,8 +120,8 @@ export class MessagingService {
 
     const text = template
       ? renderTemplate(template.body, {
-          name: lead.name,
-          first_name: lead.name.split(/\s+/)[0],
+          name: lead.name?.trim() || null,
+          first_name: lead.name?.trim().split(/\s+/)[0] || null,
           city: lead.city,
           product,
           my_name: user.fullName,

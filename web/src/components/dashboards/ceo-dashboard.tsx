@@ -29,6 +29,7 @@ import { Flag, formatTalkTime, MasterDashboardData, percent, TalkPeriod } from "
 import { MyReminders } from "./my-reminders";
 import { DailyQuote } from "./shared";
 import { PeriodReport } from "@/components/dashboards/period-report";
+import { leadLabel } from "@/lib/phone";
 
 // --- Building blocks ---------------------------------------------------------------
 
@@ -575,7 +576,7 @@ function RecentVisits({ visits }: { visits: MasterDashboardData["visits"] }) {
         <li key={v.id}>
           <Link href={`/site-visits/${v.id}`} className="block rounded-lg px-2 py-2.5 hover:bg-[var(--ps-tint-50)]">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate font-semibold text-[var(--ps-ink)]">{v.lead?.name ?? v.customerName}</span>
+              <span className="truncate font-semibold text-[var(--ps-ink)]">{v.lead ? leadLabel(v.lead) : v.customerName}</span>
               <span className="shrink-0 text-xs text-[var(--ps-ink-3)]">{formatDateTime(v.checkedInAt)}</span>
             </div>
             <div className="text-xs text-[var(--ps-ink-2)]">by {v.person.fullName}</div>

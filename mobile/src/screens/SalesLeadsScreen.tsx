@@ -11,6 +11,7 @@ import { formatDateTime, productLabel } from '../lib/workflow';
 import { colors } from '../theme';
 import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
+import { leadLabel } from '../lib/phone';
 
 export const SALES_BUCKET_COLOR: Record<SalesBucket, string> = { overdue: colors.red, today: colors.amber, none: colors.ink2, later: colors.ink3 };
 
@@ -28,10 +29,10 @@ export const SalesCard = memo(function SalesCard({ lead, onChanged }: { lead: Sa
 
   return (
     <View style={[styles.card, bucket === 'overdue' && styles.cardOverdue]}>
-      <Pressable testID={`lead-${lead.name}`} onPress={() => router.push(`/lead/${lead.id}`)} accessibilityRole="button" accessibilityHint="Opens the lead">
+      <Pressable testID={`lead-${leadLabel(lead)}`} onPress={() => router.push(`/lead/${lead.id}`)} accessibilityRole="button" accessibilityHint="Opens the lead">
         <View style={styles.nameRow}>
           <Text style={styles.name} numberOfLines={1}>
-            {lead.name}
+            {leadLabel(lead)}
           </Text>
           <StageBadge status={lead.status} stage={lead.stage} />
           <Ionicons name="chevron-forward" size={18} color={colors.ink3} />
@@ -47,9 +48,9 @@ export const SalesCard = memo(function SalesCard({ lead, onChanged }: { lead: Sa
         )}
       </Pressable>
       <View style={styles.actions}>
-        <Button testID={`call-${lead.name}`} label={lead.phone} icon="call" onPress={actions.call} style={styles.flex} />
+        <Button testID={`call-${leadLabel(lead)}`} label={lead.phone} icon="call" onPress={actions.call} style={styles.flex} />
         <Button
-          testID={`whatsapp-${lead.name}`}
+          testID={`whatsapp-${leadLabel(lead)}`}
           label="WhatsApp"
           icon="logo-whatsapp"
           tone="whatsapp"

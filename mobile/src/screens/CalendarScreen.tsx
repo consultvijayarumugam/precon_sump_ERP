@@ -10,6 +10,7 @@ import { colors, space } from '../theme';
 import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
 import { FollowUpRow } from './FollowUpsScreen';
+import { leadLabel } from '../lib/phone';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const monthTitle = (y: number, m: number) => new Date(y, m, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
@@ -103,7 +104,7 @@ export function CalendarScreen() {
       {open && (
         <FollowUpSheet
           followUp={open}
-          leadName={open.lead.name}
+          leadName={leadLabel(open.lead)}
           noun={noun}
           onClose={() => setOpen(null)}
           onDone={(message) => {

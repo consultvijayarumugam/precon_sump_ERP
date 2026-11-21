@@ -195,7 +195,9 @@ enum FollowUpOutcome {
 
 model Lead {
   id              String           @id @default(uuid()) @db.Uuid
-  name            String
+  // Optional: many enquiries arrive as just a WhatsApp number. Screens show the
+  // phone until someone adds a name. The phone is the one required field.
+  name            String?
   phone           String
   email           String?
   city            String?

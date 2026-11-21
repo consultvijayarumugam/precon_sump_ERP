@@ -8,7 +8,7 @@ interface ReminderFollowUp {
   id: string;
   scheduledAt: string;
   note: string | null;
-  lead: { id: string; name: string; phone: string };
+  lead: { id: string; name: string | null; phone: string };
 }
 
 /** "My reminders today" on the web dashboards. */
@@ -31,7 +31,7 @@ export interface LeadsSummary {
 
 export interface LeadListItem {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   city: string | null;
   source: string;

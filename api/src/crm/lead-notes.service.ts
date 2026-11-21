@@ -1,3 +1,4 @@
+import { leadLabel } from './lead-label.js';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -60,7 +61,7 @@ export class LeadNotesService {
             userId,
             type: 'NOTE_ADDED' as const,
             leadId,
-            title: `Note from ${user.fullName} on ${lead.name}`,
+            title: `Note from ${user.fullName} on ${leadLabel(lead)}`,
             body: preview(body),
           })),
         });
@@ -93,7 +94,7 @@ export class LeadNotesService {
   private async lead(user: AuthenticatedUser, leadId: string) {
     const lead = await this.prisma.lead.findFirst({
       where: { AND: [{ id: leadId }, leadScope(user)] },
-      select: { id: true, name: true, assignedToId: true, telecallerId: true },
+      select: { id: true, name: true, phone: true, assignedToId: true, telecallerId: true },
     });
     if (!lead) throw new NotFoundException('Lead not found');
     return lead;

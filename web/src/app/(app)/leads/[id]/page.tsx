@@ -34,6 +34,7 @@ import {
 } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
 import { CALL_OUTCOME_LABELS, CallOutcome, CheckIn, CLOSING_OUTCOMES, PHONE_DIRECTION_LABELS, phoneCallResult, type PhoneCallDirection } from "@/lib/workflow";
+import { leadLabel } from "@/lib/phone";
 
 function AddFollowUp({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
   // Default: tomorrow at 11:00.
@@ -248,7 +249,7 @@ export default function LeadDetailPage() {
           ← Leads
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{lead.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{leadLabel(lead)}</h1>
           <StatusBadge status={lead.status} stage={lead.stage} />
           {canWrite && !editing && (
             <button className={secondaryButtonCompactClass} onClick={() => setEditing(true)}>
@@ -280,7 +281,7 @@ export default function LeadDetailPage() {
               <CallButton
                 leadId={lead.id}
                 phone={lead.phone}
-                name={lead.name}
+                name={leadLabel(lead)}
                 variant="inline"
                 onStarted={() => setHistoryVersion((v) => v + 1)}
                 onLogged={() => {
@@ -288,7 +289,7 @@ export default function LeadDetailPage() {
                   reload();
                 }}
               />
-              <WhatsAppButton leadId={lead.id} name={lead.name} direct={lead.source === "WHATSAPP"} onSent={() => setHistoryVersion((v) => v + 1)} />
+              <WhatsAppButton leadId={lead.id} name={leadLabel(lead)} direct={lead.source === "WHATSAPP"} onSent={() => setHistoryVersion((v) => v + 1)} />
             </span>
           </Detail>
           <Detail label="Email">{lead.email ?? "-"}</Detail>

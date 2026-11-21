@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { SUMP_SIZES_LITRES } from '../../stock/product-catalog.js';
+import { normalizeLeadPhone } from '../intake-parsing.js';
+import { IsLeadPhone } from '../lead-phone.validator.js';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const upper = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toUpperCase() : value);
@@ -9,16 +11,16 @@ const emptyToUndefined = ({ value }: { value: unknown }) => (value === '' || val
 
 /** Body for POST /public/leads (external systems, API key). */
 export class PublicCreateLeadDto {
-  @ApiProperty({ example: 'Ravi Kumar' })
-  @Transform(trim)
+  @ApiPropertyOptional({ example: 'Ravi Kumar', description: 'Optional: phone is the only required field' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || undefined : value))
   @IsString()
-  @MinLength(2)
   @MaxLength(120)
-  name: string;
+  name?: string;
 
-  @ApiProperty({ example: '+91 98765 43210', description: '10-15 digits; spaces, dashes and + are fine' })
-  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/[\s\-().]/g, '') : value))
-  @Matches(/^\+?\d{10,15}$/, { message: 'phone must be 10-15 digits' })
+  @ApiProperty({ example: '+91 98765 43210', description: 'Required. Indian mobile with or without +91 (spaces, dashes fine), or 10-15 digits' })
+  @Transform(({ value }) => (typeof value === 'string' ? (normalizeLeadPhone(value) ?? value) : value))
+  @IsLeadPhone()
   phone: string;
 
   @ApiPropertyOptional({ enum: ['SUMP', 'MICROBES'], example: 'SUMP', description: 'Leave out if not known yet' })

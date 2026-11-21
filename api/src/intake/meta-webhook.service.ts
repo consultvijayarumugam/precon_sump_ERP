@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { ProductInterest } from '../generated/prisma/client.js';
-import { normalizePhone, parseProduct, parseSumpSize } from './intake-parsing.js';
+import { normalizeLeadPhone, parseProduct, parseSumpSize } from './intake-parsing.js';
 import { LeadAssignmentService } from './lead-assignment.service.js';
 import { LeadIntakeService } from './lead-intake.service.js';
 
@@ -152,7 +152,7 @@ export class MetaWebhookService {
     };
     const name =
       answer('full_name', 'name') || [answer('first_name'), answer('last_name')].filter(Boolean).join(' ').trim();
-    const phone = normalizePhone(answer('phone_number', 'phone', 'mobile'));
+    const phone = normalizeLeadPhone(answer('phone_number', 'phone', 'mobile'));
     if (!phone) return { leadgenId, status: 'skipped', detail: 'No valid phone number in the lead form answers' };
 
     // Optional custom questions on the form; otherwise the telecaller finds out.
@@ -170,7 +170,7 @@ export class MetaWebhookService {
       .map((f) => `${f.name.replace(/_/g, ' ')}: ${f.values.join(', ')}`);
 
     const result = await this.intake.create({
-      name: name.length >= 2 ? name.slice(0, 120) : `Meta lead ${leadgenId}`,
+      name: name ? name.slice(0, 120) : null,
       phone,
       email: answer('email') || null,
       city: answer('city') || null,

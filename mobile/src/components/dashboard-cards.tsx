@@ -10,6 +10,7 @@ import { formatDateTime } from '../lib/workflow';
 import { colors } from '../theme';
 import { useUser } from '../session';
 import { useResource } from '../use-resource';
+import { leadLabel } from '../lib/phone';
 
 const timeOnly = (at: string) => new Date(at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
 
@@ -63,10 +64,10 @@ export function RemindersCard() {
               onPress={() => router.push(`/lead/${f.lead.id}`)}
               style={[styles.chip, f.late ? styles.chipLate : styles.chipToday]}
               accessibilityRole="button"
-              accessibilityLabel={`${f.lead.name}, ${f.late ? 'overdue' : `due ${timeOnly(f.scheduledAt)}`}`}
+              accessibilityLabel={`${leadLabel(f.lead)}, ${f.late ? 'overdue' : `due ${timeOnly(f.scheduledAt)}`}`}
             >
               <Text style={[styles.chipName, { color: f.late ? colors.red : colors.amber }]} numberOfLines={1}>
-                {f.lead.name}
+                {leadLabel(f.lead)}
               </Text>
               <Text style={[styles.chipWhen, { color: f.late ? colors.red : colors.amber }]}>{f.late ? 'overdue' : timeOnly(f.scheduledAt)}</Text>
             </Pressable>
@@ -157,7 +158,7 @@ export function VisitsMap({ visits, height = 260 }: { visits: CheckIn[]; height?
       lat: v.latitude,
       lng: v.longitude,
       leadId: v.lead?.id ?? null,
-      title: esc(v.lead?.name ?? v.customerName),
+      title: esc(v.lead ? leadLabel(v.lead) : v.customerName),
       sub: esc(`${formatDateTime(v.checkedInAt)}${v.accuracyMeters !== null ? ` · ±${v.accuracyMeters} m` : ''}`),
     }));
     // JSON inside <script>: escape "<" so a name can't close the tag.

@@ -1,3 +1,4 @@
+import { leadLabel } from '../crm/lead-label.js';
 import {
   BadRequestException,
   ConflictException,
@@ -184,7 +185,7 @@ export class UsersService {
       if (user.isActive) await this.assertAdminRemains(tx, userId);
       const leads = await tx.lead.findMany({
         where: { assignedToId: userId, status: { in: OPEN_LEAD_STATUSES } },
-        select: { id: true, name: true, qualifiedAt: true },
+        select: { id: true, name: true, phone: true, qualifiedAt: true },
       });
       if (leads.length > 0 && !target && !rotations) {
         throw new BadRequestException(
@@ -347,7 +348,7 @@ export class UsersService {
     tx: Tx,
     actor: Actor,
     from: { id: string; fullName: string; email: string },
-    moves: { lead: { id: string; name: string; qualifiedAt: Date | null }; to: { id: string; fullName: string; telecaller: boolean } }[],
+    moves: { lead: { id: string; name: string | null; phone: string; qualifiedAt: Date | null }; to: { id: string; fullName: string; telecaller: boolean } }[],
     toWords: string,
   ) {
     const byOwner = new Map<string, { to: (typeof moves)[number]['to']; leads: (typeof moves)[number]['lead'][] }>();
@@ -379,7 +380,7 @@ export class UsersService {
             userId: to.id,
             type: 'LEAD_ASSIGNED' as const,
             leadId: l.id,
-            title: `New lead: ${l.name}`,
+            title: `New lead: ${leadLabel(l)}`,
             body: `Reassigned to you by ${actor.fullName} (was ${from.fullName})`,
           })),
         });

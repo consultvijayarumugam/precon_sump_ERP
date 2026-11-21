@@ -57,7 +57,7 @@ export interface StageRef {
 
 export interface WorklistItem {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   city: string | null;
   status: LeadStatus;
@@ -88,7 +88,7 @@ export interface FollowUp {
 
 export interface LeadDetail {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   email: string | null;
   city: string | null;

@@ -7,10 +7,12 @@ import { LocationProblem, readLocationOnce } from '../location';
 import { useSession } from '../session';
 import { colors } from '../theme';
 import { Button, ErrorBanner, FieldLabel, inputStyle, Sheet } from './ui';
+import { leadLabel } from '../lib/phone';
 
 interface VisitableLead {
   id: string;
-  name: string;
+  name: string | null;
+  phone: string;
   city: string | null;
   status: LeadStatus;
   stage: { name: string } | null;
@@ -21,7 +23,7 @@ interface VisitableLead {
  * page), take one GPS reading now, and record it with the time on that lead.
  * The same as the web check-in; the server checks the lead is yours.
  */
-export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string; name: string }; onClose: () => void; onDone: () => void }) {
+export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string; name: string | null; phone: string }; onClose: () => void; onDone: () => void }) {
   const { api } = useSession();
   const [leads, setLeads] = useState<VisitableLead[] | null>(null);
   const [chosen, setChosen] = useState<string | null>(lead?.id ?? null);
@@ -42,7 +44,7 @@ export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string;
       const at = await readLocationOnce();
       setStep('saving');
       const visit = await api<CheckIn>('/check-ins', { method: 'POST', body: { leadId: chosen, ...at, note: note.trim() || undefined } });
-      ToastAndroid.show(`Visit recorded at ${visit.lead?.name ?? 'the site'}${at.accuracyMeters ? ` (±${at.accuracyMeters} m)` : ''}`, ToastAndroid.LONG);
+      ToastAndroid.show(`Visit recorded at ${visit.lead ? leadLabel(visit.lead) : 'the site'}${at.accuracyMeters ? ` (±${at.accuracyMeters} m)` : ''}`, ToastAndroid.LONG);
       onDone();
     } catch (err) {
       setError({ message: err instanceof Error ? err.message : 'Could not record the visit.', settings: err instanceof LocationProblem && err.settings });
@@ -52,7 +54,7 @@ export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string;
 
   return (
     <Sheet
-      title={lead ? `I'm at site: ${lead.name}` : "I'm at site"}
+      title={lead ? `I'm at site: ${leadLabel(lead)}` : "I'm at site"}
       onClose={onClose}
       footer={
         <>
@@ -80,7 +82,7 @@ export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string;
           {leads?.map((l) => (
             <Pressable
               key={l.id}
-              testID={`visit-lead-${l.name}`}
+              testID={`visit-lead-${leadLabel(l)}`}
               onPress={() => setChosen(l.id)}
               accessibilityRole="radio"
               accessibilityState={{ checked: chosen === l.id }}
@@ -88,7 +90,7 @@ export function SiteVisitSheet({ lead, onClose, onDone }: { lead?: { id: string;
             >
               <Ionicons name={chosen === l.id ? 'radio-button-on' : 'radio-button-off'} size={22} color={chosen === l.id ? colors.blue : colors.ink3} />
               <View style={styles.flex}>
-                <Text style={styles.leadName}>{l.name}</Text>
+                <Text style={styles.leadName}>{leadLabel(l)}</Text>
                 <Text style={styles.leadMeta}>{[l.city, l.stage?.name].filter(Boolean).join(' · ')}</Text>
               </View>
             </Pressable>
@@ -106,7 +108,7 @@ export function VisitRow({ visit, onOpenLead, showPerson }: { visit: CheckIn; on
       <Ionicons name="location" size={22} color={colors.blue} style={styles.pin} />
       <View style={styles.flex}>
         <Pressable onPress={onOpenLead} disabled={!onOpenLead} accessibilityRole={onOpenLead ? 'button' : undefined}>
-          <Text style={styles.leadName}>{visit.lead?.name ?? visit.customerName}</Text>
+          <Text style={styles.leadName}>{visit.lead ? leadLabel(visit.lead) : visit.customerName}</Text>
         </Pressable>
         <Text style={styles.leadMeta}>
           {formatDateTime(visit.checkedInAt)}
@@ -119,7 +121,7 @@ export function VisitRow({ visit, onOpenLead, showPerson }: { visit: CheckIn; on
         onPress={() => void Linking.openURL(osmLink(visit.latitude, visit.longitude))}
         style={styles.mapButton}
         accessibilityRole="link"
-        accessibilityLabel={`Map of the visit to ${visit.lead?.name ?? visit.customerName}`}
+        accessibilityLabel={`Map of the visit to ${visit.lead ? leadLabel(visit.lead) : visit.customerName}`}
       >
         <Ionicons name="map-outline" size={18} color={colors.blue} />
         <Text style={styles.mapText}>Map</Text>

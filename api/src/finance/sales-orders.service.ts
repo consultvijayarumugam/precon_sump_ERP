@@ -1,3 +1,4 @@
+import { leadLabel } from '../crm/lead-label.js';
 import {
   BadRequestException,
   ConflictException,
@@ -157,6 +158,7 @@ export class SalesOrdersService {
       select: {
         id: true,
         name: true,
+        phone: true,
         status: true,
         productInterest: true,
         sumpSizeLitres: true,
@@ -189,7 +191,7 @@ export class SalesOrdersService {
       return tx.salesOrder.create({
         data: {
           leadId: lead.id,
-          customerName: lead.name,
+          customerName: leadLabel(lead),
           productId,
           quantity: dto.quantity,
           totalAmount: new Decimal(dto.totalAmount),

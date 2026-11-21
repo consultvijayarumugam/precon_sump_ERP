@@ -203,7 +203,7 @@ export async function seedFinanceAndStock(prisma: PrismaClient) {
       const order = await prisma.salesOrder.create({
         data: {
           leadId: lead.id,
-          customerName: lead.name,
+          customerName: lead.name ?? '',
           productId: productIdFor(o),
           quantity: o.quantity,
           totalAmount: rupees(o.total),

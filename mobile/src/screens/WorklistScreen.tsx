@@ -10,6 +10,7 @@ import { CALL_OUTCOME_LABELS, formatDateTime, productLabel, TelecallerData, toSe
 import { colors } from '../theme';
 import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
+import { leadLabel } from '../lib/phone';
 
 export const BUCKET_COLOR: Record<WorklistBucket, string> = {
   overdue: colors.red,
@@ -27,10 +28,10 @@ export const WorkCard = memo(function WorkCard({ item, onChanged }: { item: Work
 
   return (
     <View style={[styles.card, overdue && styles.cardOverdue]}>
-      <Pressable testID={`lead-${item.name}`} onPress={() => router.push(`/lead/${item.id}`)} accessibilityRole="button" accessibilityHint="Opens the lead">
+      <Pressable testID={`lead-${leadLabel(item)}`} onPress={() => router.push(`/lead/${item.id}`)} accessibilityRole="button" accessibilityHint="Opens the lead">
         <View style={styles.nameRow}>
           <Text style={styles.name} numberOfLines={1}>
-            {item.name}
+            {leadLabel(item)}
           </Text>
           <StageBadge status={item.status} stage={item.stage} />
           <Ionicons name="chevron-forward" size={18} color={colors.ink3} />
@@ -42,9 +43,9 @@ export const WorkCard = memo(function WorkCard({ item, onChanged }: { item: Work
         <Text style={styles.details}>{item.lastCall ? `Last call: ${CALL_OUTCOME_LABELS[item.lastCall.outcome]} (${item.callCount} call${item.callCount === 1 ? '' : 's'})` : 'Not called yet'}</Text>
       </Pressable>
       <View style={styles.actions}>
-        <Button testID={`call-${item.name}`} label={item.phone} icon="call" onPress={actions.call} style={styles.flex} />
+        <Button testID={`call-${leadLabel(item)}`} label={item.phone} icon="call" onPress={actions.call} style={styles.flex} />
         <Button
-          testID={`whatsapp-${item.name}`}
+          testID={`whatsapp-${leadLabel(item)}`}
           label="WhatsApp"
           icon="logo-whatsapp"
           tone="whatsapp"

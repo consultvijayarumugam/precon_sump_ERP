@@ -41,10 +41,25 @@ export function waLink(phone: string, message: string): string {
 /**
  * Fills {placeholders} (any case, spaces allowed: { Name }). Unknown ones are
  * left as typed, so a typo is visible rather than silently dropped. Empty
- * values collapse the extra spaces they would leave.
+ * values (common: many leads are just a phone number) drop out cleanly: a
+ * missing name gives "Hi," / "Dear Sir/Madam,", and a missing city or product
+ * takes the words that only made sense with it ("in", "for your").
  */
 export function renderTemplate(body: string, values: Partial<Record<Placeholder, string | null | undefined>>): string {
+  const noName = !(values.name ?? '').trim();
+  /** A known placeholder with nothing to fill in (an unknown one is left visible, never removed). */
+  const isEmpty = (key: string) => {
+    const k = key.toLowerCase() as Placeholder;
+    return k in PLACEHOLDERS && !(values[k] ?? '').trim();
+  };
   return body
+    // No name yet (an enquiry that's just a number): "Dear {name}," reads "Dear Sir/Madam,";
+    // "Hi {first_name}," reads "Hi,". Elsewhere an empty name simply drops out.
+    .replace(/\b(dear)\s+\{\s*(?:first_name|name)\s*\}/gi, (match, word: string) => (noName ? `${word} Sir/Madam` : match))
+    // An empty place ("in {city} are included") takes its preposition with it.
+    .replace(/\b(?:in|at|near|from)\s+\{\s*([a-z_]+)\s*\}/gi, (match, key: string) => (isEmpty(key) ? '' : match))
+    // An empty value ending a phrase ("the quotation for your {product}.") takes its little lead-in words with it.
+    .replace(/(?:\b(?:for|of|to|your|our|the|a)\s+)+\{\s*([a-z_]+)\s*\}(?=\s*(?:[.,!?;:]|$))/gim, (match, key: string) => (isEmpty(key) ? '' : match))
     .replace(/\{\s*([a-z_]+)\s*\}/gi, (match, key: string) => {
       const k = key.toLowerCase() as Placeholder;
       return k in PLACEHOLDERS ? (values[k] ?? '').trim() : match;

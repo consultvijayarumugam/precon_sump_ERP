@@ -3,15 +3,13 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { dateOnly, businessToday } from '../finance/finance-utils.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { QuickAddLeadDto } from './dto/quick-add.dto.js';
-import { normalizeIndianPhone, phoneMatchKey } from './intake-parsing.js';
+import { normalizeLeadPhone, PHONE_HELP, phoneMatchKey } from './intake-parsing.js';
 import { businessDayRange, LeadAssignmentService } from './lead-assignment.service.js';
 import { LeadIntakeService, OPEN_STATUSES } from './lead-intake.service.js';
 
 /** How quick-added leads are labelled, and how they're counted. */
 export const QUICK_ADD_DETAIL = 'Quick add (WhatsApp enquiry)';
 
-/** "WhatsApp enquiry …3210": until the telecaller learns their name. */
-export const placeholderName = (phone: string) => `WhatsApp enquiry …${phone.slice(-4)}`;
 
 /**
  * Logging click-to-WhatsApp ad enquiries fast: a phone number (and maybe a
@@ -27,14 +25,10 @@ export class QuickAddService {
   ) {}
 
   async add(user: AuthenticatedUser, dto: QuickAddLeadDto) {
-    const phone = normalizeIndianPhone(dto.phone);
-    if (!phone) {
-      throw new BadRequestException(
-        `"${dto.phone}" isn't a mobile number. Use 10 digits (e.g. 98765 43210), with or without +91; for another country start with + and its code.`,
-      );
-    }
+    const phone = normalizeLeadPhone(dto.phone);
+    if (!phone) throw new BadRequestException(`"${dto.phone}" isn't a phone number. ${PHONE_HELP}`);
     const result = await this.intake.create({
-      name: dto.name || placeholderName(phone),
+      name: dto.name || null,
       phone,
       source: 'WHATSAPP',
       productInterest: null,
@@ -47,18 +41,18 @@ export class QuickAddService {
     const addedToday = await this.addedToday(user.id);
 
     if (result.status === 'duplicate') {
-      const { id, name, status, assignedTo } = result.existing;
-      return { status: 'duplicate' as const, phone, existing: { id, name, status, assignedTo }, addedToday };
+      const { id, name, phone: existingPhone, status, assignedTo } = result.existing;
+      return { status: 'duplicate' as const, phone, existing: { id, name, phone: existingPhone, status, assignedTo }, addedToday };
     }
     // A past customer (Won or Lost) asking again: a new lead, with a pointer to the old one.
     const previous = await this.prisma.lead.findFirst({
       where: { id: { not: result.leadId }, phone: { endsWith: phoneMatchKey(phone) }, status: { notIn: OPEN_STATUSES } },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, phone: true, status: true },
     });
     return {
       status: 'created' as const,
-      lead: { id: result.leadId, name: dto.name || placeholderName(phone), phone },
+      lead: { id: result.leadId, name: dto.name || null, phone },
       assignedTo: result.assignedTo,
       previous,
       addedToday,

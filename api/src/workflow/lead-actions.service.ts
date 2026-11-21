@@ -1,3 +1,4 @@
+import { leadLabel } from '../crm/lead-label.js';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
@@ -216,7 +217,7 @@ export class LeadActionsService {
           telecallerId: lead.telecallerId ?? user.id,
         },
       });
-      const leadName = (await tx.lead.findUniqueOrThrow({ where: { id: leadId }, select: { name: true } })).name;
+      const leadName = leadLabel(await tx.lead.findUniqueOrThrow({ where: { id: leadId }, select: { name: true, phone: true } }));
       const size = dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null;
       await recordActivity(tx, {
         leadId,
@@ -256,7 +257,7 @@ export class LeadActionsService {
   async changeSalesperson(user: AuthenticatedUser, leadId: string, salesUserId: string) {
     const lead = await this.prisma.lead.findFirst({
       where: { AND: [{ id: leadId }, leadScope(user)] },
-      select: { id: true, name: true, status: true, qualifiedAt: true, telecallerId: true, assignedToId: true, assignedTo: { select: { fullName: true } } },
+      select: { id: true, name: true, phone: true, status: true, qualifiedAt: true, telecallerId: true, assignedToId: true, assignedTo: { select: { fullName: true } } },
     });
     if (!lead) throw new NotFoundException('Lead not found');
     // Admin only (the controller checks the tag too; this keeps the service safe on its own).
@@ -283,7 +284,7 @@ export class LeadActionsService {
       await notifyLeadAssigned(tx, {
         userId: target.id,
         leadId,
-        leadName: lead.name,
+        leadName: leadLabel(lead),
         actorId: user.id,
         how: `Reassigned to you by ${user.fullName}${lead.assignedTo ? ` (was ${lead.assignedTo.fullName})` : ''}`,
       });

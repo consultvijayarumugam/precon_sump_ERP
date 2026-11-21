@@ -168,7 +168,7 @@ export class PublicLeadsController {
   ) {
     const key = req.apiKey;
     const result = await this.intake.create({
-      name: dto.name,
+      name: dto.name ?? null,
       phone: dto.phone,
       email: dto.email ?? null,
       city: dto.city ?? null,

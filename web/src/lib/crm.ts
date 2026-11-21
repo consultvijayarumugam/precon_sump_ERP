@@ -73,7 +73,7 @@ export interface UserRef {
 
 export interface Lead {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   email: string | null;
   city: string | null;
@@ -119,7 +119,7 @@ export interface FollowUp {
 export interface FollowUpWithLead extends FollowUp {
   lead: {
     id: string;
-    name: string;
+    name: string | null;
     phone: string;
     status: LeadStatus;
     stage: { id: string; name: string; phase: LeadStatus } | null;

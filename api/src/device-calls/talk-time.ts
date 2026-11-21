@@ -1,3 +1,4 @@
+import { leadLabel } from '../crm/lead-label.js';
 // Pure helpers for call-log sync and talk-time reporting (no database, so they're unit tested).
 import type { DeviceCallDirection } from '../generated/prisma/client.js';
 
@@ -111,7 +112,7 @@ export interface OutcomePrompt {
  */
 export function outcomePrompts(
   stored: { leadId: string | null; direction: DeviceCallDirection; durationSeconds: number; startedAt: Date }[],
-  openLeads: Map<string, { name: string; phone: string }>,
+  openLeads: Map<string, { name: string | null; phone: string }>,
   lastLoggedAt: Map<string, Date>,
   now: Date,
 ): OutcomePrompt[] {
@@ -125,7 +126,7 @@ export function outcomePrompts(
     if (logged && logged >= call.startedAt) continue;
     const seen = latest.get(call.leadId);
     if (!seen || seen.startedAt < call.startedAt) {
-      latest.set(call.leadId, { leadId: call.leadId, leadName: lead.name, phone: lead.phone, startedAt: call.startedAt, durationSeconds: call.durationSeconds });
+      latest.set(call.leadId, { leadId: call.leadId, leadName: leadLabel(lead), phone: lead.phone, startedAt: call.startedAt, durationSeconds: call.durationSeconds });
     }
   }
   return [...latest.values()].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());

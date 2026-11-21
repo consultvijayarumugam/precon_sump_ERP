@@ -7,6 +7,7 @@ import { CALL_OUTCOME_LABELS, CALL_OUTCOMES, CallOutcome, callbackPresets, CLOSI
 import { colors, space } from '../theme';
 import { CallbackPicker } from './callback-picker';
 import { Button, Chip, ErrorBanner, FieldLabel, inputStyle, Sheet } from './ui';
+import { leadLabel } from '../lib/phone';
 
 const messageOf = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 
@@ -161,7 +162,7 @@ export function QualifySheet({
   onClose,
   onDone,
 }: {
-  lead: { id: string; name: string; productInterest: ProductInterest | null; sumpSizeLitres: number | null; city: string | null };
+  lead: { id: string; name: string | null; phone: string; productInterest: ProductInterest | null; sumpSizeLitres: number | null; city: string | null };
   onClose: () => void;
   onDone: (handedTo: string) => void;
 }) {
@@ -200,7 +201,7 @@ export function QualifySheet({
   }
 
   return (
-    <Sheet title={`Qualify and hand to sales: ${lead.name}`} onClose={onClose}>
+    <Sheet title={`Qualify and hand to sales: ${leadLabel(lead)}`} onClose={onClose}>
       <FieldLabel>Product *</FieldLabel>
       <View style={styles.chips}>
         <Chip testID="product-SUMP" label="Sump" active={product === 'SUMP'} onPress={() => setProduct('SUMP')} />

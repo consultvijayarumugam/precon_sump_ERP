@@ -31,6 +31,7 @@ import {
 import { TAGS } from "@/lib/tags";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
+import { isUnnamed, leadLabel } from "@/lib/phone";
 
 interface CardProps {
   followUp: { id: string; scheduledAt: string; note: string | null; outcome: string | null; completedAt: string | null };
@@ -157,12 +158,12 @@ export function FollowUpItem({ followUp, onChange }: { followUp: FollowUp | Foll
         lead && (
           <>
             <Link href={`/leads/${lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
-              {lead.name}
+              {leadLabel(lead)}
             </Link>
-            <span className="select-all text-neutral-500">{lead.phone}</span>
+            {!isUnnamed(lead) && <span className="select-all text-neutral-500">{lead.phone}</span>}
             <span className="inline-flex gap-1.5">
-              <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} onLogged={onChange} />
-              <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" />
+              <CallButton leadId={lead.id} phone={lead.phone} name={leadLabel(lead)} onLogged={onChange} />
+              <WhatsAppButton leadId={lead.id} name={leadLabel(lead)} variant="icon" />
             </span>
             <StatusBadge status={lead.status} stage={lead.stage} />
             {can(TAGS.LEADS_READ_ALL) && (

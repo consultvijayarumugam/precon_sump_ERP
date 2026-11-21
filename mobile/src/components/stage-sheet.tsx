@@ -6,11 +6,12 @@ import { stageChoices, stageRole } from '../lib/stages';
 import { useSession, useUser } from '../session';
 import { colors } from '../theme';
 import { Button, ErrorBanner, Sheet } from './ui';
+import { leadLabel } from '../lib/phone';
 
 const KIND_COLOR: Partial<Record<PipelineStage['kind'], string>> = { WON: colors.green, LOST: colors.red };
 
 /** Move a lead to another pipeline stage (admin-defined, fetched live): which ones depends on who's moving it (see stageChoices). */
-export function StageSheet({ lead, onClose, onDone }: { lead: { id: string; name: string; stage: { id: string } | null }; onClose: () => void; onDone: (stage: PipelineStage) => void }) {
+export function StageSheet({ lead, onClose, onDone }: { lead: { id: string; name: string | null; phone: string; stage: { id: string } | null }; onClose: () => void; onDone: (stage: PipelineStage) => void }) {
   const { api } = useSession();
   const { can } = useUser();
   const role = stageRole(can);
@@ -44,7 +45,7 @@ export function StageSheet({ lead, onClose, onDone }: { lead: { id: string; name
   }
 
   return (
-    <Sheet title={`Move ${lead.name} to…`} onClose={onClose}>
+    <Sheet title={`Move ${leadLabel(lead)} to…`} onClose={onClose}>
       {!stages && !error && <Text style={styles.none}>Loading stages…</Text>}
       {stages?.map((s) => {
         const on = chosen === s.id;

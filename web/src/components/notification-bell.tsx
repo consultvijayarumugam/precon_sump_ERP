@@ -14,7 +14,7 @@ interface Item {
   body: string | null;
   readAt: string | null;
   createdAt: string;
-  lead: { id: string; name: string; phone: string } | null;
+  lead: { id: string; name: string | null; phone: string } | null;
   followUp: { id: string; scheduledAt: string; note: string | null } | null;
   overdue?: boolean;
 }

@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { buttonClass, ErrorText, inputClass, NoAccess, PageHeader, panelClass } from "@/components/ui";
 import { apiPost } from "@/lib/api";
 import { LeadStatus, STATUS_LABELS, TAGS } from "@/lib/crm";
-import { displayPhone } from "@/lib/phone";
+import { displayPhone, leadLabel } from "@/lib/phone";
 import { useApi } from "@/lib/use-api";
 
 type Person = { id: string; fullName: string };
@@ -16,7 +16,7 @@ type QuickAddResult =
   | {
       status: "created";
       phone: undefined;
-      lead: { id: string; name: string; phone: string };
+      lead: { id: string; name: string | null; phone: string };
       assignedTo: Person | null;
       previous: { id: string; name: string; status: LeadStatus } | null;
       addedToday: number;
@@ -24,7 +24,7 @@ type QuickAddResult =
   | {
       status: "duplicate";
       phone: string;
-      existing: { id: string; name: string; status: LeadStatus; assignedTo: Person | null };
+      existing: { id: string; name: string | null; phone: string; status: LeadStatus; assignedTo: Person | null };
       addedToday: number;
     };
 
@@ -55,7 +55,7 @@ function ResultRow({ result, canOpen }: { result: QuickAddResult & { key: number
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-neutral-900 tabular-nums dark:text-neutral-100">
           {displayPhone(phone)}
-          {created && !result.lead.name.startsWith("WhatsApp enquiry") && <span className="font-normal text-neutral-500"> · {result.lead.name}</span>}
+          {created && result.lead.name && <span className="font-normal text-neutral-500"> · {result.lead.name}</span>}
         </p>
         {created ? (
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
@@ -72,7 +72,7 @@ function ResultRow({ result, canOpen }: { result: QuickAddResult & { key: number
           </p>
         ) : (
           <p className="text-sm text-amber-800 dark:text-amber-200">
-            Not added: already a lead, <strong>{result.existing.name}</strong> ({STATUS_LABELS[result.existing.status]}
+            Not added: already a lead, <strong>{leadLabel(result.existing)}</strong> ({STATUS_LABELS[result.existing.status]}
             {result.existing.assignedTo ? `, with ${result.existing.assignedTo.fullName}` : ", unassigned"})
           </p>
         )}

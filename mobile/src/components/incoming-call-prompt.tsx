@@ -5,6 +5,7 @@ import type { OutcomePrompt } from '../lib/call-sync';
 import type { LeadDetail } from '../lib/workflow';
 import { useSession, useUser } from '../session';
 import { useLeadActions } from './use-lead-actions';
+import { leadLabel } from '../lib/phone';
 
 /** One incoming call: the usual outcome form (then qualify, if Interested), dated when the call happened. */
 function PromptFlow({ prompt, lead, onFinished }: { prompt: OutcomePrompt; lead: LeadDetail; onFinished: (logged: boolean) => void }) {
@@ -88,7 +89,7 @@ export function IncomingCallPrompts() {
       prompt={current}
       lead={lead}
       onFinished={(saved) => {
-        if (saved) ToastAndroid.show(`Call with ${lead.name} logged`, ToastAndroid.SHORT);
+        if (saved) ToastAndroid.show(`Call with ${leadLabel(lead)} logged`, ToastAndroid.SHORT);
         void removePrompt(user.id, current);
       }}
     />

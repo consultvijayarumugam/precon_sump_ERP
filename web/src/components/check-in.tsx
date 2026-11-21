@@ -7,6 +7,7 @@ import { buttonClass, inputClass } from "@/components/ui";
 import { apiPost } from "@/lib/api";
 import { formatDateTime, LeadStatus, STATUS_LABELS } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
+import { leadLabel } from "@/lib/phone";
 
 const PERSON_COLORS = ["#2557eb", "#059669", "#d97706", "#7c3aed", "#db2777", "#0891b2"];
 
@@ -18,7 +19,7 @@ export interface MappableVisit {
   longitude: number | null;
   checkedInAt: string | null;
   person: { id: string; fullName: string };
-  lead?: { name: string } | null;
+  lead?: { name: string | null; phone: string } | null;
 }
 
 /** Pins for visits with a location, one colour per person. `link` adds "Open visit" to each popup. */
@@ -31,7 +32,7 @@ export function useCheckInPins(visits: MappableVisit[] | undefined, { link = fal
       id: v.id,
       latitude: v.latitude!,
       longitude: v.longitude!,
-      title: v.lead?.name ?? v.customerName,
+      title: v.lead ? leadLabel(v.lead) : v.customerName,
       subtitle: `${v.person.fullName}${v.checkedInAt ? ` · ${formatDateTime(v.checkedInAt)}` : ""}`,
       color: colorOf.get(v.person.id),
       href: link ? `/site-visits/${v.id}` : undefined,
@@ -50,7 +51,7 @@ export const osmLink = (lat: number, lng: number) => `https://www.openstreetmap.
  * its page); otherwise you pick from the leads assigned to you.
  */
 export function CheckInButton({ leadId: fixedLeadId, onCheckedIn }: { leadId?: string; onCheckedIn: () => void }) {
-  const mine = useApi<{ id: string; name: string; city: string | null; status: LeadStatus; stage: { name: string } | null }[]>(fixedLeadId ? null : "/check-ins/leads");
+  const mine = useApi<{ id: string; name: string | null; phone: string; city: string | null; status: LeadStatus; stage: { name: string } | null }[]>(fixedLeadId ? null : "/check-ins/leads");
   const [chosen, setChosen] = useState("");
   const leadId = fixedLeadId ?? chosen;
   const [note, setNote] = useState("");
@@ -115,7 +116,7 @@ export function CheckInButton({ leadId: fixedLeadId, onCheckedIn }: { leadId?: s
             <option value="">Which lead are you visiting? *</option>
             {mine.data?.map((l) => (
               <option key={l.id} value={l.id}>
-                {l.name}
+                {leadLabel(l)}
                 {l.city ? ` · ${l.city}` : ""} ({l.stage?.name ?? STATUS_LABELS[l.status]})
               </option>
             ))}

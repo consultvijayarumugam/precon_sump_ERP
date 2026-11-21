@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { notifyLeadAssigned } from '../notifications/notify.js';
 import { StagesService } from '../pipeline/stages.service.js';
 import { describe, diff, recordActivity, STATUS_WORDS } from './lead-history.js';
+import { formatPhone, leadLabel } from './lead-label.js';
+import { phoneMatchKey, phoneSearchKey } from '../intake/intake-parsing.js';
 import { CreateLeadDto, ListLeadsQueryDto, UpdateLeadDto } from './dto/lead.dto.js';
 import {
   canAssignLeads,
@@ -51,6 +54,8 @@ export class LeadsService {
               OR: [
                 { name: { contains: query.search, mode: 'insensitive' } },
                 { phone: { contains: query.search.replace(/[\s\-]/g, '') } },
+                // A number typed any way ("+91 97910 06137") finds it however it was stored: match on the last 10 digits.
+                ...(phoneSearchKey(query.search) ? [{ phone: { contains: phoneSearchKey(query.search)! } }] : []),
                 { city: { contains: query.search, mode: 'insensitive' } },
               ],
             }
@@ -124,35 +129,43 @@ export class LeadsService {
         ? await this.stages.forStatus(dto.status)
         : await this.stages.byKind('ENTRY');
     const status = stage.phase;
-    const lead = await this.prisma.lead.create({
-      data: {
-        name: dto.name,
-        phone: dto.phone,
-        email: dto.email ?? null,
-        city: dto.city || null,
-        source: dto.source,
-        productInterest: dto.productInterest ?? null,
-        // A size only makes sense for a sump.
-        sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
-        status,
-        stageId: stage.id,
-        notes: dto.notes || null,
-        closedAt: CLOSED_STATUSES.includes(status) ? new Date() : null,
-        assignedToId,
-        createdById: user.id,
-      },
-      select: { id: true, assignedTo: { select: { fullName: true } } },
-    });
-    await recordActivity(this.prisma, { leadId: lead.id, userId: user.id, type: 'CREATED', summary: `Lead created by hand (${stage.name})` });
-    if (assignedToId) {
-      await recordActivity(this.prisma, {
-        leadId: lead.id,
-        userId: user.id,
-        type: 'ASSIGNED',
-        summary: `Assigned to ${lead.assignedTo?.fullName}`,
-        changes: [{ field: 'assignedTo', label: 'Assigned to', from: null, to: lead.assignedTo?.fullName ?? null }],
+    const lead = await this.prisma.$transaction(async (tx) => {
+      // One number at a time (the same lock Quick add, import and the API use), then the duplicate check.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`lead-phone:${phoneMatchKey(dto.phone)}`}))::text AS locked`;
+      await this.refuseOpenDuplicate(tx, dto.phone);
+      const created = await tx.lead.create({
+        data: {
+          name: dto.name?.trim() || null,
+          phone: dto.phone,
+          email: dto.email ?? null,
+          city: dto.city || null,
+          source: dto.source ?? 'MANUAL',
+          productInterest: dto.productInterest ?? null,
+          // A size only makes sense for a sump.
+          sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
+          status,
+          stageId: stage.id,
+          notes: dto.notes || null,
+          closedAt: CLOSED_STATUSES.includes(status) ? new Date() : null,
+          assignedToId,
+          createdById: user.id,
+        },
+        select: { id: true, name: true, phone: true, assignedTo: { select: { fullName: true } } },
       });
-      await notifyLeadAssigned(this.prisma, { userId: assignedToId, leadId: lead.id, leadName: dto.name, actorId: user.id, how: `Assigned by ${user.fullName}` });
+      await recordActivity(tx, { leadId: created.id, userId: user.id, type: 'CREATED', summary: `Lead created by hand (${stage.name})` });
+      if (assignedToId) {
+        await recordActivity(tx, {
+          leadId: created.id,
+          userId: user.id,
+          type: 'ASSIGNED',
+          summary: `Assigned to ${created.assignedTo?.fullName}`,
+          changes: [{ field: 'assignedTo', label: 'Assigned to', from: null, to: created.assignedTo?.fullName ?? null }],
+        });
+      }
+      return created;
+    });
+    if (assignedToId) {
+      await notifyLeadAssigned(this.prisma, { userId: assignedToId, leadId: lead.id, leadName: leadLabel(lead), actorId: user.id, how: `Assigned by ${user.fullName}` });
     }
     return this.findOne(user, lead.id);
   }
@@ -182,7 +195,9 @@ export class LeadsService {
       },
     });
     if (!existing) throw new NotFoundException('Lead not found');
-    if (qualifyOnly && dto.phone !== undefined && dto.phone !== existing.phone) {
+    // The same number written another way ("9791006137" vs "+919791006137") isn't a change.
+    const phoneChanging = dto.phone !== undefined && phoneMatchKey(dto.phone) !== phoneMatchKey(existing.phone);
+    if (qualifyOnly && phoneChanging) {
       throw new ForbiddenException("You can't change a lead's phone number; ask an admin");
     }
     if (qualifyOnly && dto.source !== undefined && dto.source !== existing.source) {
@@ -208,9 +223,11 @@ export class LeadsService {
       );
     }
 
+    if (phoneChanging) await this.refuseOpenDuplicate(this.prisma, dto.phone!, id);
+
     const data: Prisma.LeadUncheckedUpdateInput = {
-      name: dto.name,
-      phone: dto.phone,
+      name: dto.name === undefined ? undefined : dto.name?.trim() || null,
+      phone: phoneChanging ? dto.phone : undefined,
       email: dto.email,
       city: dto.city === undefined ? undefined : dto.city || null,
       source: dto.source,
@@ -240,7 +257,7 @@ export class LeadsService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const after = await tx.lead.update({ where: { id }, data, select: { name: true, assignedTo: { select: { fullName: true } } } });
+      const after = await tx.lead.update({ where: { id }, data, select: { name: true, phone: true, assignedTo: { select: { fullName: true } } } });
       // History: one entry per kind of change, with from -> to.
       const fields = diff(existing, {
         name: data.name,
@@ -278,7 +295,7 @@ export class LeadsService {
       return after;
     });
     if (typeof data.assignedToId === 'string') {
-      await notifyLeadAssigned(this.prisma, { userId: data.assignedToId, leadId: id, leadName: updated.name, actorId: user.id, how: `Assigned by ${user.fullName}` });
+      await notifyLeadAssigned(this.prisma, { userId: data.assignedToId, leadId: id, leadName: leadLabel(updated), actorId: user.id, how: `Assigned by ${user.fullName}` });
     }
 
     // If the change moved the lead out of this user's scope, they can no longer read it.
@@ -376,6 +393,28 @@ export class LeadsService {
     });
     if (!stage.isActive) throw new BadRequestException(`"${stage.name}" is switched off; pick another stage`);
     return stage;
+  }
+
+  /**
+   * The same number as a lead still being worked (any owner): refuse with 409
+   * and say which lead, so nobody makes a second one. A past Won/Lost customer
+   * enquiring again is a new lead. Matching uses the last 10 digits, so
+   * "9791006137" and "+919791006137" are the same number.
+   */
+  private async refuseOpenDuplicate(db: Prisma.TransactionClient | PrismaService, phone: string, exceptId?: string) {
+    const existing = await db.lead.findFirst({
+      where: { phone: { endsWith: phoneMatchKey(phone) }, status: { notIn: CLOSED_STATUSES }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true, phone: true, status: true, assignedTo: { select: { fullName: true } } },
+    });
+    if (existing) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Duplicate lead',
+        message: `${formatPhone(phone)} is already an open lead${existing.name?.trim() ? `: ${existing.name.trim()}` : ''} (${STATUS_WORDS[existing.status]}, ${existing.assignedTo ? `with ${existing.assignedTo.fullName}` : 'not assigned'}). Open that lead instead.`,
+        existingLeadId: existing.id,
+      });
+    }
   }
 
   private requireAssignPermission(user: AuthenticatedUser) {

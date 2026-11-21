@@ -12,6 +12,7 @@ import {
 import { queryString } from "@/lib/api";
 import { dayKey, FollowUpWithLead, formatTime, isOverdue, TAGS } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
+import { leadLabel } from "@/lib/phone";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const monthTitle = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
@@ -150,7 +151,7 @@ export default function CalendarPage() {
                           : "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200"
                     }`}
                   >
-                    {formatTime(f.scheduledAt)} {f.lead.name}
+                    {formatTime(f.scheduledAt)} {leadLabel(f.lead)}
                   </div>
                 ))}
                 {items.length > 3 && <div className="px-1 text-neutral-500">+{items.length - 3} more</div>}

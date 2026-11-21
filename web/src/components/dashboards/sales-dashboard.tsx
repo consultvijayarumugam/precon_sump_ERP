@@ -18,6 +18,7 @@ import { DailyQuote, EmptyNote, Greeting, KpiRow, KpiTile, SectionHeader } from 
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { PeriodReport } from "@/components/dashboards/period-report";
+import { leadLabel } from "@/lib/phone";
 
 /** One board column: an admin-defined sales stage, or this month's Won / Lost. */
 interface Column {
@@ -36,7 +37,7 @@ function LeadCard({ lead, now, onChanged }: { lead: SalesLead; now: number; onCh
     <div className="relative rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-xs transition-colors hover:border-brand-300 dark:border-neutral-800 dark:bg-neutral-900">
       {/* The name's link covers the card; the Call and WhatsApp buttons sit above it. */}
       <Link href={`/leads/${lead.id}`} className="block font-semibold text-neutral-900 after:absolute after:inset-0 dark:text-white">
-        {lead.name}
+        {leadLabel(lead)}
       </Link>
       <div className="mt-0.5 text-xs text-neutral-500">
         {productInterestLabel(lead)}
@@ -58,8 +59,8 @@ function LeadCard({ lead, now, onChanged }: { lead: SalesLead; now: number; onCh
       )}
       {(lead.status === "QUALIFIED" || lead.status === "QUOTED") && (
         <div className="relative z-10 mt-2 flex gap-2">
-          <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} onLogged={onChanged} />
-          <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" />
+          <CallButton leadId={lead.id} phone={lead.phone} name={leadLabel(lead)} onLogged={onChanged} />
+          <WhatsAppButton leadId={lead.id} name={leadLabel(lead)} variant="icon" />
         </div>
       )}
     </div>
@@ -73,7 +74,7 @@ function FollowUpRow({ f, onLogged }: { f: SalesDashboardData["followUps"][numbe
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <Link href={`/leads/${f.lead.id}`} className="font-semibold hover:text-brand-700">
-            {f.lead.name}
+            {leadLabel(f.lead)}
           </Link>
           <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${f.overdue ? "bg-red-600 text-white" : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-200"}`}>
             {f.overdue ? `Overdue · ${formatDateTime(f.scheduledAt)}` : `Today ${formatTime(f.scheduledAt)}`}
@@ -81,8 +82,8 @@ function FollowUpRow({ f, onLogged }: { f: SalesDashboardData["followUps"][numbe
           {f.note && <p className="mt-0.5 text-sm text-neutral-600 dark:text-neutral-400">{f.note}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <CallButton leadId={f.lead.id} phone={f.lead.phone} name={f.lead.name} variant="inline" onLogged={onLogged} />
-          <WhatsAppButton leadId={f.lead.id} name={f.lead.name} variant="icon" />
+          <CallButton leadId={f.lead.id} phone={f.lead.phone} name={leadLabel(f.lead)} variant="inline" onLogged={onLogged} />
+          <WhatsAppButton leadId={f.lead.id} name={leadLabel(f.lead)} variant="icon" />
           {!logging && (
             <button type="button" className={secondaryButtonSmClass} onClick={() => setLogging(true)}>
               Log call
@@ -214,7 +215,7 @@ export function SalesDashboard() {
                 {data?.visits.slice(0, 6).map((v) => (
                   <li key={v.id} className="py-2">
                     <div className="flex justify-between gap-2">
-                      <span className="font-medium">{v.lead ? <Link href={`/leads/${v.lead.id}`}>{v.lead.name}</Link> : v.customerName}</span>
+                      <span className="font-medium">{v.lead ? <Link href={`/leads/${v.lead.id}`}>{leadLabel(v.lead)}</Link> : v.customerName}</span>
                       <span className="shrink-0 text-xs text-neutral-500">{formatDateTime(v.checkedInAt)}</span>
                     </div>
                     <a href={osmLink(v.latitude, v.longitude)} target="_blank" rel="noreferrer" className="text-xs text-brand-700 hover:underline dark:text-brand-300">

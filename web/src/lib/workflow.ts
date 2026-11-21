@@ -30,7 +30,7 @@ export const BUCKET_LABELS: Record<WorklistBucket, string> = {
 
 export interface WorklistItem {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   city: string | null;
   status: LeadStatus;
@@ -72,12 +72,12 @@ export interface CheckIn {
   accuracyMeters: number | null;
   checkedInAt: string;
   person: UserRef;
-  lead: { id: string; name: string; status: LeadStatus } | null;
+  lead: { id: string; name: string | null; phone: string; status: LeadStatus } | null;
 }
 
 export interface SalesLead {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   city: string | null;
   status: LeadStatus;
@@ -103,7 +103,7 @@ export interface SalesDashboardData {
     scheduledAt: string;
     note: string | null;
     overdue: boolean;
-    lead: { id: string; name: string; phone: string; status: LeadStatus; city: string | null };
+    lead: { id: string; name: string | null; phone: string; status: LeadStatus; city: string | null };
   }[];
   visits: CheckIn[];
 }

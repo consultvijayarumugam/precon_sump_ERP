@@ -19,6 +19,7 @@ import { formatDateOnly } from "@/lib/finance";
 import { SiteVisit } from "@/lib/service";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
+import { leadLabel } from "@/lib/phone";
 
 export default function SiteVisitPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,7 +74,7 @@ export default function SiteVisitPage() {
                 <Detail icon={User} label="Lead">
                   {visit.lead ? (
                     <Link href={`/leads/${visit.lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
-                      {visit.lead.name}
+                      {leadLabel(visit.lead)}
                     </Link>
                   ) : (
                     visit.customerName

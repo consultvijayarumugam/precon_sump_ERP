@@ -12,18 +12,19 @@ import { useUser } from '../session';
 import { colors, space } from '../theme';
 import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
+import { leadLabel } from '../lib/phone';
 
 /** One follow-up: lead, when, note; tap to mark it done or move it (or open the lead, once done). */
 export function FollowUpRow({ f, onPress, showOwner }: { f: FollowUpWithLead; onPress: () => void; showOwner?: boolean }) {
   const late = !f.completedAt && new Date(f.scheduledAt) < new Date();
   const product = productLabel(f.lead);
   return (
-    <Pressable testID={`fu-${f.lead.name}`} onPress={onPress} style={({ pressed }) => [styles.row, late && styles.rowLate, pressed && styles.pressed]} accessibilityRole="button">
+    <Pressable testID={`fu-${leadLabel(f.lead)}`} onPress={onPress} style={({ pressed }) => [styles.row, late && styles.rowLate, pressed && styles.pressed]} accessibilityRole="button">
       <Ionicons name={f.completedAt ? 'checkmark-circle' : 'alarm-outline'} size={22} color={f.completedAt ? colors.green : late ? colors.red : colors.blue} />
       <View style={styles.flex}>
         <View style={styles.nameRow}>
           <Text style={styles.name} numberOfLines={1}>
-            {f.lead.name}
+            {leadLabel(f.lead)}
           </Text>
           <StageBadge status={f.lead.status} stage={f.lead.stage} />
         </View>
@@ -95,7 +96,7 @@ export function FollowUpsScreen({ calendarLink = true }: { calendarLink?: boolea
       {open && (
         <FollowUpSheet
           followUp={open}
-          leadName={open.lead.name}
+          leadName={leadLabel(open.lead)}
           noun={noun}
           onClose={() => setOpen(null)}
           onDone={(message) => {

@@ -1,14 +1,14 @@
 import { ReactNode, useState } from 'react';
 import { Linking, ToastAndroid } from 'react-native';
 import { markCallPlaced } from '../call-sync';
-import { telNumber } from '../lib/phone';
+import { telNumber, leadLabel } from '../lib/phone';
 import type { ProductInterest } from '../lib/workflow';
 import { useSession, useUser } from '../session';
 import { CallbackSheet, LogCallSheet, QualifySheet, WhatsAppSheet } from './sheets';
 
 export interface ActionLead {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   city: string | null;
   productInterest: ProductInterest | null;
@@ -77,7 +77,7 @@ export function useLeadActions(
     sheets = (
       <LogCallSheet
         leadId={lead.id}
-        leadName={lead.name}
+        leadName={leadLabel(lead)}
         incomingCall={options.incomingCall}
         noun={followUpNoun}
         onClose={close}
@@ -91,7 +91,7 @@ export function useLeadActions(
     sheets = (
       <CallbackSheet
         leadId={lead.id}
-        leadName={lead.name}
+        leadName={leadLabel(lead)}
         current={lead.nextCallbackAt}
         noun={followUpNoun}
         onClose={close}
@@ -108,7 +108,7 @@ export function useLeadActions(
         onClose={close}
         onDone={(handedTo) => {
           close();
-          ToastAndroid.show(`${lead.name} handed to ${handedTo}`, ToastAndroid.LONG);
+          ToastAndroid.show(`${leadLabel(lead)} handed to ${handedTo}`, ToastAndroid.LONG);
           handlers.onChanged();
           handlers.onHandedOver?.();
         }}
@@ -118,7 +118,7 @@ export function useLeadActions(
     sheets = (
       <WhatsAppSheet
         leadId={lead.id}
-        leadName={lead.name}
+        leadName={leadLabel(lead)}
         onClose={close}
         onDone={() => {
           close();

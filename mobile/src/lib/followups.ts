@@ -26,7 +26,7 @@ export interface FollowUpWithLead {
   createdBy: { id: string; fullName: string };
   lead: {
     id: string;
-    name: string;
+    name: string | null;
     phone: string;
     status: LeadStatus;
     stage: StageRef | null;
@@ -99,7 +99,7 @@ export interface NotificationItem {
   body: string | null;
   readAt: string | null;
   createdAt: string;
-  lead: { id: string; name: string; phone: string } | null;
+  lead: { id: string; name: string | null; phone: string } | null;
   followUp: { id: string; scheduledAt: string; note: string | null } | null;
   overdue?: boolean;
 }

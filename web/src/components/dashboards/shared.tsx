@@ -17,6 +17,7 @@ import { quoteOfTheDay } from "@/lib/quotes";
 import { TAGS } from "@/lib/tags";
 import { useStages } from "@/lib/stages";
 import { useApi } from "@/lib/use-api";
+import { leadLabel } from "@/lib/phone";
 
 const longDate = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 const weekdayShort = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short" });
@@ -247,7 +248,7 @@ export function WeekAhead({ enabled }: { enabled: boolean }) {
                 <span className="w-16 shrink-0 tabular-nums text-neutral-500">{formatTime(f.scheduledAt)}</span>
                 <span className="min-w-0">
                   <Link href={`/leads/${f.lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
-                    {f.lead.name}
+                    {leadLabel(f.lead)}
                   </Link>
                   {f.note && <span className="text-neutral-500"> · {f.note}</span>}
                 </span>

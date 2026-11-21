@@ -190,7 +190,7 @@ export async function seedWorkflow(prisma: PrismaClient) {
         visitDate: new Date(`${at.toISOString().slice(0, 10)}T00:00:00Z`),
         personId: lead.assignedToId,
         createdById: lead.assignedToId,
-        customerName: lead.name,
+        customerName: lead.name ?? '',
         siteAddress: `${lead.city ?? 'Site'} (GPS ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)})`,
         purpose: 'Site visit (GPS check-in)',
         notes: c.note,
@@ -221,8 +221,8 @@ export async function seedWorkflow(prisma: PrismaClient) {
           templateId: template.id,
           templateName: template.name,
           message: template.body
-            .replace(/\{first_name\}/g, leadName.split(' ')[0])
-            .replace(/\{name\}/g, leadName)
+            .replace(/\{first_name\}/g, (leadName ?? '').split(' ')[0])
+            .replace(/\{name\}/g, leadName ?? '')
             .replace(/\{my_name\}/g, sender.fullName)
             .replace(/\{company\}/g, 'Precon')
             .replace(/\{product\}/g, 'sump')

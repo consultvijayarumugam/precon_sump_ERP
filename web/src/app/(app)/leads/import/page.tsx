@@ -78,15 +78,15 @@ export default function ImportLeadsPage() {
         </Link>
         <PageHeader
           title="Import leads"
-          subtitle="Upload a Meta lead export or any spreadsheet. Only name and phone are needed. Phones that already exist are skipped, and new leads are shared round-robin across the telecallers."
+          subtitle="Upload a Meta lead export or any spreadsheet. Only the phone is needed. Phones that already exist are skipped, and new leads are shared round-robin across the telecallers."
         />
       </div>
 
       <section className={`${panelClass} p-5`}>
         <h2 className="font-semibold">1. Get the template</h2>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Only <strong>name</strong> and <strong>phone</strong> are required. A Meta export with &ldquo;full_name&rdquo; and
-          &ldquo;phone_number&rdquo; works as it is. Optional: city, product (Sump or Microbes), sump size (
+          Only <strong>phone</strong> is required (a list of WhatsApp numbers is enough). A Meta export with &ldquo;full_name&rdquo; and
+          &ldquo;phone_number&rdquo; works as it is. Optional: name, city, product (Sump or Microbes), sump size (
           {SUMP_SIZES_LITRES.map(formatLitres).join(", ")}), source, assigned salesperson, notes. Leave the salesperson blank to
           share the lead round-robin. Delete the two &ldquo;Example - …&rdquo; rows before uploading.
         </p>

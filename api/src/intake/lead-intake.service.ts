@@ -3,12 +3,14 @@ import { LeadSource, LeadStatus, Prisma, ProductInterest } from '../generated/pr
 import { PrismaService } from '../prisma/prisma.service.js';
 import { recordActivity } from '../crm/lead-history.js';
 import { notifyLeadAssigned } from '../notifications/notify.js';
+import { leadLabel } from '../crm/lead-label.js';
 import { phoneMatchKey } from './intake-parsing.js';
 import { Assignee, LeadAssignmentService } from './lead-assignment.service.js';
 
 export interface IntakeLead {
-  name: string;
-  phone: string; // already normalised
+  /** Optional: many enquiries are just a phone number. */
+  name?: string | null;
+  phone: string; // already normalised (normalizeLeadPhone)
   email?: string | null;
   city?: string | null;
   source: LeadSource;
@@ -38,7 +40,8 @@ export const OPEN_STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'QUALIFIED', 'QU
 
 export interface ExistingLead {
   id: string;
-  name: string;
+  name: string | null;
+  phone: string;
   status: LeadStatus;
   assignedTo: { id: string; fullName: string } | null;
 }
@@ -58,7 +61,7 @@ const duplicateResult = (found: { reason: 'phone' | 'externalRef'; lead: Existin
   status: 'duplicate',
   reason: found.reason,
   leadId: found.lead.id,
-  existingName: found.lead.name,
+  existingName: leadLabel(found.lead),
   existing: found.lead,
 });
 
@@ -78,7 +81,7 @@ export class LeadIntakeService {
   ) {}
 
   async findDuplicate(phone: string, externalRef?: string | null, duplicates: 'any' | 'open' = 'any', db: Db = this.prisma) {
-    const select = { id: true, name: true, status: true, assignedTo: { select: { id: true, fullName: true } } } as const;
+    const select = { id: true, name: true, phone: true, status: true, assignedTo: { select: { id: true, fullName: true } } } as const;
     if (externalRef) {
       const byRef = await db.lead.findUnique({ where: { externalRef }, select });
       if (byRef) return { reason: 'externalRef' as const, lead: byRef };
@@ -108,7 +111,7 @@ export class LeadIntakeService {
         const auto = chosenId || !input.rotation ? null : await this.assignment.pickNext(tx, input.rotation);
         const lead = await tx.lead.create({
           data: {
-            name: input.name,
+            name: input.name?.trim() || null,
             phone: input.phone,
             email: input.email || null,
             city: input.city || null,
@@ -144,7 +147,7 @@ export class LeadIntakeService {
           await notifyLeadAssigned(tx, {
             userId: lead.assignedTo.id,
             leadId: lead.id,
-            leadName: input.name,
+            leadName: leadLabel({ name: input.name?.trim() || null, phone: input.phone }),
             actorId: input.createdById,
             how: auto ? `Round-robin · ${input.sourceDetail}` : input.sourceDetail,
           });

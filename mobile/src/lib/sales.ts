@@ -4,7 +4,7 @@ import type { LeadStatus, ProductInterest, StageRef } from './workflow.ts';
 
 export interface SalesLead {
   id: string;
-  name: string;
+  name: string | null;
   phone: string;
   city: string | null;
   source: string;
@@ -28,7 +28,7 @@ export interface CheckIn {
   accuracyMeters: number | null;
   checkedInAt: string;
   person: { id: string; fullName: string };
-  lead: { id: string; name: string; status: LeadStatus } | null;
+  lead: { id: string; name: string | null; phone: string; status: LeadStatus } | null;
 }
 
 export interface SalesDashboardData {

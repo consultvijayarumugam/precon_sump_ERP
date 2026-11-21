@@ -40,10 +40,36 @@ export function normalizeIndianPhone(raw: unknown): string | null {
 }
 
 /**
+ * THE rule for a lead's phone, used on every path (forms, Quick add, import,
+ * public API, Meta): an Indian mobile however typed becomes +91XXXXXXXXXX, so
+ * "9791006137" and "+91 97910 06137" are stored the same; another country's
+ * number needs its + and code. A landline with its 0 STD code ("0422 2345678")
+ * is kept as digits. Null for anything else ("1234567890", "12345", words).
+ */
+export function normalizeLeadPhone(raw: unknown): string | null {
+  // Meta's lead exports write phones as "p:+919876543210"; spreadsheets may give a number.
+  if (typeof raw === 'number') raw = String(Math.round(raw));
+  if (typeof raw === 'string') raw = raw.trim().replace(/^p:/i, '');
+  const mobile = normalizeIndianPhone(raw);
+  if (mobile) return mobile;
+  const digits = normalizePhone(raw);
+  return digits && /^0[1-9]\d{8,10}$/.test(digits) ? digits : null;
+}
+
+export const PHONE_HELP = 'Use a 10-digit mobile (e.g. 97910 06137), with or without +91; for another country start with + and its code.';
+
+/**
  * The part of a phone number used to spot duplicates: its last 10 digits, so
  * "+919876543210", "919876543210" and "9876543210" are the same person.
  */
 export const phoneMatchKey = (phone: string) => phone.replace(/\D/g, '').slice(-10);
+
+/** For searching: the digits typed (last 10 if longer), or null when it isn't number-like (fewer than 4 digits, or words). */
+export function phoneSearchKey(search: string): string | null {
+  if (!/^[\s\d+\-().]+$/.test(search)) return null;
+  const digits = search.replace(/\D/g, '');
+  return digits.length >= 4 ? digits.slice(-10) : null;
+}
 
 /** "Sump", "sumps", "SUMP" -> SUMP; "Microbes"/"microbe" -> MICROBES. */
 export function parseProduct(raw: unknown): ProductInterest | null {

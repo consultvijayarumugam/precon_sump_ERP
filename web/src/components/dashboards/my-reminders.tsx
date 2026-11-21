@@ -5,10 +5,11 @@ import Link from "next/link";
 import { panelClass } from "@/components/ui";
 import { formatTime } from "@/lib/crm";
 import { useApi } from "@/lib/use-api";
+import { leadLabel } from "@/lib/phone";
 
 interface Summary {
-  overdue: { id: string; scheduledAt: string; note: string | null; lead: { id: string; name: string; phone: string } }[];
-  dueToday: { id: string; scheduledAt: string; note: string | null; lead: { id: string; name: string; phone: string } }[];
+  overdue: { id: string; scheduledAt: string; note: string | null; lead: { id: string; name: string | null; phone: string } }[];
+  dueToday: { id: string; scheduledAt: string; note: string | null; lead: { id: string; name: string | null; phone: string } }[];
   assignedToday: number;
   handedToday: number;
 }
@@ -52,7 +53,7 @@ export function MyReminders({ hideWhenEmpty = false }: { hideWhenEmpty?: boolean
                     : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
                 }`}
               >
-                <span className="font-semibold">{f.lead.name}</span>
+                <span className="font-semibold">{leadLabel(f.lead)}</span>
                 <span className="text-xs">{f.late ? "overdue" : formatTime(f.scheduledAt)}</span>
               </Link>
             </li>

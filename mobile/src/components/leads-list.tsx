@@ -13,6 +13,7 @@ import { useResource } from '../use-resource';
 import { DateRangeBar } from './date-range-bar';
 import { Chip, ErrorBanner, inputStyle, StageBadge } from './ui';
 import { useLeadActions } from './use-lead-actions';
+import { isUnnamed, leadLabel } from '../lib/phone';
 
 const PAGE_SIZE = 30;
 
@@ -33,31 +34,31 @@ const LeadRow = memo(function LeadRow({ item, meId, onChanged }: { item: LeadLis
   const owner = ownerLine(item, meId);
   return (
     <View style={styles.row}>
-      <Pressable testID={`row-${item.name}`} onPress={() => router.push(`/lead/${item.id}`)} style={({ pressed }) => [styles.flex, pressed && styles.pressed]} accessibilityRole="button" accessibilityHint="Opens the lead">
+      <Pressable testID={`row-${leadLabel(item)}`} onPress={() => router.push(`/lead/${item.id}`)} style={({ pressed }) => [styles.flex, pressed && styles.pressed]} accessibilityRole="button" accessibilityHint="Opens the lead">
         <View style={styles.nameRow}>
           <Text style={styles.name} numberOfLines={1}>
-            {item.name}
+            {leadLabel(item)}
           </Text>
           <StageBadge status={item.status} stage={item.stage} />
         </View>
-        <Text style={styles.details}>{[item.phone, details].filter(Boolean).join(' · ')}</Text>
+        <Text style={styles.details}>{[isUnnamed(item) ? null : item.phone, details].filter(Boolean).join(' · ')}</Text>
         {when && <Text style={[styles.when, late && styles.late]}>{when}</Text>}
-        <Text testID={`owner-${item.name}`} style={[styles.owner, owner.warn && styles.ownerWarn]}>
+        <Text testID={`owner-${leadLabel(item)}`} style={[styles.owner, owner.warn && styles.ownerWarn]}>
           {owner.text}
         </Text>
       </Pressable>
       {!closed && (
         <View style={styles.rowActions}>
-          <Pressable testID={`call-${item.name}`} onPress={actions.call} style={[styles.iconButton, styles.callButton]} accessibilityRole="button" accessibilityLabel={`Call ${item.name}`}>
+          <Pressable testID={`call-${leadLabel(item)}`} onPress={actions.call} style={[styles.iconButton, styles.callButton]} accessibilityRole="button" accessibilityLabel={`Call ${leadLabel(item)}`}>
             <Ionicons name="call" size={20} color="#FFFFFF" />
           </Pressable>
           <Pressable
-            testID={`whatsapp-${item.name}`}
+            testID={`whatsapp-${leadLabel(item)}`}
             onPress={actions.whatsapp}
             onLongPress={actions.whatsappTemplates}
             style={[styles.iconButton, styles.waButton]}
             accessibilityRole="button"
-            accessibilityLabel={`WhatsApp ${item.name}`}
+            accessibilityLabel={`WhatsApp ${leadLabel(item)}`}
             accessibilityHint={actions.whatsAppLead ? 'Opens the chat. Long press for templates.' : 'Pick a message to send'}
           >
             <Ionicons name="logo-whatsapp" size={20} color={colors.whatsapp} />

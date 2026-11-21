@@ -21,10 +21,11 @@ import {
   ProductInterest,
 } from '../../generated/prisma/client.js';
 import { SUMP_SIZES_LITRES } from '../../stock/product-catalog.js';
+import { normalizeLeadPhone } from '../../intake/intake-parsing.js';
+import { IsLeadPhone } from '../../intake/lead-phone.validator.js';
 
-/** "98765 43210" / "+91-98765-43210" -> "9876543210" / "+919876543210" */
-const normalizePhone = ({ value }: { value: unknown }) =>
-  typeof value === 'string' ? value.replace(/[\s\-().]/g, '') : value;
+/** Any Indian mobile -> "+919876543210" (see normalizeLeadPhone); junk is left as typed so validation rejects it. */
+const normalizePhone = ({ value }: { value: unknown }) => (typeof value === 'string' ? (normalizeLeadPhone(value) ?? value) : value);
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -33,17 +34,18 @@ const trim = ({ value }: { value: unknown }) =>
 const emptyToNull = ({ value }: { value: unknown }) =>
   value === '' ? null : value;
 
+/** Phone is the ONLY required field: enquiries often arrive as just a WhatsApp number. */
 export class CreateLeadDto {
-  @ApiProperty({ example: 'Ramesh Kumar' })
-  @Transform(trim)
+  @ApiPropertyOptional({ example: 'Ramesh Kumar', nullable: true, description: 'Optional; screens show the phone until a name is added' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || null : value))
   @IsString()
-  @MinLength(2)
   @MaxLength(120)
-  name: string;
+  name?: string | null;
 
-  @ApiProperty({ example: '+919876543210', description: '10-15 digits, optional +' })
+  @ApiProperty({ example: '9791006137', description: 'Required. An Indian mobile with or without +91 (stored as +919791006137), or 10-15 digits' })
   @Transform(normalizePhone)
-  @Matches(/^\+?\d{10,15}$/, { message: 'phone must be 10-15 digits' })
+  @IsLeadPhone()
   phone: string;
 
   @ApiPropertyOptional({ example: 'ramesh@example.com' })
@@ -59,9 +61,10 @@ export class CreateLeadDto {
   @MaxLength(80)
   city?: string | null;
 
-  @ApiProperty({ enum: LeadSource })
+  @ApiPropertyOptional({ enum: LeadSource, default: LeadSource.MANUAL })
+  @IsOptional()
   @IsEnum(LeadSource)
-  source: LeadSource;
+  source?: LeadSource;
 
   @ApiPropertyOptional({ enum: ProductInterest, nullable: true, description: 'Null or left out = not known yet' })
   @IsOptional()

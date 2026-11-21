@@ -19,6 +19,7 @@ import {
 import { MyReminders } from "./my-reminders";
 import { DailyQuote, EmptyNote, Greeting, KpiRow, KpiTile } from "./shared";
 import { PeriodReport } from "@/components/dashboards/period-report";
+import { leadLabel } from "@/lib/phone";
 
 const BUCKET_ORDER: WorklistBucket[] = ["overdue", "today", "new", "no_next_step", "later"];
 
@@ -53,7 +54,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Link href={`/leads/${item.id}`} className="text-base font-semibold text-neutral-900 hover:text-brand-700 dark:text-white">
-              {item.name}
+              {leadLabel(item)}
             </Link>
             <StatusBadge status={item.status} stage={item.stage} />
           </div>
@@ -68,14 +69,14 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
           <CallButton
             leadId={item.id}
             phone={item.phone}
-            name={item.name}
+            name={leadLabel(item)}
             variant="block"
             onLogged={({ interested }) => {
               if (interested) setPanel("qualify");
               else onChanged();
             }}
           />
-          <WhatsAppButton leadId={item.id} name={item.name} variant="block" direct={item.source === "WHATSAPP"} />
+          <WhatsAppButton leadId={item.id} name={leadLabel(item)} variant="block" direct={item.source === "WHATSAPP"} />
         </div>
       </div>
 
@@ -143,7 +144,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
           }}
           onDone={(handedTo) => {
             setPanel(null);
-            onHandedOver(`${item.name} is qualified and handed to ${handedTo}.`);
+            onHandedOver(`${leadLabel(item)} is qualified and handed to ${handedTo}.`);
           }}
         />
       )}

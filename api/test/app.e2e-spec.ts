@@ -117,7 +117,7 @@ describe('Auth and RBAC (e2e)', () => {
         .send({ name: 'E2E Lead', phone: '98765 11111', source: 'MANUAL', productInterest: 'SUMP', sumpSizeLitres: 10000 })
         .expect(201);
       createdLeadIds.push(created.body.id);
-      expect(created.body.phone).toBe('9876511111');
+      expect(created.body.phone).toBe('+919876511111'); // stored in +91 form
       expect(created.body.assignedTo.fullName).toBe('Suresh Sales');
 
       const assignees = await request(app.getHttpServer())
@@ -831,7 +831,7 @@ describe('Auth and RBAC (e2e)', () => {
       const res = await http().post('/api/v1/leads/import').set(as(admin)).attach('file', file, 'e2e-leads.xlsx').expect(200);
       expect(res.body.created).toBe(1);
       const lead = await (await prisma()).lead.findFirstOrThrow({ where: { name: 'E2E Xlsx Lead' } });
-      expect(lead.phone).toBe('9000081030');
+      expect(lead.phone).toBe('+919000081030');
       expect(lead.sumpSizeLitres).toBe(6000);
     });
 
@@ -1748,16 +1748,18 @@ describe('Auth and RBAC (e2e)', () => {
       expect(await (await prisma()).followUp.count({ where: { leadId, completedAt: null } })).toBe(openBefore);
     });
 
-    it('the telecaller (or admin) can change the salesperson afterwards; nobody else can', async () => {
-      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(kavya)).send({ salesUserId: ids.priya }).expect(404);
+    it('only an admin can change the salesperson afterwards', async () => {
+      // Reassigning is admin-only: the telecaller who handed it over, salespeople and other telecallers can't.
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(kavya)).send({ salesUserId: ids.priya }).expect(403);
       await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(suresh)).send({ salesUserId: ids.priya }).expect(403);
-      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.kavya }).expect(400);
-      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.suresh }).expect(400); // already his
-      const res = await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.priya }).expect(200);
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(tara)).send({ salesUserId: ids.priya }).expect(403);
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(admin)).send({ salesUserId: ids.kavya }).expect(400);
+      await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(admin)).send({ salesUserId: ids.suresh }).expect(400); // already his
+      const res = await http().put(`/api/v1/leads/${leadId}/salesperson`).set(as(admin)).send({ salesUserId: ids.priya }).expect(200);
       expect(res.body.salesperson.id).toBe(ids.priya);
       await http().get(`/api/v1/leads/${leadId}`).set(as(suresh)).expect(404);
       await http().get(`/api/v1/leads/${leadId}`).set(as(priya)).expect(200);
-      const note = await (await prisma()).notification.findFirst({ where: { userId: ids.priya, leadId, type: 'LEAD_HANDED_OVER' } });
+      const note = await (await prisma()).notification.findFirst({ where: { userId: ids.priya, leadId, type: 'LEAD_ASSIGNED' } });
       expect(note).not.toBeNull();
       // Not yet handed over -> use Qualify instead.
       const fresh = await http().post('/api/v1/leads').set(as(admin)).send({ name: 'E2E Not Handed', phone: '9000087002', source: 'META', assignedToId: ids.tara }).expect(201);
@@ -1819,8 +1821,8 @@ describe('Auth and RBAC (e2e)', () => {
       // Stage changes record the stage names, old -> new.
       expect(byType('HANDED_OVER')[0].changes).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'stage', from: 'Contacted', to: 'Qualified' })]));
       expect(byType('STATUS_CHANGED')[0]).toMatchObject({ user: { fullName: 'Suresh Sales' }, message: 'Stage: Qualified → Quoted', changes: [{ field: 'stage', from: 'Qualified', to: 'Quoted' }] });
-      const salespersonChange = byType('ASSIGNED').find((h) => h.message.startsWith('Salesperson changed'));
-      expect(salespersonChange).toMatchObject({ user: { fullName: 'Tara Telecaller' }, changes: [{ from: 'Suresh Sales', to: 'Priya Sales' }] });
+      const salespersonChange = byType('ASSIGNED').find((h) => h.message.startsWith('Reassigned by'));
+      expect(salespersonChange).toMatchObject({ user: { fullName: 'Asha Admin' }, message: 'Reassigned by Asha Admin: Suresh Sales → Priya Sales', changes: [{ from: 'Suresh Sales', to: 'Priya Sales' }] });
       const notes = byType('NOTES_EDITED');
       expect(notes.map((n) => n.user.fullName).sort()).toEqual(['Suresh Sales', 'Tara Telecaller']);
       expect(notes.find((n) => n.user.fullName === 'Tara Telecaller')!.changes![0]).toMatchObject({ from: 'E2E quote sent: 2 x 8,000 L', to: expect.stringMatching(/discount/) });
@@ -1870,7 +1872,7 @@ describe('Auth and RBAC (e2e)', () => {
       const history = (await http().get(`/api/v1/leads/${leadId}/history`).set(as(admin)).expect(200)).body as {
         type: string; message: string; user: { fullName: string }; changes: { field: string; from: string | null; to: string | null }[] | null;
       }[];
-      const adminChange = history.find((h) => h.type === 'ASSIGNED' && h.user.fullName === 'Asha Admin' && h.message.startsWith('Salesperson changed'));
+      const adminChange = history.find((h) => h.type === 'ASSIGNED' && h.user.fullName === 'Asha Admin' && h.message === 'Reassigned by Asha Admin: Priya Sales → Suresh Sales');
       expect(adminChange?.changes).toEqual([expect.objectContaining({ from: 'Priya Sales', to: 'Suresh Sales' })]);
       const field = history.find((h) => h.type === 'FIELD_CHANGED');
       expect(field).toMatchObject({ user: { fullName: 'Tara Telecaller' }, message: 'City: Erode → Salem' });
@@ -2345,12 +2347,12 @@ describe('Auth and RBAC (e2e)', () => {
 
       const history = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body;
       expect(history.find((h: { type: string }) => h.type === 'CALL_ATTEMPT')).toMatchObject({
-        message: 'Call started to 9000066001',
+        message: 'Call started to +919000066001',
         user: { fullName: 'Tara Telecaller', role: { name: 'Telecaller' } },
       });
       const attempts = (await http().get(`/api/v1/leads/${id}/call-attempts`).set(as(tara)).expect(200)).body;
       expect(attempts).toHaveLength(1);
-      expect(attempts[0]).toMatchObject({ message: 'Call started to 9000066001', user: { fullName: 'Tara Telecaller' } });
+      expect(attempts[0]).toMatchObject({ message: 'Call started to +919000066001', user: { fullName: 'Tara Telecaller' } });
       expect(attempts[0].createdAt).toBeTruthy();
     });
 
@@ -2427,7 +2429,7 @@ describe('Auth and RBAC (e2e)', () => {
 
       const [lead] = await leadsWithPhone(PHONES[0]);
       expect(lead).toMatchObject({ phone: `+91${PHONES[0]}`, source: 'WHATSAPP', status: 'NEW', autoAssigned: true, productInterest: null });
-      expect(lead.name).toBe(`WhatsApp enquiry …${PHONES[0].slice(-4)}`);
+      expect(lead.name).toBeNull(); // no stand-in name: screens show the phone
       expect(lead.telecallerId).toBe(lead.assignedToId);
     });
 
@@ -2543,7 +2545,7 @@ describe('Auth and RBAC (e2e)', () => {
     it('stores a call against the logged-in user and matches the lead however its number is written', async () => {
       const id = await taraLead('E2E Sync Match', '9000077001'); // stored without +91; the phone reports it with
       const res = await sync(tara, [call({ durationSeconds: 192 })]).expect(200);
-      expect(res.body).toEqual({ received: 1, stored: 1, duplicates: 0, rejected: 0, matchedToLeads: 1 });
+      expect(res.body).toEqual({ received: 1, stored: 1, duplicates: 0, rejected: 0, matchedToLeads: 1, toLog: [] });
 
       const calls = (await http().get(`/api/v1/leads/${id}/device-calls`).set(as(tara)).expect(200)).body;
       expect(calls).toHaveLength(1);
@@ -2657,5 +2659,78 @@ describe('Auth and RBAC (e2e)', () => {
       await http().get('/api/v1/dashboards/master').set(as(tara)).expect(403);
     });
   });
-});
 
+  describe('Phone is the only required field on every lead path', () => {
+    let admin: string;
+    const leadIds: string[] = [];
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      admin = (await login('admin@precon.local')).body.accessToken;
+    });
+    afterAll(async () => {
+      const db = await prisma();
+      await db.lead.deleteMany({ where: { OR: [{ id: { in: leadIds } }, { phone: { endsWith: '900009100' } }, { phone: { in: ['+919000091011', '+919000091012', '+919000091013'] } }] } });
+      await db.apiKey.deleteMany({ where: { name: 'E2E Phone Only' } });
+    });
+
+    it('New lead by hand: just a phone is saved (no name, source Manual), stored as +91', async () => {
+      const res = await http().post('/api/v1/leads').set(as(admin)).send({ phone: '90000 91001' }).expect(201);
+      leadIds.push(res.body.id);
+      expect(res.body).toMatchObject({ name: null, phone: '+919000091001', source: 'MANUAL', productInterest: null, city: null });
+      // Nothing else is required, and the change history and list cope with no name.
+      const history = (await http().get(`/api/v1/leads/${res.body.id}/history`).set(as(admin)).expect(200)).body;
+      expect(history.some((h: { type: string }) => h.type === 'CREATED')).toBe(true);
+      const found = (await http().get('/api/v1/leads?search=%2B91%2090000%2091001').set(as(admin)).expect(200)).body;
+      expect(found.items.map((l: { id: string }) => l.id)).toContain(res.body.id);
+    });
+
+    it('the same number again, written with or without +91, is refused as a duplicate and names the open lead', async () => {
+      const first = leadIds[0];
+      for (const phone of ['9000091001', '+91 90000 91001', '090000 91001']) {
+        const dup = await http().post('/api/v1/leads').set(as(admin)).send({ phone, name: 'Second try' }).expect(409);
+        expect(dup.body).toMatchObject({ existingLeadId: first });
+        expect(dup.body.message).toBe('+91 90000 91001 is already an open lead (New, not assigned). Open that lead instead.');
+      }
+      // Quick add flags it too, rather than adding a second lead.
+      const qa = await http().post('/api/v1/leads/quick-add').set(as(admin)).send({ phone: '+919000091001' }).expect(200);
+      expect(qa.body).toMatchObject({ status: 'duplicate', existing: { id: first, name: null, phone: '+919000091001' } });
+    });
+
+    it('a name can be added later, and cleared again; the phone is never required to change', async () => {
+      const id = leadIds[0];
+      expect((await http().patch(`/api/v1/leads/${id}`).set(as(admin)).send({ name: 'Ravi Kumar' }).expect(200)).body.name).toBe('Ravi Kumar');
+      expect((await http().patch(`/api/v1/leads/${id}`).set(as(admin)).send({ name: '' }).expect(200)).body.name).toBeNull();
+      // Re-sending the same number in another format is not a change (and not a duplicate of itself).
+      await http().patch(`/api/v1/leads/${id}`).set(as(admin)).send({ phone: '9000091001' }).expect(200);
+      const edits = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body.filter((h: { type: string }) => h.type === 'FIELD_CHANGED');
+      expect(edits.map((h: { message: string }) => h.message)).toEqual(['Name: Ravi Kumar → (empty)', 'Name: (empty) → Ravi Kumar']);
+    });
+
+    it('a bad number is the one thing refused', async () => {
+      for (const phone of ['12345', '1234567890', 'call me', '']) await http().post('/api/v1/leads').set(as(admin)).send({ phone }).expect(400);
+      await http().post('/api/v1/leads').set(as(admin)).send({ name: 'No phone' }).expect(400);
+    });
+
+    it('import and the public API accept a phone with nothing else', async () => {
+      const csv = 'phone\n9000091011\n+91 90000 91012\n';
+      const imported = (await http().post('/api/v1/leads/import').set(as(admin)).attach('file', Buffer.from(csv), 'e2e-phone-only.csv').expect(200)).body;
+      expect(imported).toMatchObject({ created: 2, failed: [] });
+      expect(imported.createdRows.map((r: { name: string }) => r.name)).toEqual(['+91 90000 91011', '+91 90000 91012']);
+      const db = await prisma();
+      expect((await db.lead.findFirstOrThrow({ where: { phone: '+919000091011' } })).name).toBeNull();
+
+      const key = (await http().post('/api/v1/api-keys').set(as(admin)).send({ name: 'E2E Phone Only' }).expect(201)).body.key as string;
+      const api = await http().post('/api/v1/public/leads').set('X-API-Key', key).send({ phone: '9000091013' }).expect(201);
+      expect((await db.lead.findUniqueOrThrow({ where: { id: api.body.leadId } })).phone).toBe('+919000091013');
+      // An import row or API call for a number that's already a lead is skipped, not created twice.
+      const again = await http().post('/api/v1/public/leads').set('X-API-Key', key).send({ phone: '+91 90000 91013' }).expect(200);
+      expect(again.body).toMatchObject({ status: 'duplicate', reason: 'phone', leadId: api.body.leadId });
+    });
+  });
+});

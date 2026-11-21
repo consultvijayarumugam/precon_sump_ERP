@@ -5,6 +5,7 @@ import { formatLitres, SUMP_SIZES_LITRES, type LeadDetail } from '../lib/workflo
 import { useSession } from '../session';
 import { colors } from '../theme';
 import { Button, Chip, ErrorBanner, FieldLabel, inputStyle, Sheet } from './ui';
+import { leadLabel } from '../lib/phone';
 
 /** The lead's fields, big and thumb-friendly: name, phone, city, product and size, email, notes (and source for a new lead). */
 export function LeadFields({
@@ -28,8 +29,8 @@ export function LeadFields({
   );
   return (
     <View>
-      {field('name', 'Name *', { placeholder: 'Customer or company name', autoCapitalize: 'words', maxLength: 120 })}
-      {field('phone', 'Phone *', { placeholder: '98765 43210', keyboardType: 'phone-pad', maxLength: 20 })}
+      {field('phone', 'Phone * (the only required field)', { placeholder: '97910 06137 (with or without +91)', keyboardType: 'phone-pad', maxLength: 20 })}
+      {field('name', 'Name (optional)', { placeholder: 'If they gave it; the phone is shown until then', autoCapitalize: 'words', maxLength: 120 })}
       {field('city', 'City', { placeholder: 'e.g. Coimbatore', autoCapitalize: 'words', maxLength: 80 })}
       <FieldLabel>Product</FieldLabel>
       <View style={styles.row}>
@@ -65,7 +66,7 @@ export function LeadFields({
 }
 
 export const leadToForm = (l: Pick<LeadDetail, 'name' | 'phone' | 'email' | 'city' | 'source' | 'productInterest' | 'sumpSizeLitres' | 'notes'>): LeadFormValues => ({
-  name: l.name,
+  name: l.name ?? '',
   phone: l.phone,
   email: l.email ?? '',
   city: l.city ?? '',
@@ -103,7 +104,7 @@ export function EditLeadSheet({ lead, onClose, onDone }: { lead: LeadDetail; onC
 
   return (
     <Sheet
-      title={`Edit ${lead.name}`}
+      title={`Edit ${leadLabel(lead)}`}
       onClose={onClose}
       footer={
         <>

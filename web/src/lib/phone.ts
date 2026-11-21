@@ -21,3 +21,16 @@ export function displayPhone(tel: string): string {
   const indian = tel.match(/^\+91(\d{5})(\d{5})$/);
   return indian ? `+91 ${indian[1]} ${indian[2]}` : tel;
 }
+
+/**
+ * How a lead is shown everywhere: its name, or its phone number while it has
+ * none (many enquiries arrive as just a WhatsApp number). "9791006137" and
+ * "+919791006137" both show as "+91 97910 06137".
+ */
+export function leadLabel(lead: { name?: string | null; phone: string }): string {
+  const name = lead.name?.trim();
+  return name || displayPhone(telNumber(lead.phone) ?? lead.phone);
+}
+
+/** True when the lead has no name yet, so its label is the phone (screens then skip repeating the number). */
+export const isUnnamed = (lead: { name?: string | null }) => !lead.name?.trim();

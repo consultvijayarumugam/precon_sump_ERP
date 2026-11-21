@@ -155,7 +155,7 @@ export interface SiteVisit {
   longitude: number | null;
   accuracyMeters: number | null;
   checkedInAt: string | null;
-  lead: { id: string; name: string; phone: string; city: string | null } | null;
+  lead: { id: string; name: string | null; phone: string; city: string | null } | null;
   person: UserRef;
   createdBy: UserRef;
   tags: SiteVisitTag[];

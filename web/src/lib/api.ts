@@ -15,7 +15,8 @@ export interface CurrentUser {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** e.g. existingLeadId when a lead with that phone is already open (409). */
+  constructor(public status: number, message: string, public details: Record<string, unknown> = {}) {
     super(message);
   }
 }
@@ -37,7 +38,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const message = Array.isArray(body.message) ? body.message.join(", ") : body.message;
-    throw new ApiError(response.status, message ?? response.statusText);
+    throw new ApiError(response.status, message ?? response.statusText, typeof body === "object" && body ? body : {});
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
@@ -96,7 +97,7 @@ export async function apiUpload<T>(path: string, file: File, fields: Record<stri
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = Array.isArray(body.message) ? body.message.join(", ") : body.message;
-    throw new ApiError(response.status, message ?? response.statusText);
+    throw new ApiError(response.status, message ?? response.statusText, typeof body === "object" && body ? body : {});
   }
   return body as T;
 }

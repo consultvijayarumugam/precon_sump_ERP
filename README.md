@@ -397,6 +397,8 @@ All four go through one intake service (`api/src/intake/`), so validation, dupli
 
 ### Round-robin assignment to telecallers
 
+**Phone is the only required field, everywhere a lead is created** (New lead on web and phone, Quick add, import, the public API, Meta). Enquiries often arrive as just a WhatsApp number. One phone rule applies on every path: an Indian mobile typed any way ("9791006137", "+91 97910 06137", "097910 06137") is stored as `+919791006137`. Duplicates are matched on the last 10 digits. Until someone adds a name, every screen, notification and report shows the phone number in its place, and WhatsApp templates fall back to a neutral greeting ("Hi," / "Dear Sir/Madam,").
+
 The business gets 50-60 leads a day from Meta click-to-WhatsApp ads, with name and phone only, shared across 3 telecallers.
 
 - **Who is in the rotation:** active users holding `leads.auto_assign` (the telecaller preset) whom the admin has left **switched on** under Admin → Lead assignment. Switch someone off for leave, and they're skipped until switched back on.
@@ -414,7 +416,7 @@ Click-to-WhatsApp ads land in the company WhatsApp with no form data. One intake
 - **Who:** anyone with `leads.quick_add`. Admins have it. To make someone else the intake person, grant just this tag on their permissions (Admin → Permissions & tags): it doesn't let them create other leads, edit, import or assign. A telecaller who does intake still receives a fair share of the leads; switch them off under Lead assignment if they shouldn't.
 - **Form:** phone (required), name and their first message (both optional). Press Enter to add; the form clears and the cursor goes back to the phone box for the next one. Shift+Enter makes a new line in the message.
 - **Phone:** `98765 43210`, `+91 98765-43210`, `919876543210`, `098765 43210` and `0091 98765 43210` are all saved as `+919876543210`. A non-Indian number needs + and its country code. Anything else is refused with a reason.
-- **Saved as:** source **WhatsApp**, status New, product unknown, the message as the lead's notes, and the name "WhatsApp enquiry …3210" until the telecaller learns it.
+- **Saved as:** source **WhatsApp**, status New, product unknown, the message as the lead's notes, and no name until the telecaller learns it (screens show the phone number instead).
 - **Duplicates:** a number that is already an **open** lead (New, Contacted, Qualified or Quoted) is not added. The screen says whose lead it is. A past Won or Lost customer enquiring again gets a new lead, marked "enquired before". The same number added twice at the same moment (a double Enter, or two people) still creates one lead.
 - **Feedback:** each add shows who it went to ("Added, assigned to Kavya Telecaller"), with a one-tap **WhatsApp** button that opens the chat, the number you've added today, and today's split across telecallers.
 - **Where:** Leads → **Quick add** (button on the Leads page and on the admin dashboard, and in the menu). Works on a phone browser too.
@@ -620,12 +622,12 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | GET    | `/leads/summary`         | `leads.read`           | Dashboard counts: leads by status, open leads, overdue and upcoming follow-ups |
 | GET    | `/leads/assignees`       | `leads.assign`         | Active users who hold `leads.read` (assign dropdown) |
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
-| POST   | `/leads`                 | `leads.write`          | Create: `{name, phone, source, productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. `assignedToId` for someone else needs `leads.assign` |
+| POST   | `/leads`                 | `leads.write`          | Create: `{phone, name?, source? (default MANUAL), productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. **Phone is the only required field**; an Indian mobile is stored as `+91XXXXXXXXXX` however typed. 409 `{message, existingLeadId}` if the number (last 10 digits) is already an open lead. `assignedToId` for someone else needs `leads.assign` |
 | PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline with `{stageId}` (an active stage; `{status}` still works and picks that phase's stage). Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
 | POST   | `/leads/quick-add`       | `leads.quick_add`      | `{phone, name?, note?}`. Phone normalised to +91. Created: `{status:"created", lead, assignedTo, previous, addedToday}` (round-robin, source WhatsApp). Already an open lead: `{status:"duplicate", existing, addedToday}`, nothing created. 400 if it isn't a mobile number |
 | GET    | `/leads/quick-add/today` | `leads.quick_add`      | `{addedByYou, addedByEveryone, nextUp, telecallers:[{fullName, inRotation, leadsToday}]}` |
 | GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
-| POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
+| POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx; only a phone column is required), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?, calledAt?, incoming?}` (`calledAt`: when it happened, up to 7 days back, for an incoming call found in the call log). Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
 | GET    | `/leads/:id/calls`       | `leads.read`           | The lead's call history, newest first |
 | GET    | `/leads/:id/history`     | `leads.audit`          | Full change history (admin): `[{type, message, changes[{field, label, from, to}], createdAt, user}]`, newest first |
@@ -675,7 +677,7 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | POST   | `/api-keys`              | `apikeys.manage`       | `{name}` → key details plus `key`, the full key, returned only this once |
 | POST   | `/api-keys/:id/revoke`   | `apikeys.manage`       | Revoke a key |
 | GET    | `/api-keys/meta-status`  | `apikeys.manage`       | Which Meta env vars are set (true/false only) |
-| POST   | `/public/leads`          | **API key** (`X-API-Key`) | Create a lead from an external system. See "Getting leads in" |
+| POST   | `/public/leads`          | **API key** (`X-API-Key`) | Create a lead from an external system: only `phone` is required. See "Getting leads in" |
 | GET    | `/webhooks/meta`         | public (verify token)  | Meta webhook verification (`hub.challenge`) |
 | POST   | `/webhooks/meta`         | public (Meta signature) | Meta Lead Ads `leadgen` notifications |
 | GET    | `/follow-ups`            | `leads.read`           | Follow-ups in your scope. `state=pending\|overdue\|upcoming\|completed`, `from`/`to` (ISO, for the calendar), `fromDate`/`toDate` (YYYY-MM-DD due date, inclusive), `assignedTo=me` |
@@ -1151,17 +1153,17 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | GET    | `/leads/summary`         | `leads.read`           | Dashboard counts: leads by status, open leads, overdue and upcoming follow-ups |
 | GET    | `/leads/assignees`       | `leads.assign`         | Active users who hold `leads.read` (assign dropdown) |
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
-| POST   | `/leads`                 | `leads.write`          | Create: `{name, phone, source, productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. `assignedToId` for someone else needs `leads.assign` |
+| POST   | `/leads`                 | `leads.write`          | Create: `{phone, name?, source? (default MANUAL), productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. **Phone is the only required field**; an Indian mobile is stored as `+91XXXXXXXXXX` however typed. 409 `{message, existingLeadId}` if the number (last 10 digits) is already an open lead. `assignedToId` for someone else needs `leads.assign` |
 | PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline. Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
 | GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
-| POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
+| POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx; only a phone column is required), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | GET    | `/lead-assignment`       | `leads.assign`         | `date=YYYY-MM-DD` (default today): `{total, autoAssigned, unassigned, spread, nextUp, members[{fullName, autoAssignEnabled, leads, autoAssignedLeads, lastAutoAssignedAt}], others[]}` |
 | PATCH  | `/lead-assignment/members/:userId` | `leads.assign` | `{enabled}`: switch a telecaller in or out of the round-robin (they must hold `leads.auto_assign`) |
 | GET    | `/api-keys`              | `apikeys.manage`       | Keys with prefix, status, last used (never the key or hash) |
 | POST   | `/api-keys`              | `apikeys.manage`       | `{name}` → key details plus `key`, the full key, returned only this once |
 | POST   | `/api-keys/:id/revoke`   | `apikeys.manage`       | Revoke a key |
 | GET    | `/api-keys/meta-status`  | `apikeys.manage`       | Which Meta env vars are set (true/false only) |
-| POST   | `/public/leads`          | **API key** (`X-API-Key`) | Create a lead from an external system. See "Getting leads in" |
+| POST   | `/public/leads`          | **API key** (`X-API-Key`) | Create a lead from an external system: only `phone` is required. See "Getting leads in" |
 | GET    | `/webhooks/meta`         | public (verify token)  | Meta webhook verification (`hub.challenge`) |
 | POST   | `/webhooks/meta`         | public (Meta signature) | Meta Lead Ads `leadgen` notifications |
 | GET    | `/follow-ups`            | `leads.read`           | Follow-ups in your scope. `state=pending\|overdue\|upcoming\|completed`, `from`/`to` (ISO, for the calendar), `assignedTo=me` |

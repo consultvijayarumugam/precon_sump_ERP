@@ -1,3 +1,4 @@
+import { leadLabel } from '../crm/lead-label.js';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { recordActivity } from '../crm/lead-history.js';
@@ -17,7 +18,7 @@ export const CHECK_IN_SELECT = {
   accuracyMeters: true,
   checkedInAt: true,
   person: { select: { id: true, fullName: true } },
-  lead: { select: { id: true, name: true, status: true } },
+  lead: { select: { id: true, name: true, phone: true, status: true } },
 } as const;
 
 /**
@@ -36,7 +37,7 @@ export class CheckInsService {
   async checkIn(user: AuthenticatedUser, dto: CheckInDto) {
     const lead = await this.prisma.lead.findFirst({
       where: { id: dto.leadId, assignedToId: user.id },
-      select: { id: true, name: true, city: true },
+      select: { id: true, name: true, phone: true, city: true },
     });
     if (!lead) throw new NotFoundException('Pick one of your own leads for this visit');
 
@@ -48,7 +49,7 @@ export class CheckInsService {
           visitDate: new Date(`${businessDate(now)}T00:00:00Z`),
           personId: user.id,
           createdById: user.id,
-          customerName: lead.name,
+          customerName: leadLabel(lead),
           siteAddress: lead.city ? `${lead.city} (GPS ${coords})` : `GPS ${coords}`,
           purpose: 'Site visit (GPS check-in)',
           notes: dto.note || null,
@@ -77,7 +78,7 @@ export class CheckInsService {
       where: { assignedToId: user.id, status: { not: 'LOST' } },
       orderBy: [{ status: 'asc' }, { name: 'asc' }],
       take: 300,
-      select: { id: true, name: true, city: true, status: true, stage: { select: { name: true } } },
+      select: { id: true, name: true, phone: true, city: true, status: true, stage: { select: { name: true } } },
     });
   }
 

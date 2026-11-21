@@ -28,6 +28,7 @@ import { MODULES, ModuleKey } from "@/lib/modules";
 import { TAGS } from "@/lib/tags";
 import { useApi } from "@/lib/use-api";
 import { PipelineStrip } from "./shared";
+import { leadLabel } from "@/lib/phone";
 
 function Tile({
   label,
@@ -191,7 +192,7 @@ export function GeneralDashboard() {
                 <li key={lead.id} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <Link href={`/leads/${lead.id}`} className="block truncate font-medium text-brand-700 hover:underline dark:text-brand-300">
-                      {lead.name}
+                      {leadLabel(lead)}
                     </Link>
                     <span className="text-xs text-neutral-500">
                       {productInterestLabel(lead)} · {formatDate(lead.createdAt)}

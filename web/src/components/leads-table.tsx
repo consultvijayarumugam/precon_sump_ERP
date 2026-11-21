@@ -18,6 +18,7 @@ import {
 import { isHandedOver, ReassignSalesperson } from "@/components/lead-handover";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { formatDate, formatDateTime, LeadListItem, productInterestLabel, SOURCE_LABELS, TAGS } from "@/lib/crm";
+import { leadLabel } from "@/lib/phone";
 
 /** Lead list used by the Leads and Won pages. `variant="won"` shows the close date. */
 export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadListItem[]; variant?: "all" | "won"; onChanged?: () => void }) {
@@ -42,7 +43,7 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
             <li key={lead.id} className={`${panelClass} p-4 ${overdue ? "border-red-200 dark:border-red-900" : ""}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <Link href={`/leads/${lead.id}`} className="text-base font-semibold text-brand-700 dark:text-brand-300">
-                  {lead.name}
+                  {leadLabel(lead)}
                 </Link>
                 {variant === "all" && <StatusBadge status={lead.status} stage={lead.stage} />}
               </div>
@@ -60,8 +61,8 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                 )
               )}
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} variant="block" onLogged={onChanged} />
-                <WhatsAppButton leadId={lead.id} name={lead.name} variant="block" direct={lead.source === "WHATSAPP"} />
+                <CallButton leadId={lead.id} phone={lead.phone} name={leadLabel(lead)} variant="block" onLogged={onChanged} />
+                <WhatsAppButton leadId={lead.id} name={leadLabel(lead)} variant="block" direct={lead.source === "WHATSAPP"} />
               </div>
             </li>
           );
@@ -87,7 +88,7 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
               <tr key={lead.id} className={overdue ? overdueRowClass : ""}>
                 <td className={tdClass}>
                   <Link href={`/leads/${lead.id}`} className="font-medium text-brand-700 hover:underline dark:text-brand-300">
-                    {lead.name}
+                    {leadLabel(lead)}
                   </Link>
                   {lead.city && <div className="text-xs text-neutral-500">{lead.city}</div>}
                 </td>
@@ -95,8 +96,8 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                   <div className="flex items-center gap-2 whitespace-nowrap">
                     <span className="select-all tabular-nums">{lead.phone}</span>
                     <span className="ml-auto flex gap-1.5">
-                      <CallButton leadId={lead.id} phone={lead.phone} name={lead.name} onLogged={onChanged} />
-                      <WhatsAppButton leadId={lead.id} name={lead.name} variant="icon" direct={lead.source === "WHATSAPP"} />
+                      <CallButton leadId={lead.id} phone={lead.phone} name={leadLabel(lead)} onLogged={onChanged} />
+                      <WhatsAppButton leadId={lead.id} name={leadLabel(lead)} variant="icon" direct={lead.source === "WHATSAPP"} />
                     </span>
                   </div>
                 </td>

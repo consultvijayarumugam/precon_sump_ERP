@@ -10,6 +10,7 @@ import { colors } from '../theme';
 import { useBottomPad } from '../use-bottom-pad';
 import { useResource } from '../use-resource';
 import { formatDay, salesStyles } from './SalesLeadsScreen';
+import { leadLabel } from '../lib/phone';
 
 /** A lead in a stage list: name, place and product, next follow-up. Tap to open it. */
 function StageLeadRow({ lead }: { lead: SalesLead }) {
@@ -17,10 +18,10 @@ function StageLeadRow({ lead }: { lead: SalesLead }) {
   const bucket = salesBucket(lead);
   const details = [lead.city, productLabel(lead)].filter(Boolean).join(' · ');
   return (
-    <Pressable testID={`pl-${lead.name}`} onPress={() => router.push(`/lead/${lead.id}`)} style={({ pressed }) => [styles.row, bucket === 'overdue' && styles.rowLate, pressed && styles.pressed]} accessibilityRole="button" accessibilityHint="Opens the lead">
+    <Pressable testID={`pl-${leadLabel(lead)}`} onPress={() => router.push(`/lead/${lead.id}`)} style={({ pressed }) => [styles.row, bucket === 'overdue' && styles.rowLate, pressed && styles.pressed]} accessibilityRole="button" accessibilityHint="Opens the lead">
       <View style={styles.flex}>
         <Text style={styles.name} numberOfLines={1}>
-          {lead.name}
+          {leadLabel(lead)}
         </Text>
         {details !== '' && <Text style={salesStyles.details}>{details}</Text>}
         <Text style={[styles.when, bucket === 'overdue' && { color: colors.red }, bucket === 'none' && { color: colors.ink3 }]}>
@@ -89,10 +90,10 @@ export function PipelineScreen() {
         )}
         renderItem={({ item, section }) =>
           section.won ? (
-            <Pressable testID={`won-${item.name}`} onPress={() => router.push(`/lead/${item.id}`)} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button">
+            <Pressable testID={`won-${leadLabel(item)}`} onPress={() => router.push(`/lead/${item.id}`)} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button">
               <Ionicons name="trophy" size={22} color={colors.green} />
               <View style={styles.flex}>
-                <Text style={styles.name}>{item.name}</Text>
+                <Text style={styles.name}>{leadLabel(item)}</Text>
                 <Text style={salesStyles.details}>{[productLabel(item), item.city].filter(Boolean).join(' · ') || 'Won'}</Text>
               </View>
               {item.closedAt && <Text style={styles.date}>{formatDay(item.closedAt)}</Text>}

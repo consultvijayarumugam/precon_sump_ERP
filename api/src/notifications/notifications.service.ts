@@ -1,3 +1,4 @@
+import { leadLabel } from '../crm/lead-label.js';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
@@ -97,7 +98,7 @@ export class NotificationsService {
     const due = await this.prisma.followUp.findMany({
       where: { completedAt: null, scheduledAt: { lt: todayEnd }, lead: { assignedToId: user.id }, notifications: { none: { userId: user.id } } },
       take: 200,
-      select: { id: true, note: true, lead: { select: { id: true, name: true } } },
+      select: { id: true, note: true, lead: { select: { id: true, name: true, phone: true } } },
     });
     if (due.length === 0) return;
     await this.prisma.notification.createMany({
@@ -106,7 +107,7 @@ export class NotificationsService {
         type: 'FOLLOW_UP_DUE' as const,
         leadId: f.lead.id,
         followUpId: f.id,
-        title: `Call ${f.lead.name}`,
+        title: `Call ${leadLabel(f.lead)}`,
         body: f.note,
       })),
       skipDuplicates: true,

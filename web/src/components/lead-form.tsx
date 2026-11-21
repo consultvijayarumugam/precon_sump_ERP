@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { buttonClass, ErrorText, inputClass, secondaryButtonClass } from "@/components/ui";
@@ -16,6 +17,7 @@ import {
   TAGS,
 } from "@/lib/crm";
 import { pickableStages, useStages } from "@/lib/stages";
+import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 
 export interface LeadFormValues {
@@ -35,7 +37,9 @@ export interface LeadFormValues {
 }
 
 /** What the form submits: assignedToId is null for "unassigned", absent if the user can't assign. */
-export type LeadSubmitValues = Omit<LeadFormValues, "assignedToId" | "sumpSizeLitres" | "productInterest" | "stageId"> & {
+export type LeadSubmitValues = Omit<LeadFormValues, "name" | "assignedToId" | "sumpSizeLitres" | "productInterest" | "stageId"> & {
+  /** null = no name yet (screens show the phone). */
+  name: string | null;
   stageId?: string;
   productInterest: ProductInterest | null;
   assignedToId?: string | null;
@@ -81,14 +85,16 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     email: initial?.email ?? "",
     city: initial?.city ?? "",
     source: initial?.source ?? "MANUAL",
-    // An existing lead keeps "not known yet"; a new one starts at Sump.
-    productInterest: initial ? (initial.productInterest ?? "") : "SUMP",
+    // Not known until the customer says: nothing is pre-filled.
+    productInterest: initial?.productInterest ?? "",
     sumpSizeLitres: initial?.sumpSizeLitres ? String(initial.sumpSizeLitres) : "",
     stageId: initial?.stage?.id ?? "",
     notes: initial?.notes ?? "",
     assignedToId: initial?.assignedTo?.id ?? "",
   });
   const [error, setError] = useState<string | null>(null);
+  // Set when the phone is already an open lead (409): offer to open that one.
+  const [existingLeadId, setExistingLeadId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const set = <K extends keyof LeadFormValues>(key: K, value: LeadFormValues[K]) =>
@@ -98,10 +104,12 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     event.preventDefault();
     setSaving(true);
     setError(null);
+    setExistingLeadId(null);
     try {
-      const { assignedToId, sumpSizeLitres, productInterest, stageId, ...rest } = values;
+      const { assignedToId, sumpSizeLitres, productInterest, stageId, name, ...rest } = values;
       await onSubmit({
         ...rest,
+        name: name.trim() || null,
         stageId: stageId || undefined,
         productInterest: productInterest || null,
         // A size only applies to sumps; "" = not decided yet.
@@ -111,6 +119,8 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
+      const id = err instanceof ApiError ? err.details.existingLeadId : null;
+      setExistingLeadId(typeof id === "string" && id !== initial?.id ? id : null);
     } finally {
       setSaving(false);
     }
@@ -119,20 +129,22 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Name *">
-          <input className={inputClass} required minLength={2} value={values.name} onChange={(e) => set("name", e.target.value)} />
-        </Field>
-        <Field label="Phone *">
+        <Field label="Phone * (the only required field)">
           <input
             className={inputClass}
             required
             type="tel"
-            placeholder="98765 43210"
+            inputMode="tel"
+            autoFocus={!initial}
+            placeholder="97910 06137 or +91 97910 06137"
             value={values.phone}
             onChange={(e) => set("phone", e.target.value)}
             disabled={lockContact}
             title={lockContact ? "Only an admin or salesperson can change the phone number" : undefined}
           />
+        </Field>
+        <Field label="Name">
+          <input className={inputClass} maxLength={120} placeholder="Optional: the phone is shown until you add one" value={values.name} onChange={(e) => set("name", e.target.value)} />
         </Field>
         <Field label="Email">
           <input className={inputClass} type="email" value={values.email} onChange={(e) => set("email", e.target.value)} />
@@ -140,7 +152,7 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
         <Field label="City">
           <input className={inputClass} value={values.city} onChange={(e) => set("city", e.target.value)} />
         </Field>
-        <Field label="Source *">
+        <Field label="Source">
           <select
             className={inputClass}
             value={values.source}
@@ -211,6 +223,11 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
         <textarea className={inputClass} rows={3} value={values.notes} onChange={(e) => set("notes", e.target.value)} />
       </Field>
       <ErrorText error={error ?? assignees.error} />
+      {existingLeadId && (
+        <Link href={`/leads/${existingLeadId}`} className="inline-block text-sm font-semibold text-brand-700 hover:underline dark:text-brand-300" data-testid="open-existing-lead">
+          Open the existing lead →
+        </Link>
+      )}
       <div className="flex gap-2">
         <button type="submit" className={buttonClass} disabled={saving}>
           {saving ? "Saving…" : submitLabel}

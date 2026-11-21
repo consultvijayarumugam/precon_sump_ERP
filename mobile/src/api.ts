@@ -27,6 +27,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** e.g. existingLeadId when the phone is already an open lead (409). */
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -53,9 +55,9 @@ export async function request<T>(baseUrl: string, path: string, init: RequestOpt
     clearTimeout(timer);
   }
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { message?: string | string[] };
+    const body = (await response.json().catch(() => ({}))) as { message?: string | string[] } & Record<string, unknown>;
     const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
-    throw new ApiError(response.status, message ?? `The server answered with an error (${response.status})`);
+    throw new ApiError(response.status, message ?? `The server answered with an error (${response.status})`, body ?? {});
   }
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
 }

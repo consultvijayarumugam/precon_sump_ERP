@@ -5,6 +5,7 @@ import { useSession } from '../session';
 import { colors, space } from '../theme';
 import { useResource } from '../use-resource';
 import { Button, ErrorBanner, Sheet } from './ui';
+import { leadLabel } from '../lib/phone';
 
 interface SalesTeam {
   members: { id: string; fullName: string; inRotation: boolean }[];
@@ -15,7 +16,7 @@ interface SalesTeam {
  * salesperson, as on the web. The old one loses it, the new one is notified,
  * and the change history records who did it, from whom and to whom.
  */
-export function ReassignSheet({ lead, onClose, onDone }: { lead: { id: string; name: string; assignedTo: { id: string; fullName: string } | null }; onClose: () => void; onDone: (to: string) => void }) {
+export function ReassignSheet({ lead, onClose, onDone }: { lead: { id: string; name: string | null; phone: string; assignedTo: { id: string; fullName: string } | null }; onClose: () => void; onDone: (to: string) => void }) {
   const { api } = useSession();
   const team = useResource<SalesTeam>('/sales-team');
   const [chosen, setChosen] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export function ReassignSheet({ lead, onClose, onDone }: { lead: { id: string; n
 
   return (
     <Sheet
-      title={`Reassign ${lead.name}`}
+      title={`Reassign ${leadLabel(lead)}`}
       onClose={onClose}
       footer={
         <>

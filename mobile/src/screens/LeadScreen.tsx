@@ -17,6 +17,7 @@ import { CALL_OUTCOME_LABELS, CallAttemptRow, CallRow, canBeQualified, DeviceCal
 import { useUser } from '../session';
 import { colors } from '../theme';
 import { useResource } from '../use-resource';
+import { leadLabel } from '../lib/phone';
 
 function Info({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -110,7 +111,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 20 }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.blue]} />}>
         <View style={styles.headRow}>
           <Text testID="lead-name" style={styles.name}>
-            {lead.name}
+            {leadLabel(lead)}
           </Text>
           <StageBadge status={lead.status} stage={lead.stage} />
         </View>
@@ -237,7 +238,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           onDone={(result) => {
             setEditing(false);
             if (result.movedOutOfScope) {
-              ToastAndroid.show(`${lead.name} is no longer in your list`, ToastAndroid.LONG);
+              ToastAndroid.show(`${leadLabel(lead)} is no longer in your list`, ToastAndroid.LONG);
               router.back();
               return;
             }
@@ -249,7 +250,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
       {followUp && (
         <FollowUpSheet
           followUp={followUp}
-          leadName={lead.name}
+          leadName={leadLabel(lead)}
           noun={actions.followUpNoun}
           onClose={() => setFollowUp(null)}
           onDone={(message) => {
@@ -265,7 +266,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           onClose={() => setSalesSheet(null)}
           onDone={(stage) => {
             setSalesSheet(null);
-            ToastAndroid.show(stage.kind === 'WON' ? `${lead.name} won 🎉` : `${lead.name} moved to ${stage.name}`, ToastAndroid.LONG);
+            ToastAndroid.show(stage.kind === 'WON' ? `${leadLabel(lead)} won 🎉` : `${leadLabel(lead)} moved to ${stage.name}`, ToastAndroid.LONG);
             reloadAll();
           }}
         />
@@ -276,7 +277,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           onClose={() => setSalesSheet(null)}
           onDone={(to) => {
             setSalesSheet(null);
-            ToastAndroid.show(`${lead.name} is now with ${to}`, ToastAndroid.LONG);
+            ToastAndroid.show(`${leadLabel(lead)} is now with ${to}`, ToastAndroid.LONG);
             reloadAll();
           }}
         />
@@ -300,7 +301,7 @@ export function LeadScreen({ id }: { id: string }) {
   const lead = useResource<LeadDetail>(`/leads/${id}`);
   return (
     <View style={styles.page}>
-      <Stack.Screen options={{ title: lead.data?.name ?? 'Lead' }} />
+      <Stack.Screen options={{ title: lead.data ? leadLabel(lead.data) : 'Lead' }} />
       {lead.data ? (
         <LeadBody lead={lead.data} id={id} refreshing={lead.refreshing} onRefresh={lead.refresh} reloadLead={lead.reload} />
       ) : lead.error ? (

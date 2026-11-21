@@ -27,11 +27,35 @@ export const emptyLead = (): LeadFormValues => ({ name: '', phone: '', email: ''
 /** Digits only, keeping a leading +: "+91 98765-43210" -> "+919876543210". */
 export const cleanPhone = (phone: string) => phone.trim().replace(/(?!^\+)[^\d]/g, '');
 
+/**
+ * The server's phone rule (normalizeLeadPhone in api/src/intake/intake-parsing.ts):
+ * an Indian mobile however typed -> "+919791006137"; another country with + kept;
+ * other 10-15 digit numbers kept as digits. Null when it can't be a phone number.
+ */
+export function leadPhone(raw: string): string | null {
+  const value = raw.trim();
+  if (!/^[\s(]*\+?[\d\s\-().]+$/.test(value)) return null;
+  let digits = value.replace(/\D/g, '');
+  const international = /^[\s(]*\+/.test(value) || digits.startsWith('00');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (!international && digits.length === 11 && digits.startsWith('0') && /^0[6-9]/.test(digits)) digits = digits.slice(1);
+  if (!international && digits.length === 10 && /^[6-9]/.test(digits)) digits = `91${digits}`;
+  if (digits.length === 12 && /^91[6-9]/.test(digits)) return `+${digits}`;
+  if (international && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  const plain = cleanPhone(value);
+  return /^\+?\d{10,15}$/.test(plain) ? plain : null;
+}
+
+/** Same number? Compares the last 10 digits, so "9791006137" and "+91 97910 06137" match. */
+export const samePhone = (a: string, b: string) => a.replace(/\D/g, '').slice(-10) === b.replace(/\D/g, '').slice(-10);
+
 /** What's wrong, field by field (empty object = fine to save). */
 export function leadFormErrors(v: LeadFormValues): Partial<Record<keyof LeadFormValues, string>> {
   const errors: Partial<Record<keyof LeadFormValues, string>> = {};
-  if (v.name.trim().length < 2) errors.name = 'Enter their name (2 letters or more)';
-  if (!/^\+?\d{10,15}$/.test(cleanPhone(v.phone))) errors.phone = 'Enter a 10-digit mobile number (with or without +91)';
+  // The phone is the only required field; a name is optional (the phone is shown until one is added).
+  if (v.name.trim().length > 120) errors.name = 'Keep the name under 120 letters';
+  if (!v.phone.trim()) errors.phone = 'Enter the phone number: it is the only thing needed';
+  else if (!leadPhone(v.phone)) errors.phone = 'Enter a 10-digit mobile number (with or without +91)';
   if (v.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim())) errors.email = 'That email doesn’t look right';
   if (v.city.trim().length > 80) errors.city = 'Keep the city under 80 letters';
   return errors;
@@ -40,8 +64,8 @@ export function leadFormErrors(v: LeadFormValues): Partial<Record<keyof LeadForm
 /** The body for POST /leads. Microbes have no size. */
 export function newLeadBody(v: LeadFormValues) {
   return {
-    name: v.name.trim(),
-    phone: cleanPhone(v.phone),
+    name: v.name.trim() || undefined,
+    phone: leadPhone(v.phone) ?? cleanPhone(v.phone),
     email: v.email.trim() || undefined,
     city: v.city.trim() || undefined,
     source: v.source,
@@ -58,8 +82,8 @@ export function leadChanges(before: LeadFormValues, after: LeadFormValues): Reco
     const a = after[k].trim();
     if (a !== before[k].trim()) out[k] = a || (clearable ? null : undefined);
   };
-  text('name', false);
-  if (cleanPhone(after.phone) !== cleanPhone(before.phone)) out.phone = cleanPhone(after.phone);
+  text('name', true);
+  if (!samePhone(after.phone, before.phone)) out.phone = leadPhone(after.phone) ?? cleanPhone(after.phone);
   text('email', true);
   text('city', true);
   text('notes', true);

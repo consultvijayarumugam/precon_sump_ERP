@@ -6,17 +6,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LeadFields } from '../components/lead-form';
 import { Button, Chip, ErrorBanner, FieldLabel, inputStyle } from '../components/ui';
 import { emptyLead, leadFormErrors, newLeadBody } from '../lib/lead-form';
+import { ApiError } from '../api';
 import { useSession, useUser } from '../session';
 import { colors } from '../theme';
+import { leadLabel } from '../lib/phone';
 
 type Mode = 'quick' | 'full';
 
 interface QuickAddResult {
   status: 'created' | 'duplicate';
-  lead?: { id: string; name: string };
+  lead?: { id: string; name: string | null; phone: string };
   assignedTo?: { fullName: string } | null;
-  existing?: { id: string; name: string; status: string; assignedTo: { fullName: string } | null };
-  previous?: { id: string; name: string; status: string } | null;
+  existing?: { id: string; name: string | null; phone: string; status: string; assignedTo: { fullName: string } | null };
+  previous?: { id: string; name: string | null; phone: string; status: string } | null;
   addedToday: number;
 }
 
@@ -46,6 +48,8 @@ export function NewLeadScreen() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The full form's number is already an open lead (409): offer to open that one.
+  const [existingId, setExistingId] = useState<string | null>(null);
 
   async function quickAdd() {
     if (!phone.trim()) return;
@@ -71,12 +75,15 @@ export function NewLeadScreen() {
     if (Object.keys(leadFormErrors(values)).length > 0) return;
     setBusy(true);
     setError(null);
+    setExistingId(null);
     try {
-      const lead = await api<{ id: string; name: string }>('/leads', { method: 'POST', body: newLeadBody(values) });
-      ToastAndroid.show(`${lead.name} added to your leads`, ToastAndroid.SHORT);
+      const lead = await api<{ id: string; name: string | null; phone: string }>('/leads', { method: 'POST', body: newLeadBody(values) });
+      ToastAndroid.show(`${leadLabel(lead)} added to your leads`, ToastAndroid.SHORT);
       router.replace(`/lead/${lead.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the lead.');
+      const id = err instanceof ApiError ? err.details.existingLeadId : null;
+      setExistingId(typeof id === 'string' ? id : null);
       setBusy(false);
     }
   }
@@ -116,14 +123,14 @@ export function NewLeadScreen() {
                 <Ionicons name={result.assignedTo ? 'checkmark-circle' : 'alert-circle'} size={22} color={result.assignedTo ? colors.green : colors.amber} />
                 <View style={styles.flex}>
                   <Text style={styles.resultTitle}>
-                    {result.lead.name} added{result.assignedTo ? `, assigned to ${result.assignedTo.fullName}` : ''}
+                    {leadLabel(result.lead)} added{result.assignedTo ? `, assigned to ${result.assignedTo.fullName}` : ''}
                   </Text>
                   {!result.assignedTo && (
                     <Text testID="qa-unassigned" style={styles.unassigned}>
                       Not assigned: no telecaller is taking leads right now. An admin can switch one on in Lead assignment (web), then assign this lead.
                     </Text>
                   )}
-                  {result.previous && <Text style={styles.resultBody}>Past customer: earlier lead {result.previous.name} ({result.previous.status.toLowerCase()}).</Text>}
+                  {result.previous && <Text style={styles.resultBody}>Past customer: earlier lead {leadLabel(result.previous)} ({result.previous.status.toLowerCase()}).</Text>}
                   <Text style={styles.resultBody}>You&apos;ve added {result.addedToday} today.</Text>
                 </View>
               </View>
@@ -132,7 +139,7 @@ export function NewLeadScreen() {
               <View style={[styles.result, styles.resultWarn]} accessibilityLiveRegion="polite">
                 <Ionicons name="alert-circle" size={22} color={colors.amber} />
                 <View style={styles.flex}>
-                  <Text style={styles.resultTitle}>Already an open lead: {result.existing.name}</Text>
+                  <Text style={styles.resultTitle}>Already an open lead: {leadLabel(result.existing)}</Text>
                   <Text style={styles.resultBody}>
                     {result.existing.assignedTo ? `With ${result.existing.assignedTo.fullName}. ` : 'Not assigned to anyone yet. '}Nothing new was added.
                   </Text>
@@ -143,7 +150,7 @@ export function NewLeadScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.intro}>The lead is added to your leads.</Text>
+            <Text style={styles.intro}>Only the phone number is required; add anything else you know. The lead is added to your leads.</Text>
             <LeadFields values={values} onChange={setValues} errors={tried ? leadFormErrors(values) : {}} withSource />
           </>
         )}
@@ -151,6 +158,9 @@ export function NewLeadScreen() {
       {/* Pinned, so the button is always within reach however long the form is. */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <ErrorBanner message={error} />
+        {mode === 'full' && existingId && (
+          <Button testID="open-existing" label="Open that lead" tone="secondary" icon="open-outline" onPress={() => router.push(`/lead/${existingId}`)} style={styles.gapBottom} />
+        )}
         {mode === 'quick' ? (
           <Button testID="qa-add" label="Add lead" icon="flash" onPress={quickAdd} disabled={!phone.trim()} busy={busy} />
         ) : (
@@ -171,6 +181,7 @@ const styles = StyleSheet.create({
   gap: { marginTop: 16 },
   footer: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 16, paddingTop: 10 },
   gapSmall: { marginTop: 10 },
+  gapBottom: { marginBottom: 8 },
   result: { flexDirection: 'row', gap: 10, borderRadius: 12, borderWidth: 1, padding: 14, marginTop: 16 },
   resultGood: { backgroundColor: colors.greenLight, borderColor: colors.greenLine },
   resultWarn: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },

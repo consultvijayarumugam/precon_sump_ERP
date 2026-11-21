@@ -1,3 +1,4 @@
+import { formatPhone } from '../crm/lead-label.js';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { parse as parseCsv } from 'csv-parse/sync';
 import ExcelJS from 'exceljs';
@@ -7,7 +8,8 @@ import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SUMP_SIZES_LITRES } from '../stock/product-catalog.js';
 import {
-  normalizePhone,
+  normalizeLeadPhone,
+  PHONE_HELP,
   parseProduct,
   parseSource,
   parseSumpSize,
@@ -39,8 +41,8 @@ const HEADER_ALIASES: Record<string, Column> = {
   assignedsalesperson: 'salesperson', salesperson: 'salesperson', assignedto: 'salesperson', owner: 'salesperson',
   notes: 'notes', note: 'notes', remarks: 'notes', comments: 'notes',
 };
-/** A Meta export with just name and phone is enough; the telecaller qualifies the rest. */
-const REQUIRED: Column[] = ['name', 'phone'];
+/** Only the phone is required (a list of WhatsApp numbers is enough); the telecaller fills in the rest. */
+const REQUIRED: Column[] = ['phone'];
 
 /** Rows the template ships with as examples; refused if uploaded unchanged. */
 const EXAMPLE_PREFIX = 'example -';
@@ -107,8 +109,8 @@ export class LeadImportService {
     help.getColumn(2).width = 90;
     [
       ['Column', 'What to enter'],
-      ['name *', 'Customer or company name (at least 2 characters).'],
-      ['phone *', '10-15 digits; spaces, dashes and +91 are fine. A phone that already exists as a lead is skipped.'],
+      ['name', 'Optional. Customer or company name; leave blank if you only have the number.'],
+      ['phone *', 'The only required column. A 10-digit mobile, with or without +91 (spaces and dashes are fine). A phone that already exists as a lead is skipped.'],
       ['city', 'Optional.'],
       ['product', 'Optional: Sump or Microbes. Leave blank if not known yet.'],
       ['sump size', `Optional, for Sump only. One of: ${VALID_SIZES_TEXT} (litres).`],
@@ -194,11 +196,10 @@ export class LeadImportService {
         report.failed.push({ row: rowNumber, name, errors: ["This is the template's example row; delete it before uploading"] });
         continue;
       }
-      if (name.length < 2) errors.push('Name is missing or too short');
       if (name.length > 120) errors.push('Name is longer than 120 characters');
 
-      const phone = normalizePhone(get('phone'));
-      if (!phone) errors.push(`Phone "${get('phone')}" must be 10-15 digits`);
+      const phone = normalizeLeadPhone(get('phone'));
+      if (!phone) errors.push(get('phone') ? `Phone "${get('phone')}" isn't a valid number. ${PHONE_HELP}` : 'Phone is missing');
 
       const size = parseSumpSize(get('size'));
       if (size === null) errors.push(`Sump size "${get('size')}" must be one of ${VALID_SIZES_TEXT} litres`);
@@ -235,13 +236,13 @@ export class LeadImportService {
       const key = phoneMatchKey(phone);
       const earlier = seenInFile.get(key);
       if (earlier) {
-        report.duplicates.push({ row: rowNumber, name, phone, reason: `Same phone as row ${earlier} in this file` });
+        report.duplicates.push({ row: rowNumber, name: name || formatPhone(phone), phone, reason: `Same phone as row ${earlier} in this file` });
         continue;
       }
       seenInFile.set(key, rowNumber);
 
       const result = await this.intake.create({
-        name,
+        name: name || null,
         phone,
         city: city || null,
         source,
@@ -257,7 +258,7 @@ export class LeadImportService {
         report.created += 1;
         report.createdRows.push({
           row: rowNumber,
-          name,
+          name: name || formatPhone(phone),
           leadId: result.leadId,
           assignedTo: result.assignedTo?.fullName ?? null,
           autoAssigned: result.autoAssigned,
@@ -272,7 +273,7 @@ export class LeadImportService {
           report.unassigned += 1;
         }
       } else {
-        report.duplicates.push({ row: rowNumber, name, phone, reason: `Phone already exists (lead "${result.existingName}")` });
+        report.duplicates.push({ row: rowNumber, name: name || formatPhone(phone), phone, reason: `Phone already exists (lead "${result.existingName}")` });
       }
     }
     report.assignments = [...perAssignee.values()].sort((a, b) => b.count - a.count || a.fullName.localeCompare(b.fullName));
