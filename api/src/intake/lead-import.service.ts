@@ -18,7 +18,7 @@ import {
   VALID_SOURCES_TEXT,
 } from './intake-parsing.js';
 import type { LeadSource } from '../generated/prisma/client.js';
-import { LeadAssignmentService } from './lead-assignment.service.js';
+import { LeadAssignmentService, ROTATIONS } from './lead-assignment.service.js';
 import { LeadIntakeService } from './lead-intake.service.js';
 
 export const MAX_IMPORT_ROWS = 2000;
@@ -65,7 +65,15 @@ export interface ImportReport {
 export interface ImportOptions {
   /** Source for rows that don't say (blank or no source column). Defaults to Manual. */
   defaultSource?: LeadSource;
+  /**
+   * The telecallers ticked on the Import page for this upload; blank rows go
+   * round-robin among only them, whatever their global on/off switch says.
+   * Undefined = the global round-robin. Empty = refused (nobody to receive).
+   */
+  telecallerIds?: string[];
 }
+
+export const NO_TELECALLER_TICKED = 'Select at least one telecaller to receive these leads.';
 
 @Injectable()
 export class LeadImportService {
@@ -133,12 +141,34 @@ export class LeadImportService {
 
   // --- Import --------------------------------------------------------------------
 
+  /** The Import page checklist: everyone who can receive leads, ticked if their round-robin switch is on. */
+  async telecallers() {
+    const members = await this.assignment.members(ROTATIONS.telecallers);
+    return members.map((m) => ({ id: m.id, fullName: m.fullName, inRoundRobin: m.autoAssignEnabled }));
+  }
+
+  /** The rotation for one upload: the global one, or exactly the ticked telecallers (checked). */
+  private async uploadRotation(telecallerIds: string[] | undefined): Promise<{ rotation: string[]; chosen: boolean }> {
+    if (telecallerIds === undefined) return { rotation: await this.assignment.rotationIds(), chosen: false };
+    const ids = [...new Set(telecallerIds)];
+    if (ids.length === 0) throw new BadRequestException(NO_TELECALLER_TICKED);
+    const members = new Set((await this.assignment.members(ROTATIONS.telecallers)).map((m) => m.id));
+    if (ids.some((id) => !members.has(id))) {
+      throw new BadRequestException(
+        "One of the ticked people can't receive leads (not an active telecaller any more). Reload the page and tick again.",
+      );
+    }
+    return { rotation: ids, chosen: true };
+  }
+
   async import(
     user: AuthenticatedUser,
     file: { originalname: string; buffer: Buffer; size: number } | undefined,
     options: ImportOptions = {},
   ): Promise<ImportReport> {
     if (!file || file.size === 0) throw new BadRequestException('Choose a .csv or .xlsx file to upload.');
+    // Checked before reading the file, so an empty checklist imports nothing.
+    const { rotation, chosen } = await this.uploadRotation(options.telecallerIds);
     if (file.size > MAX_IMPORT_BYTES) throw new BadRequestException('That file is larger than 2 MB. Split it into smaller files.');
 
     const table = await this.readTable(file.originalname, file.buffer);
@@ -165,8 +195,7 @@ export class LeadImportService {
           ),
         )
       : new Map<string, string>();
-    // Read the rotation once; each blank-assignee row then takes the next turn.
-    const rotation = await this.assignment.rotationIds();
+    // The rotation was read once above; each blank-assignee row then takes the next turn.
     const defaultSource = options.defaultSource ?? 'MANUAL';
 
     const report: ImportReport = {
@@ -251,6 +280,7 @@ export class LeadImportService {
         notes: notes || null,
         assignedToId,
         rotation,
+        rotationChosen: chosen,
         createdById: user.id,
         sourceDetail: `Import: ${file.originalname}`,
       });

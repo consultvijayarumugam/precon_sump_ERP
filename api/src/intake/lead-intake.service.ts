@@ -25,6 +25,11 @@ export interface IntakeLead {
    * When given and no assignee was chosen, the next one in turn gets the lead.
    */
   rotation?: string[];
+  /**
+   * The rotation was picked by hand for this upload (import checklist): use
+   * exactly those people, even someone switched off in the global round-robin.
+   */
+  rotationChosen?: boolean;
   createdById: string;
   sourceDetail: string;
   externalRef?: string | null;
@@ -108,7 +113,7 @@ export class LeadIntakeService {
         const raced = await this.findDuplicate(input.phone, input.externalRef, input.duplicates, tx);
         if (raced) throw new DuplicateFound(raced);
         // Round-robin only when nobody was chosen; the pick and the lead commit together.
-        const auto = chosenId || !input.rotation ? null : await this.assignment.pickNext(tx, input.rotation);
+        const auto = chosenId || !input.rotation ? null : await this.assignment.pickNext(tx, input.rotation, { chosen: input.rotationChosen });
         const lead = await tx.lead.create({
           data: {
             name: input.name?.trim() || null,

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
-import { PERMISSIONS } from '../access-control/permission-catalog.js';
+import { PERMISSIONS, ROLES } from '../access-control/permission-catalog.js';
 import { recordActivity } from '../crm/lead-history.js';
 import { LeadAssignmentService, ROTATIONS } from '../intake/lead-assignment.service.js';
 import bcrypt from 'bcryptjs';
@@ -467,6 +467,51 @@ export class UsersService {
       revoked: overrides(PermissionEffect.REVOKE),
       effective: await this.accessControl.getEffectiveAccess(user.id),
     };
+  }
+
+  /**
+   * Who can import leads (leads.import), for the Permissions & tags page: every
+   * active non-admin user, whether they can, and whether that comes from their
+   * role's preset or a grant just for them. Admins always can, so aren't listed.
+   */
+  async importAccess() {
+    const users = await this.prisma.user.findMany({
+      where: { isActive: true, role: { key: { not: ROLES.ADMIN } } },
+      orderBy: [{ role: { name: 'asc' } }, { fullName: 'asc' }],
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: { select: { key: true, name: true, permissions: { select: { permission: { select: { key: true } } } } } },
+      },
+    });
+    const result = [];
+    for (const u of users) {
+      const { permissions } = await this.accessControl.getEffectiveAccess(u.id);
+      result.push({
+        id: u.id,
+        fullName: u.fullName,
+        email: u.email,
+        role: { key: u.role.key, name: u.role.name },
+        canImport: permissions.includes(PERMISSIONS.LEADS_IMPORT),
+        fromRole: u.role.permissions.some((p) => p.permission.key === PERMISSIONS.LEADS_IMPORT),
+      });
+    }
+    return result;
+  }
+
+  /** Give or take away leads.import for one user, keeping their other custom tags as they are. */
+  async setImportAccess(actor: AuthenticatedUser, userId: string, enabled: boolean) {
+    const summary = await this.getPermissionSummary(userId);
+    if (summary.role === ROLES.ADMIN) throw new BadRequestException('Admins can always import leads.');
+    const tag: string = PERMISSIONS.LEADS_IMPORT;
+    const inRole = summary.rolePermissions.includes(tag);
+    const grant = summary.granted.filter((k) => k !== tag);
+    const revoke = summary.revoked.filter((k) => k !== tag);
+    if (enabled && !inRole) grant.push(tag);
+    if (!enabled && inRole) revoke.push(tag);
+    await this.setPermissionOverrides(actor.id, userId, { grant, revoke });
+    return (await this.importAccess()).find((u) => u.id === userId) ?? { id: userId, canImport: enabled };
   }
 
   /** Replaces all of a user's grant/revoke overrides in one go. */

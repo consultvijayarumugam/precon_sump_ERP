@@ -7,7 +7,7 @@ import {
 import type { AuthenticatedUser } from '../access-control/authenticated-user.js';
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { SetPermissionOverridesDto } from './dto/set-permission-overrides.dto.js';
-import { CreateUserDto, DeactivateUserDto, UpdateUserDto } from './dto/user.dto.js';
+import { CreateUserDto, DeactivateUserDto, SetImportAccessDto, UpdateUserDto } from './dto/user.dto.js';
 import { UsersService } from './users.service.js';
 
 @ApiTags('users')
@@ -28,6 +28,27 @@ export class UsersController {
   @ApiOperation({ summary: "Create a user with a role; their tags are that role's preset (needs users.manage)" })
   create(@CurrentUser() actingUser: AuthenticatedUser, @Body() dto: CreateUserDto) {
     return this.users.create(actingUser, dto);
+  }
+
+  @Get('import-access')
+  @RequirePermissions(PERMISSIONS.PERMISSIONS_READ)
+  @ApiOperation({ summary: 'Who can import leads (leads.import): active non-admin users, from their role or granted (needs permissions.read)' })
+  importAccess() {
+    return this.users.importAccess();
+  }
+
+  @Put(':id/import-access')
+  @RequirePermissions(PERMISSIONS.PERMISSIONS_ASSIGN)
+  @ApiOperation({
+    summary: 'Let one user import leads or not: {enabled} (needs permissions.assign)',
+    description: "Grants or revokes leads.import for that user only; their other custom tags stay. Admins always have it.",
+  })
+  setImportAccess(
+    @CurrentUser() actingUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetImportAccessDto,
+  ) {
+    return this.users.setImportAccess(actingUser, id, dto.enabled);
   }
 
   @Get('history')

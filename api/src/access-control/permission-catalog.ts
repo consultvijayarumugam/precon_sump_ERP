@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   LEADS_READ_ALL: 'leads.read_all',
   LEADS_WRITE: 'leads.write',
   LEADS_QUICK_ADD: 'leads.quick_add',
+  LEADS_IMPORT: 'leads.import',
   LEADS_QUALIFY: 'leads.qualify',
   LEADS_ASSIGN: 'leads.assign',
   LEADS_AUDIT: 'leads.audit',
@@ -132,6 +133,12 @@ export const PERMISSION_DEFINITIONS: {
     module: 'crm',
     description:
       'Quick add WhatsApp enquiries (phone, optional name and first message); they go round-robin to the telecallers. Nothing else: no editing, importing or assigning leads',
+  },
+  {
+    key: PERMISSIONS.LEADS_IMPORT,
+    module: 'crm',
+    description:
+      'Import leads from a spreadsheet (Import leads page) and choose which telecallers share that upload. Admin and sales have it; grant it to a telecaller to let them import',
   },
   {
     key: PERMISSIONS.LEADS_QUALIFY,
@@ -338,6 +345,7 @@ export const ROLE_DEFINITIONS: {
       // CRM: own leads (read/write), won, follow-ups, calendar; receives qualified leads
       PERMISSIONS.LEADS_READ,
       PERMISSIONS.LEADS_WRITE,
+      PERMISSIONS.LEADS_IMPORT,
       PERMISSIONS.LEADS_RECEIVE_QUALIFIED,
       PERMISSIONS.REPORTS_VIEW,
       PERMISSIONS.FOLLOWUPS_WRITE,

@@ -144,6 +144,7 @@ Admins don't pick individual tags. They pick a **role** on **Admin → Users**, 
 - **Service for supervisors:** supervisors get `service.read_all` because they run the service team.
 - **Sales and service:** service jobs aren't in the sales preset.
 - **Per-user overrides:** `PUT /users/:id/permissions` still exists for exceptions, and "View tags" on the Users screen shows anyone's effective tags.
+- **Who can import leads:** `leads.import` (admin and sales by default, not telecallers). Admin ticks individual telecallers under **Permissions & tags → Who can import leads**. The checklist on the Import page only affects that upload; the automatic paths (Meta webhook, public API, quick add) keep using each telecaller's global round-robin switch.
 
 The seed also adds 10 sample leads. Suresh has 5, Priya has 4, and 1 is unassigned. They cover every source, product and status. There are 14 follow-ups, dated relative to the day you seed, so some are always overdue, some due today and some upcoming. The seed adds sample leads only when the leads table is empty. Run `npm run db:reset` to start over.
 
@@ -616,6 +617,8 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | DELETE | `/users/:id`             | `users.manage`         | Permanent delete, only for an account with no data at all (no leads, calls, visits, follow-ups, history, orders...). 409 otherwise: deactivate instead. Not yourself, not the last active admin |
 | GET    | `/users/:id/permissions` | `permissions.read`     | Role tags, overrides, effective tags |
 | PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. Revoking `users.manage` / `permissions.assign` from the last active admin is refused. |
+| GET    | `/users/import-access`   | `permissions.read`     | Who can import leads (`leads.import`): active non-admin users with `canImport` and `fromRole` (role preset vs granted to them) |
+| PUT    | `/users/:id/import-access` | `permissions.assign` | `{enabled}`: grant or revoke `leads.import` for that one user, keeping their other overrides. Admins always have it (400) |
 | GET    | `/roles`                 | `permissions.read`     | Roles with default tags and user counts |
 | GET    | `/permissions`           | `permissions.read`     | Full tag catalog |
 | GET    | `/leads`                 | `leads.read`           | List leads in your scope. Filters: `status`, `source`, `productInterest`, `assignedToId`, `search` (name/phone/city), `wonFrom` / `wonTo` (YYYY-MM-DD, won-on date, inclusive), `page`, `pageSize`. `status=WON` = closed/won view, newest win first |
@@ -626,8 +629,9 @@ WhatsApp's free `wa.me` links can only carry text, so files go out as **links in
 | PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline with `{stageId}` (an active stage; `{status}` still works and picks that phase's stage). Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
 | POST   | `/leads/quick-add`       | `leads.quick_add`      | `{phone, name?, note?}`. Phone normalised to +91. Created: `{status:"created", lead, assignedTo, previous, addedToday}` (round-robin, source WhatsApp). Already an open lead: `{status:"duplicate", existing, addedToday}`, nothing created. 400 if it isn't a mobile number |
 | GET    | `/leads/quick-add/today` | `leads.quick_add`      | `{addedByYou, addedByEveryone, nextUp, telecallers:[{fullName, inRotation, leadsToday}]}` |
-| GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
-| POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx; only a phone column is required), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
+| GET    | `/leads/import/telecallers` | `leads.import`       | The checklist for an upload: telecallers who can receive leads, `inRoundRobin` = their global switch (ticked by default) |
+| GET    | `/leads/import/template` | `leads.import`         | `format=xlsx` (default) or `csv`: import template download |
+| POST   | `/leads/import`          | `leads.import`         | Multipart `file` (.csv/.xlsx; only a phone column is required), optional `defaultSource`, optional `telecallerIds` (comma-separated: blank rows go round-robin among only these, for this upload; empty → 400 "Select at least one telecaller to receive these leads."; left out → the global round-robin) → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | POST   | `/leads/:id/calls`       | `followups.write`      | Log a call: `{outcome, note?, nextCallbackAt?, calledAt?, incoming?}` (`calledAt`: when it happened, up to 7 days back, for an incoming call found in the call log). Completes the open callback; New → Contacted; NOT_INTERESTED / WRONG_NUMBER → Lost |
 | GET    | `/leads/:id/calls`       | `leads.read`           | The lead's call history, newest first |
 | GET    | `/leads/:id/history`     | `leads.audit`          | Full change history (admin): `[{type, message, changes[{field, label, from, to}], createdAt, user}]`, newest first |
@@ -776,7 +780,7 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/leads/quick-add` | `leads.quick_add` | Log WhatsApp enquiries fast: phone (+ optional name, first message), Enter, next. Shows who each went to, a WhatsApp button, today's count and split |
 | `/leads/new` | `leads.write` | Create a lead. The salesperson picker appears only with `leads.assign` |
 | `/leads/:id` | `leads.read` | Details, edit, pipeline buttons, follow-ups (schedule and record outcome) |
-| `/leads/import` | `leads.write` | Download the template or the 30-lead sample, upload .csv/.xlsx (Meta exports as is), see created, duplicate and failed rows and who got how many |
+| `/leads/import` | `leads.import` | Download the template or the 30-lead sample, tick the telecallers who share this upload (untick anyone on leave; their round-robin switch is unchanged), upload .csv/.xlsx (Meta exports as is), see created, duplicate and failed rows and who got how many |
 | `/leads/won` | `leads.read` | Closed/won leads with win date, with date presets / custom range and a count |
 | `/follow-ups` | `leads.read` | Overdue, upcoming and completed tabs, with date presets / custom range and a count |
 | `/calendar` | `leads.read` | Month calendar of *your* follow-ups. Users with `leads.read_all` can switch to everyone's |
@@ -1147,6 +1151,8 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | DELETE | `/users/:id`             | `users.manage`         | Permanent delete, only for an account with no data at all (no leads, calls, visits, follow-ups, history, orders...). 409 otherwise: deactivate instead. Not yourself, not the last active admin |
 | GET    | `/users/:id/permissions` | `permissions.read`     | Role tags, overrides, effective tags |
 | PUT    | `/users/:id/permissions` | `permissions.assign`   | Replace overrides: `{grant: [...], revoke: [...]}`. You can't change your own. Revoking `users.manage` / `permissions.assign` from the last active admin is refused. |
+| GET    | `/users/import-access`   | `permissions.read`     | Who can import leads (`leads.import`): active non-admin users with `canImport` and `fromRole` (role preset vs granted to them) |
+| PUT    | `/users/:id/import-access` | `permissions.assign` | `{enabled}`: grant or revoke `leads.import` for that one user, keeping their other overrides. Admins always have it (400) |
 | GET    | `/roles`                 | `permissions.read`     | Roles with default tags and user counts |
 | GET    | `/permissions`           | `permissions.read`     | Full tag catalog |
 | GET    | `/leads`                 | `leads.read`           | List leads in your scope. Filters: `status`, `source`, `productInterest`, `assignedToId`, `search` (name/phone/city), `page`, `pageSize`. `status=WON` = closed/won view, newest win first |
@@ -1155,8 +1161,9 @@ curl -X POST http://localhost:4000/api/v1/public/leads \
 | GET    | `/leads/:id`             | `leads.read`           | One lead with all its follow-ups |
 | POST   | `/leads`                 | `leads.write`          | Create: `{phone, name?, source? (default MANUAL), productInterest? (SUMP|MICROBES, null = not known yet), sumpSizeLitres?, email?, city?, status?, notes?, assignedToId?}`. **Phone is the only required field**; an Indian mobile is stored as `+91XXXXXXXXXX` however typed. 409 `{message, existingLeadId}` if the number (last 10 digits) is already an open lead. `assignedToId` for someone else needs `leads.assign` |
 | PATCH  | `/leads/:id`             | `leads.write` or `leads.qualify` | Edit any field or move it in the pipeline. Changing `assignedToId` needs `leads.assign`. With only `leads.qualify`: your own leads only, and changing `phone` or `source` gets 403 |
-| GET    | `/leads/import/template` | `leads.write`          | `format=xlsx` (default) or `csv`: import template download |
-| POST   | `/leads/import`          | `leads.write`          | Multipart `file` (.csv/.xlsx; only a phone column is required), optional `defaultSource` → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
+| GET    | `/leads/import/telecallers` | `leads.import`       | The checklist for an upload: telecallers who can receive leads, `inRoundRobin` = their global switch (ticked by default) |
+| GET    | `/leads/import/template` | `leads.import`         | `format=xlsx` (default) or `csv`: import template download |
+| POST   | `/leads/import`          | `leads.import`         | Multipart `file` (.csv/.xlsx; only a phone column is required), optional `defaultSource`, optional `telecallerIds` (comma-separated: blank rows go round-robin among only these, for this upload; empty → 400 "Select at least one telecaller to receive these leads."; left out → the global round-robin) → `{totalRows, created, createdRows[{…, assignedTo}], duplicates[], failed[{row, errors}], ignoredColumns, assignments[{fullName, count}], autoAssigned, unassigned}`. 400 and nothing imported for a bad file |
 | GET    | `/lead-assignment`       | `leads.assign`         | `date=YYYY-MM-DD` (default today): `{total, autoAssigned, unassigned, spread, nextUp, members[{fullName, autoAssignEnabled, leads, autoAssignedLeads, lastAutoAssignedAt}], others[]}` |
 | PATCH  | `/lead-assignment/members/:userId` | `leads.assign` | `{enabled}`: switch a telecaller in or out of the round-robin (they must hold `leads.auto_assign`) |
 | GET    | `/api-keys`              | `apikeys.manage`       | Keys with prefix, status, last used (never the key or hash) |
@@ -1261,7 +1268,7 @@ Interactive docs: `http://localhost:4000/api/docs`.
 | `/leads` | `leads.read` | Filterable lead list. Filters live in the URL, e.g. `/leads?status=QUOTED` |
 | `/leads/new` | `leads.write` | Create a lead. The salesperson picker appears only with `leads.assign` |
 | `/leads/:id` | `leads.read` | Details, edit, pipeline buttons, follow-ups (schedule and record outcome) |
-| `/leads/import` | `leads.write` | Download the template or the 30-lead sample, upload .csv/.xlsx (Meta exports as is), see created, duplicate and failed rows and who got how many |
+| `/leads/import` | `leads.import` | Download the template or the 30-lead sample, tick the telecallers who share this upload (untick anyone on leave; their round-robin switch is unchanged), upload .csv/.xlsx (Meta exports as is), see created, duplicate and failed rows and who got how many |
 | `/leads/won` | `leads.read` | Closed/won leads with win date |
 | `/follow-ups` | `leads.read` | Overdue, upcoming and completed tabs |
 | `/calendar` | `leads.read` | Month calendar of *your* follow-ups. Users with `leads.read_all` can switch to everyone's |

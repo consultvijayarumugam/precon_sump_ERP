@@ -21,7 +21,7 @@ import {
 import { apiDownload, apiUpload } from "@/lib/api";
 import { formatLitres, LeadSource, SOURCE_LABELS, SUMP_SIZES_LITRES } from "@/lib/crm";
 import { TAGS } from "@/lib/tags";
-import { useAction } from "@/lib/use-api";
+import { useAction, useApi } from "@/lib/use-api";
 
 interface ImportReport {
   fileName: string;
@@ -35,6 +35,15 @@ interface ImportReport {
   autoAssigned: number;
   unassigned: number;
 }
+
+interface Telecaller {
+  id: string;
+  fullName: string;
+  /** Their global round-robin switch (Admin → Lead assignment). */
+  inRoundRobin: boolean;
+}
+
+const NO_TELECALLER_TICKED = "Select at least one telecaller to receive these leads.";
 
 /** Sources a whole file can default to (API is only for the public API). */
 const DEFAULT_SOURCES: LeadSource[] = ["META", "WHATSAPP", "MANUAL", "WEBSITE", "REFERRAL", "OTHER"];
@@ -61,13 +70,35 @@ export default function ImportLeadsPage() {
   const [defaultSource, setDefaultSource] = useState<LeadSource>("META");
   const upload = useAction();
   const download = useAction();
-  if (!can(TAGS.LEADS_WRITE)) return <NoAccess tag={TAGS.LEADS_WRITE} />;
+  const allowed = can(TAGS.LEADS_IMPORT);
+  const telecallers = useApi<Telecaller[]>(allowed ? "/leads/import/telecallers" : null);
+  // For this upload only: who shares the leads. Everyone switched on in the round-robin is ticked
+  // unless the importer changed it here (`changed` holds only their ticks/unticks).
+  const [changed, setChanged] = useState<Record<string, boolean>>({});
+  const [checklistError, setChecklistError] = useState<string | null>(null);
+  if (!allowed) return <NoAccess tag={TAGS.LEADS_IMPORT} />;
+
+  const ticked = telecallers.data
+    ? new Set(telecallers.data.filter((t) => changed[t.id] ?? t.inRoundRobin).map((t) => t.id))
+    : null;
+
+  function toggle(id: string) {
+    setChecklistError(null);
+    setChanged((current) => ({ ...current, [id]: !ticked?.has(id) }));
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!file) return;
+    if (!file || !ticked) return;
+    // With no telecallers at all there's nothing to tick; the leads are imported unassigned.
+    const noTelecallers = telecallers.data?.length === 0;
+    if (ticked.size === 0 && !noTelecallers) {
+      setChecklistError(NO_TELECALLER_TICKED);
+      return;
+    }
     setReport(null);
-    await upload.run(async () => setReport(await apiUpload<ImportReport>("/leads/import", file, { defaultSource })));
+    const fields: Record<string, string> = noTelecallers ? { defaultSource } : { defaultSource, telecallerIds: [...ticked].join(",") };
+    await upload.run(async () => setReport(await apiUpload<ImportReport>("/leads/import", file, fields)));
   }
 
   return (
@@ -139,17 +170,57 @@ export default function ImportLeadsPage() {
             </select>
           </Field>
         </div>
-        <p className="text-xs text-neutral-500">
-          Rows with no assigned salesperson go to the telecallers in turn (A, B, C, A, B, C…).
-          {!can(TAGS.LEADS_ASSIGN) && " To keep a row yourself, put your own email in that column."}
-        </p>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Telecallers receiving these leads</legend>
+          <p className="text-xs text-neutral-500">
+            Rows with no assigned salesperson go to the ticked telecallers in turn (A, B, C, A, B, C…). Untick anyone on leave; this
+            is for this upload only and doesn&apos;t change their round-robin switch.
+            {!can(TAGS.LEADS_ASSIGN) && " To keep a row yourself, put your own email in that column."}
+          </p>
+          {telecallers.error && <p className="text-sm font-medium text-red-600">{telecallers.error}</p>}
+          {!telecallers.data && !telecallers.error && <p className="text-sm text-neutral-500">Loading telecallers…</p>}
+          {telecallers.data && telecallers.data.length === 0 && (
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              There are no telecallers who can receive leads. Rows without a salesperson will be left unassigned.
+            </p>
+          )}
+          {telecallers.data && telecallers.data.length > 0 && ticked && (
+            <ul className="flex flex-wrap gap-2">
+              {telecallers.data.map((t) => (
+                <li key={t.id}>
+                  <label
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                      ticked.has(t.id)
+                        ? "border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/40"
+                        : "border-neutral-200 text-neutral-500 dark:border-neutral-700"
+                    }`}
+                  >
+                    <input type="checkbox" className="size-4" checked={ticked.has(t.id)} onChange={() => toggle(t.id)} />
+                    <span className="font-medium">{t.fullName}</span>
+                    {!t.inRoundRobin && <span className="text-xs text-neutral-500">(off in round-robin)</span>}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {telecallers.data && telecallers.data.length > 0 && ticked && (
+            <p className="text-xs text-neutral-500" aria-live="polite">
+              {ticked.size} of {telecallers.data.length} ticked
+            </p>
+          )}
+          {checklistError && (
+            <p className="text-sm font-medium text-red-600" role="alert">
+              {checklistError}
+            </p>
+          )}
+        </fieldset>
         {upload.error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200" role="alert">
             <p className="font-semibold">Nothing was imported.</p>
             <p>{upload.error}</p>
           </div>
         )}
-        <button type="submit" className={buttonClass} disabled={!file || upload.busy}>
+        <button type="submit" className={buttonClass} disabled={!file || upload.busy || !ticked}>
           {upload.busy ? "Importing…" : "Import leads"}
         </button>
       </form>
@@ -171,8 +242,7 @@ export default function ImportLeadsPage() {
               </h3>
               {report.assignments.length === 0 && (
                 <p className="text-sm text-amber-800 dark:text-amber-300">
-                  Nobody: no telecaller is switched on for round-robin, so the leads are unassigned. Switch telecallers on under
-                  Admin → Lead assignment.
+                  Nobody: there was no telecaller to receive them, so the leads are unassigned.
                 </p>
               )}
               <ul className="space-y-2">

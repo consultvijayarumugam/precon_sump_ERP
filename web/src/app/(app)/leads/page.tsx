@@ -84,9 +84,9 @@ function LeadsView() {
       <PageHeader
         title={can(TAGS.LEADS_READ_ALL) ? "All leads" : "My leads"}
         action={
-          (can(TAGS.LEADS_WRITE) || can(TAGS.LEADS_QUICK_ADD)) && (
+          (can(TAGS.LEADS_WRITE) || can(TAGS.LEADS_QUICK_ADD) || can(TAGS.LEADS_IMPORT)) && (
             <div className="flex flex-wrap gap-2">
-              {can(TAGS.LEADS_WRITE) && (
+              {can(TAGS.LEADS_IMPORT) && (
                 <Link href="/leads/import" className={secondaryButtonClass}>
                   <Upload className="size-4" aria-hidden /> Import
                 </Link>

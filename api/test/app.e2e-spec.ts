@@ -1019,6 +1019,83 @@ describe('Auth and RBAC (e2e)', () => {
         expect((await db.lead.findUniqueOrThrow({ where: { id: lead.id } })).autoAssigned).toBe(false);
       });
 
+      it('the checklist: only ticked telecallers share the upload, even one switched off; nobody ticked is refused; switches are untouched', async () => {
+        const checklist = (await http().get('/api/v1/leads/import/telecallers').set(as(admin)).expect(200)).body as
+          { id: string; fullName: string; inRoundRobin: boolean }[];
+        expect(checklist.map((t) => t.fullName).sort()).toEqual(['Arjun Telecaller', 'Kavya Telecaller', 'Tara Telecaller']);
+        const [first, second, onLeave] = checklist;
+        // The third is on leave for this upload only; the second is switched off globally but ticked anyway.
+        await http().patch(`/api/v1/lead-assignment/members/${second.id}`).set(as(admin)).send({ enabled: false }).expect(200);
+        try {
+          const phones = Array.from({ length: 6 }, (_, i) => String(9000082301 + i));
+          const res = await http().post('/api/v1/leads/import').set(as(admin))
+            .field('telecallerIds', `${first.id},${second.id}`)
+            .attach('file', csvOf('E2E Ticked', phones), 'e2e-ticked.csv').expect(200);
+          expect(res.body.created).toBe(6);
+          expect(res.body.assignments.map((a: { userId: string }) => a.userId).sort()).toEqual([first.id, second.id].sort());
+          expect(res.body.assignments.map((a: { count: number }) => a.count)).toEqual([3, 3]);
+          expect(res.body.assignments.map((a: { userId: string }) => a.userId)).not.toContain(onLeave.id);
+
+          const none = await http().post('/api/v1/leads/import').set(as(admin)).field('telecallerIds', '')
+            .attach('file', csvOf('E2E Nobody', ['9000082311']), 'e2e-nobody.csv').expect(400);
+          expect(none.body.message).toBe('Select at least one telecaller to receive these leads.');
+          const db = await prisma();
+          expect(await db.lead.count({ where: { name: 'E2E Nobody 1' } })).toBe(0);
+
+          // Global switches are as they were: the per-upload choice changed nobody's status.
+          const after = (await distribution()).members as Member[];
+          expect(after.find((m) => m.id === first.id)!.autoAssignEnabled).toBe(true);
+          expect(after.find((m) => m.id === second.id)!.autoAssignEnabled).toBe(false);
+          expect(after.find((m) => m.id === onLeave.id)!.autoAssignEnabled).toBe(true);
+
+          // The automatic paths still use the global switch: the API never gives a lead to the switched-off one.
+          const key = (await http().post('/api/v1/api-keys').set(as(admin)).send({ name: 'E2E Checklist' }).expect(201)).body.key;
+          for (const phone of ['9000082321', '9000082322', '9000082323']) {
+            const api = await http().post('/api/v1/public/leads').set('X-API-Key', key).send({ phone }).expect(201);
+            expect(api.body.assignedTo).not.toBe(second.fullName);
+          }
+        } finally {
+          await http().patch(`/api/v1/lead-assignment/members/${second.id}`).set(as(admin)).send({ enabled: true }).expect(200);
+        }
+      });
+
+      it('leads.import: telecallers have no import until an admin grants it; then the page and endpoint open up', async () => {
+        const db = await prisma();
+        const tara = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+        const file = () => csvOf('E2E Tara Import', ['9000082401', '9000082402']);
+        await http().get('/api/v1/leads/import/telecallers').set(as(telecaller)).expect(403);
+        await http().get('/api/v1/leads/import/template?format=csv').set(as(telecaller)).expect(403);
+        await http().post('/api/v1/leads/import').set(as(telecaller)).attach('file', file(), 'e2e-tara.csv').expect(403);
+
+        const access = (await http().get('/api/v1/users/import-access').set(as(admin)).expect(200)).body as
+          { id: string; canImport: boolean; fromRole: boolean; role: { key: string } }[];
+        expect(access.find((u) => u.id === tara.id)).toMatchObject({ canImport: false, fromRole: false });
+        expect(access.filter((u) => u.role.key === 'sales').every((u) => u.canImport && u.fromRole)).toBe(true);
+        expect(access.some((u) => u.role.key === 'admin')).toBe(false);
+        await http().put(`/api/v1/users/${tara.id}/import-access`).set(as(sales)).send({ enabled: true }).expect(403);
+
+        const before = await http().get(`/api/v1/users/${tara.id}/permissions`).set(as(admin)).expect(200);
+        try {
+          const granted = await http().put(`/api/v1/users/${tara.id}/import-access`).set(as(admin)).send({ enabled: true }).expect(200);
+          expect(granted.body).toMatchObject({ canImport: true, fromRole: false });
+          const fresh = (await login('telecaller@precon.local')).body.accessToken;
+          const checklist = (await http().get('/api/v1/leads/import/telecallers').set(as(fresh)).expect(200)).body as { id: string }[];
+          const res = await http().post('/api/v1/leads/import').set(as(fresh))
+            .field('telecallerIds', checklist.map((t) => t.id).join(','))
+            .attach('file', file(), 'e2e-tara.csv').expect(200);
+          expect(res.body.created).toBe(2);
+          // Importing doesn't let a telecaller create or reassign leads by hand.
+          await http().post('/api/v1/leads').set(as(fresh)).send({ phone: '9000082403', source: 'MANUAL' }).expect(403);
+        } finally {
+          await http().put(`/api/v1/users/${tara.id}/permissions`).set(as(admin))
+            .send({ grant: before.body.granted, revoke: before.body.revoked }).expect(200);
+        }
+        const revoked = (await login('telecaller@precon.local')).body.accessToken;
+        await http().post('/api/v1/leads/import').set(as(revoked)).attach('file', file(), 'e2e-tara.csv').expect(403);
+        await http().put(`/api/v1/users/${(await db.user.findUniqueOrThrow({ where: { email: 'admin@precon.local' } })).id}/import-access`)
+          .set(as(admin)).send({ enabled: false }).expect(400);
+      });
+
       it('reads Meta\'s own download (UTF-16, tab-separated) and refuses non-members and non-admins', async () => {
         const tsv = 'id\tcreated_time\tad_name\tfull_name\tphone_number\n' +
           'l:1\t2026-10-28T09:00:00+0530\tSump offer\tE2E Tsv Lead\tp:+919000082201\n';

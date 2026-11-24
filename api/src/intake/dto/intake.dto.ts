@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { SUMP_SIZES_LITRES } from '../../stock/product-catalog.js';
 import { normalizeLeadPhone } from '../intake-parsing.js';
 import { IsLeadPhone } from '../lead-phone.validator.js';
@@ -95,6 +95,25 @@ export class ImportOptionsDto {
   @Transform(upper)
   @IsIn(['META', 'WHATSAPP', 'MANUAL', 'WEBSITE', 'REFERRAL', 'OTHER'])
   defaultSource?: 'META' | 'WHATSAPP' | 'MANUAL' | 'WEBSITE' | 'REFERRAL' | 'OTHER';
+
+  @ApiPropertyOptional({
+    type: String,
+    example: '6f1c…,9a2b…',
+    description:
+      'The telecallers who share THIS upload by round-robin: comma-separated user ids (the Import page checklist). ' +
+      "Empty = nobody ticked, which is refused. Leave the field out to use the global round-robin (everyone switched on). " +
+      "It doesn't change anyone's on/off switch.",
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === undefined || value === null
+      ? undefined
+      : (Array.isArray(value) ? value : String(value).split(',')).map((v: unknown) => String(v).trim()).filter(Boolean),
+  )
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsUUID('all', { each: true, message: 'telecallerIds must be user ids' })
+  telecallerIds?: string[];
 }
 
 export class DistributionQueryDto {

@@ -56,12 +56,16 @@ export class LeadAssignmentService {
   /**
    * The next member of the rotation, marked as just assigned. Must run inside
    * the transaction that creates the lead. Returns null if the rotation is empty.
+   *
+   * `chosen`: a person picked these ids for this one upload (the import
+   * checklist), so each one's global on/off switch doesn't apply. Automatic
+   * paths (API, Meta, quick add) never pass it and keep honouring the switch.
    */
-  async pickNext(tx: Prisma.TransactionClient, rotationIds: string[]): Promise<Assignee | null> {
+  async pickNext(tx: Prisma.TransactionClient, rotationIds: string[], options: { chosen?: boolean } = {}): Promise<Assignee | null> {
     if (rotationIds.length === 0) return null;
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(${ROTATION_LOCK_KEY})::text AS locked`;
     const members = await tx.user.findMany({
-      where: { id: { in: rotationIds }, isActive: true, autoAssignEnabled: true },
+      where: { id: { in: rotationIds }, isActive: true, ...(options.chosen ? {} : { autoAssignEnabled: true }) },
       orderBy: [{ lastAutoAssignedAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
       select: { id: true, fullName: true, lastAutoAssignedAt: true },
     });

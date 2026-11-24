@@ -49,7 +49,7 @@ export class LeadImportController {
   constructor(private readonly importer: LeadImportService) {}
 
   @Get('template')
-  @RequirePermissions(PERMISSIONS.LEADS_WRITE)
+  @RequirePermissions(PERMISSIONS.LEADS_IMPORT)
   @ApiOperation({ summary: 'Download the import template (format=xlsx or csv)' })
   async template(@Query() query: TemplateQueryDto, @Res({ passthrough: true }) res: Response) {
     const file = await this.importer.template(query.format ?? 'xlsx');
@@ -58,26 +58,48 @@ export class LeadImportController {
     return new StreamableFile(file.body);
   }
 
+  @Get('telecallers')
+  @RequirePermissions(PERMISSIONS.LEADS_IMPORT)
+  @ApiOperation({
+    summary: 'The telecaller checklist for an upload (needs leads.import)',
+    description:
+      'Everyone who can receive leads (leads.auto_assign, active), with inRoundRobin = their global switch. The Import page ticks ' +
+      'those who are on; the importer can untick anyone on leave for this upload only.',
+  })
+  telecallers() {
+    return this.importer.telecallers();
+  }
+
   @Post()
   @HttpCode(200)
-  @RequirePermissions(PERMISSIONS.LEADS_WRITE)
+  @RequirePermissions(PERMISSIONS.LEADS_IMPORT)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_BYTES, files: 1 } }))
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        defaultSource: { type: 'string' },
+        telecallerIds: { type: 'string', description: 'Comma-separated ids of the telecallers who share this upload' },
+      },
+    },
+  })
   @ApiOperation({
-    summary: 'Import leads from a .csv or .xlsx file (needs leads.write)',
+    summary: 'Import leads from a .csv or .xlsx file (needs leads.import)',
     description:
       'Only name and phone are required (a Meta lead export works as is). Rows whose phone already exists are skipped as ' +
       'duplicates; invalid rows are reported with reasons; the rest are created. Rows with no assigned salesperson are shared ' +
-      'round-robin across the telecallers in the rotation. A file that is not a readable CSV/XLSX, or lacks the name/phone ' +
-      'columns, imports nothing (400). Optional form field defaultSource sets the source for rows that leave it blank.',
+      'round-robin across the telecallers in the rotation, or only across telecallerIds when given (the checklist; an empty list is ' +
+      'refused with 400). A file that is not a readable CSV/XLSX, or lacks the phone column, imports nothing (400). Optional form ' +
+      'field defaultSource sets the source for rows that leave it blank.',
   })
   import(
     @CurrentUser() user: AuthenticatedUser,
     @Body() options: ImportOptionsDto,
     @UploadedFile() file?: { originalname: string; buffer: Buffer; size: number },
   ) {
-    return this.importer.import(user, file, { defaultSource: options.defaultSource });
+    return this.importer.import(user, file, { defaultSource: options.defaultSource, telecallerIds: options.telecallerIds });
   }
 }
 

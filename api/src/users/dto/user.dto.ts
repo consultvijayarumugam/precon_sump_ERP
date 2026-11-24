@@ -90,3 +90,9 @@ export class DeactivateUserDto {
   @IsBoolean()
   shareOut?: boolean;
 }
+
+export class SetImportAccessDto {
+  @ApiProperty({ description: 'true = this user can import leads (leads.import); false = they cannot' })
+  @IsBoolean()
+  enabled!: boolean;
+}
