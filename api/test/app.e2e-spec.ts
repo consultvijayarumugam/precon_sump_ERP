@@ -2810,4 +2810,148 @@ describe('Auth and RBAC (e2e)', () => {
       expect(again.body).toMatchObject({ status: 'duplicate', reason: 'phone', leadId: api.body.leadId });
     });
   });
+
+  describe('Voice notes: record on a lead, play back with the lead\'s visibility', () => {
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const created: string[] = [];
+    let dir: string;
+    const savedDir = process.env.VOICE_NOTE_DIR;
+    // A real-looking M4A header (what the phone app records) and a 3GP/AMR one (refused).
+    const m4a = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypM4A '), Buffer.alloc(4000, 7)]);
+    const amr = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftyp3gp4'), Buffer.alloc(400, 1)]);
+    const binary = (res: request.Response, cb: (err: Error | null, body: Buffer) => void) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => cb(null, Buffer.concat(chunks)));
+    };
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+
+    beforeAll(async () => {
+      const { mkdtempSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const path = await import('node:path');
+      dir = mkdtempSync(path.join(tmpdir(), 'e2e-voice-'));
+      process.env.VOICE_NOTE_DIR = dir;
+    });
+    afterAll(async () => {
+      const db = await prisma();
+      await db.lead.deleteMany({ where: { id: { in: created } } });
+      const { rmSync } = await import('node:fs');
+      rmSync(dir, { recursive: true, force: true });
+      if (savedDir === undefined) delete process.env.VOICE_NOTE_DIR;
+      else process.env.VOICE_NOTE_DIR = savedDir;
+    });
+
+    it('the telecaller records, everyone on the lead plays it, others get 404, and the history says who', async () => {
+      const db = await prisma();
+      const admin = (await login('admin@precon.local')).body.accessToken;
+      const tara = (await login('telecaller@precon.local')).body.accessToken;
+      const kavya = (await login('telecaller2@precon.local')).body.accessToken;
+      const sales = (await login('sales@precon.local')).body.accessToken;
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const salesUser = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000095001', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      created.push(lead.id);
+      const base = `/api/v1/leads/${lead.id}/voice-notes`;
+
+      const saved = await http().post(base).set(as(tara)).field('durationMs', '42000')
+        .attach('audio', m4a, { filename: 'voice-note.m4a', contentType: 'audio/mp4' }).expect(201);
+      expect(saved.body).toMatchObject({ durationMs: 42000, mimeType: 'audio/mp4', author: { fullName: 'Tara Telecaller' } });
+      expect(saved.body).not.toHaveProperty('storedName');
+      // A second note on the same lead.
+      await http().post(base).set(as(tara)).field('durationMs', '3000').attach('audio', m4a, 'b.m4a').expect(201);
+
+      const { readdirSync } = await import('node:fs');
+      const files = readdirSync(dir);
+      expect(files).toHaveLength(2);
+      for (const f of files) expect(f).toMatch(/^[A-Za-z0-9_-]{32}\.m4a$/);
+
+      // Playback: the telecaller and admin get the exact bytes; nobody needs a public link.
+      for (const token of [tara, admin]) {
+        const audio = await http().get(`${base}/${saved.body.id}/audio`).set(as(token)).buffer(true).parse(binary).expect(200);
+        expect(audio.headers['content-type']).toBe('audio/mp4');
+        expect(Buffer.compare(audio.body as Buffer, m4a)).toBe(0);
+      }
+      const ranged = await http().get(`${base}/${saved.body.id}/audio`).set(as(tara)).set('Range', 'bytes=0-15').buffer(true).parse(binary).expect(206);
+      expect((ranged.body as Buffer).length).toBe(16);
+      await http().get(`${base}/${saved.body.id}/audio`).expect(401);
+
+      // Lead scope: another telecaller and a salesperson not on the lead see nothing.
+      await http().get(base).set(as(kavya)).expect(404);
+      await http().get(`${base}/${saved.body.id}/audio`).set(as(kavya)).expect(404);
+      await http().post(base).set(as(kavya)).field('durationMs', '3000').attach('audio', m4a, 'c.m4a').expect(404);
+      await http().get(base).set(as(sales)).expect(404);
+
+      // Handed to the salesperson: now they can list and play, and the telecaller still can.
+      await http().patch(`/api/v1/leads/${lead.id}`).set(as(admin)).send({ assignedToId: salesUser.id }).expect(200);
+      const list = (await http().get(base).set(as(sales)).expect(200)).body;
+      expect(list.map((n: { durationMs: number; author: { fullName: string } }) => [n.author.fullName, n.durationMs])).toEqual([
+        ['Tara Telecaller', 42000],
+        ['Tara Telecaller', 3000],
+      ]);
+      await http().get(`${base}/${saved.body.id}/audio`).set(as(sales)).expect(200);
+      // Moved by hand (not qualified and handed over by Tara), so it isn't hers any more: same rule as every lead screen.
+      await http().get(base).set(as(tara)).expect(404);
+
+      const history = (await http().get(`/api/v1/leads/${lead.id}/history`).set(as(admin)).expect(200)).body as { type: string; message: string }[];
+      expect(history.filter((h) => h.type === 'VOICE_NOTE').map((h) => h.message).sort()).toEqual([
+        'Voice note added by Tara Telecaller (0:03)',
+        'Voice note added by Tara Telecaller (0:42)',
+      ]);
+      // Typed notes still work alongside.
+      await http().post(`/api/v1/leads/${lead.id}/notes`).set(as(sales)).send({ body: 'Also typed: call after 6 pm' }).expect(201);
+    });
+
+    it('after Tara qualifies and hands over, she, the salesperson who got it, and admin all play it', async () => {
+      const db = await prisma();
+      const admin = (await login('admin@precon.local')).body.accessToken;
+      const tara = (await login('telecaller@precon.local')).body.accessToken;
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000095003', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      created.push(lead.id);
+      const base = `/api/v1/leads/${lead.id}/voice-notes`;
+      const note = (await http().post(base).set(as(tara)).field('durationMs', '8000').attach('audio', m4a, 'v.m4a').expect(201)).body;
+
+      const handed = await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP' }).expect(200);
+      const salesEmail = (await db.user.findUniqueOrThrow({ where: { id: handed.body.handedTo.id } })).email;
+      const salesperson = (await login(salesEmail)).body.accessToken;
+      for (const token of [tara, salesperson, admin]) {
+        await http().get(`${base}/${note.id}/audio`).set(as(token)).expect(200);
+      }
+      // The salesperson adds their own; both show, oldest first, each with who recorded it.
+      await http().post(base).set(as(salesperson)).field('durationMs', '4000').attach('audio', m4a, 's.m4a').expect(201);
+      const list = (await http().get(base).set(as(tara)).expect(200)).body as { author: { id: string } }[];
+      expect(list.map((n) => n.author.id)).toEqual([taraUser.id, handed.body.handedTo.id]);
+      // Tara was told about the salesperson's note.
+      expect(await db.notification.count({ where: { userId: taraUser.id, leadId: lead.id, title: { startsWith: 'Voice note from' } } })).toBe(1);
+    });
+
+    it('refuses formats browsers cannot play, over-long notes and missing audio; nothing is written', async () => {
+      const db = await prisma();
+      const admin = (await login('admin@precon.local')).body.accessToken;
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000095002', source: 'META' }).expect(201)).body;
+      created.push(lead.id);
+      const base = `/api/v1/leads/${lead.id}/voice-notes`;
+      const { readdirSync } = await import('node:fs');
+      const before = readdirSync(dir).length;
+
+      const bad = await http().post(base).set(as(admin)).field('durationMs', '5000').attach('audio', amr, 'x.3gp').expect(400);
+      expect(bad.body.message).toMatch(/supported recording/);
+      const html = await http().post(base).set(as(admin)).field('durationMs', '5000').attach('audio', Buffer.from('<html><script>alert(1)</script></html>'), 'x.m4a').expect(400);
+      expect(html.body.message).toMatch(/supported recording/);
+      const long = await http().post(base).set(as(admin)).field('durationMs', '300000').attach('audio', m4a, 'x.m4a').expect(400);
+      expect(JSON.stringify(long.body.message)).toMatch(/2 minutes/);
+      await http().post(base).set(as(admin)).field('durationMs', '5000').expect(400);
+      const big = await http().post(base).set(as(admin)).field('durationMs', '5000').attach('audio', Buffer.concat([m4a, Buffer.alloc(3.5 * 1024 * 1024)]), 'big.m4a');
+      expect(big.status).toBe(413);
+
+      expect(readdirSync(dir).length).toBe(before);
+      expect(await db.leadVoiceNote.count({ where: { leadId: lead.id } })).toBe(0);
+    });
+  });
 });

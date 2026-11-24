@@ -7,6 +7,7 @@ import { useSession, useUser } from '../session';
 import { colors, space } from '../theme';
 import { useResource } from '../use-resource';
 import { Button, ErrorBanner, inputStyle, Sheet } from './ui';
+import { VoiceNotes } from './voice-notes';
 
 /** Write a new note, or change one of your own. */
 function NoteSheet({ leadId, note, onClose, onDone }: { leadId: string; note: LeadNote | null; onClose: () => void; onDone: () => void }) {
@@ -121,6 +122,8 @@ export function SharedNotes({ lead }: { lead: LeadDetail }) {
         {notes.data && notes.data.length === 0 && !lead.notes && <Text style={styles.none}>No notes yet.{canWrite ? ' Add one for the team.' : ''}</Text>}
         {!notes.data && !notes.error && <Text style={styles.none}>Loading…</Text>}
       </View>
+      {/* Voice notes sit with the typed ones; a refused microphone falls back to a typed note. */}
+      <VoiceNotes leadId={lead.id} canRecord={canWrite} onTypeNote={() => setOpen({ note: null })} />
       {open && (
         <NoteSheet
           leadId={lead.id}

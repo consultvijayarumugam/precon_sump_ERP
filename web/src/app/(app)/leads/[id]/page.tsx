@@ -9,6 +9,7 @@ import { ConvertToOrder } from "@/components/convert-to-order";
 import { LeadForm } from "@/components/lead-form";
 import { LeadHistoryTimeline, LeadOwners, LeadVisits } from "@/components/lead-handover";
 import { LeadNotes } from "@/components/lead-notes";
+import { LeadVoiceNotes } from "@/components/lead-voice-notes";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { pickableStages, useStages } from "@/lib/stages";
@@ -351,6 +352,7 @@ export default function LeadDetailPage() {
       )}
 
       <LeadNotes lead={lead} refreshKey={`${lead.updatedAt}-${historyVersion}`} />
+      <LeadVoiceNotes lead={lead} refreshKey={`${lead.updatedAt}`} onAdded={() => setHistoryVersion((v) => v + 1)} />
 
       <ContactHistory leadId={lead.id} refreshKey={`${lead.updatedAt}-${historyVersion}`} />
       <LeadVisits lead={lead} refreshKey={`${lead.updatedAt}-${historyVersion}`} onCheckedIn={() => setHistoryVersion((v) => v + 1)} />

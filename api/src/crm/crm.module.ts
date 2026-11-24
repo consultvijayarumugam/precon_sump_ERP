@@ -4,12 +4,14 @@ import { FollowUpsController } from './follow-ups.controller.js';
 import { FollowUpsService } from './follow-ups.service.js';
 import { LeadNotesController } from './lead-notes.controller.js';
 import { LeadNotesService } from './lead-notes.service.js';
+import { LeadVoiceNotesController } from './lead-voice-notes.controller.js';
+import { LeadVoiceNotesService } from './lead-voice-notes.service.js';
 import { LeadsController } from './leads.controller.js';
 import { LeadsService } from './leads.service.js';
 
 @Module({
   imports: [AccessControlModule],
-  controllers: [LeadsController, LeadNotesController, FollowUpsController],
-  providers: [LeadsService, LeadNotesService, FollowUpsService],
+  controllers: [LeadsController, LeadNotesController, LeadVoiceNotesController, FollowUpsController],
+  providers: [LeadsService, LeadNotesService, LeadVoiceNotesService, FollowUpsService],
 })
 export class CrmModule {}
