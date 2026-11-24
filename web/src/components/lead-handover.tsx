@@ -10,6 +10,7 @@ import {
   CircleDot,
   History,
   MapPin,
+  Mic,
   MessageCircle,
   PencilLine,
   PhoneCall,
@@ -192,6 +193,7 @@ const TYPE_LOOK: Record<string, { icon: LucideIcon; tone: string; label: string 
   CALL_ATTEMPT: { icon: PhoneOutgoing, tone: "bg-[var(--ps-tint-50)] text-[var(--ps-blue-600)]", label: "Call started" },
   CALL_SYNCED: { icon: PhoneCall, tone: "bg-[var(--ps-tint-50)] text-[var(--ps-blue-600)]", label: "Phone call" },
   WHATSAPP: { icon: MessageCircle, tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300", label: "WhatsApp" },
+  VOICE_NOTE: { icon: Mic, tone: "bg-[var(--ps-tint-50)] text-[var(--ps-blue-600)]", label: "Voice note" },
   SITE_VISIT: { icon: MapPin, tone: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300", label: "Site visit" },
 };
 

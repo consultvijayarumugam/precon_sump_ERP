@@ -20,7 +20,7 @@ RUN npm ci --no-audit --no-fund
 
 COPY . .
 RUN npx prisma generate && npm run build \
-  && mkdir -p /app/storage/library && chown -R node:node /app/storage
+  && mkdir -p /app/storage/library /app/storage/voice-notes && chown -R node:node /app/storage
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

@@ -117,6 +117,7 @@ model User {
   callLogs             CallLog[]          @relation("CallLogCaller")
   leadActivities       LeadActivity[]     @relation("LeadActivityUser")
   leadNotes            LeadNote[]         @relation("LeadNoteAuthor")
+  leadVoiceNotes       LeadVoiceNote[]    @relation("LeadVoiceNoteAuthor")
   deviceCalls          DeviceCall[]
   notifications        Notification[]     @relation("NotificationRecipient")
   // Admin -> Users history: what was done to this user, and what this user did to others.
@@ -237,6 +238,8 @@ model Lead {
   activities      LeadActivity[]
   // The shared notes thread the telecaller, salesperson and admin all see.
   sharedNotes     LeadNote[]
+  // Recorded voice notes (audio only, no transcription).
+  voiceNotes      LeadVoiceNote[]
   notifications   Notification[]
   siteVisits      SiteVisit[]
   createdById     String           @map("created_by_id") @db.Uuid
@@ -807,6 +810,7 @@ enum LeadActivityType {
   CALL_ATTEMPT // tapped Call on a lead (the dialer opened; the outcome is logged separately)
   CALL_SYNCED // a real call and its duration, read from the phone by the mobile app
   SITE_VISIT
+  VOICE_NOTE // a voice note recorded on the lead
 }
 
 model LeadActivity {
@@ -849,6 +853,24 @@ model LeadNote {
 
   @@index([leadId, createdAt])
   @@map("lead_notes")
+}
+
+// A short audio note recorded on a lead (web or phone). The audio file lives in the
+// uploads volume under an unguessable name and is served only to people who can see the lead.
+model LeadVoiceNote {
+  id         String   @id @default(uuid()) @db.Uuid
+  leadId     String   @map("lead_id") @db.Uuid
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId   String   @map("author_id") @db.Uuid
+  author     User     @relation("LeadVoiceNoteAuthor", fields: [authorId], references: [id])
+  storedName String   @unique @map("stored_name")
+  mimeType   String   @map("mime_type")
+  sizeBytes  Int      @map("size_bytes")
+  durationMs Int      @map("duration_ms")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([leadId, createdAt])
+  @@map("lead_voice_notes")
 }
 
 // Reusable WhatsApp messages the admin manages; {name}-style placeholders fill from the lead.

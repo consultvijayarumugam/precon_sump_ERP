@@ -84,11 +84,12 @@ export async function logout(): Promise<void> {
 }
 
 /** POST a file (multipart/form-data, field "file") plus any text fields, and parse the JSON reply. */
-export async function apiUpload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
+export async function apiUpload<T>(path: string, file: Blob, fields: Record<string, string> = {}, fileField = "file", fileName?: string): Promise<T> {
   const token = getToken();
   const form = new FormData();
   for (const [name, value] of Object.entries(fields)) form.append(name, value);
-  form.append("file", file);
+  if (fileName) form.append(fileField, file, fileName);
+  else form.append(fileField, file);
   const response = await fetch(`${API_URL}${path}`, {
     method: "POST",
     body: form, // the browser sets the multipart Content-Type and boundary
@@ -100,6 +101,17 @@ export async function apiUpload<T>(path: string, file: File, fields: Record<stri
     throw new ApiError(response.status, message ?? response.statusText, typeof body === "object" && body ? body : {});
   }
   return body as T;
+}
+
+/** GET a private file (e.g. a voice note) with the user's token, as a blob the page can play. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, body.message ?? (response.status === 404 ? "This recording is no longer available." : response.statusText));
+  }
+  return response.blob();
 }
 
 /** GET a file with the user's token and save it in the browser. */

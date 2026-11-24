@@ -16,6 +16,8 @@ interface SessionValue {
   retry: () => Promise<void>;
   /** Calls the API as the logged-in user; a rejected token signs them out. */
   api: <T>(path: string, options?: RequestOptions) => Promise<T>;
+  /** The login header, for things that fetch by themselves (the voice note player). */
+  authHeaders: () => Record<string, string>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -75,9 +77,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [token, apiUrl],
   );
 
+  const authHeaders = useCallback((): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}), [token]);
+
   const value = useMemo<SessionValue>(
-    () => ({ state, signedIn: (session) => setState({ status: 'in', ...session }), signOut, retry: restore, api }),
-    [state, signOut, restore, api],
+    () => ({ state, signedIn: (session) => setState({ status: 'in', ...session }), signOut, retry: restore, api, authHeaders }),
+    [state, signOut, restore, api, authHeaders],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

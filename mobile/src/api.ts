@@ -19,7 +19,10 @@ export interface LoginResult {
 
 export interface RequestOptions {
   method?: string;
+  /** JSON, or a FormData for file uploads (sent as multipart as it is). */
   body?: unknown;
+  /** Uploads on a slow connection need longer than the usual 15 seconds. */
+  timeoutMs?: number;
 }
 
 /** status is 0 when the server couldn't be reached at all. */
@@ -36,17 +39,19 @@ export class ApiError extends Error {
 
 export async function request<T>(baseUrl: string, path: string, init: RequestOptions & { token?: string } = {}): Promise<T> {
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => abort.abort(), init.timeoutMs ?? TIMEOUT_MS);
+  const multipart = typeof FormData !== 'undefined' && init.body instanceof FormData;
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
       method: init.method ?? 'GET',
       headers: {
         Accept: 'application/json',
-        ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        // FormData sets its own multipart Content-Type (with the boundary).
+        ...(init.body === undefined || multipart ? {} : { 'Content-Type': 'application/json' }),
         ...(init.token ? { Authorization: `Bearer ${init.token}` } : {}),
       },
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      body: init.body === undefined ? undefined : multipart ? (init.body as FormData) : JSON.stringify(init.body),
       signal: abort.signal,
     });
   } catch {

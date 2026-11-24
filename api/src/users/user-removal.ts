@@ -25,6 +25,7 @@ export const ATTACHED_DATA: Record<string, string> = {
   createdFollowUps: 'follow-ups',
   leadActivities: 'lead history entries',
   leadNotes: 'shared notes',
+  leadVoiceNotes: 'voice notes',
   siteVisits: 'site visits',
   createdSiteVisits: 'site visits they recorded',
   libraryFiles: 'library files they uploaded',
