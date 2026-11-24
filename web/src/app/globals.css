@@ -25,7 +25,7 @@
   --ps-line: #e3e8f0; /* hairlines and grid */
   --ps-ink: #0f1b2d;
   --ps-ink-2: #4a5568;
-  --ps-ink-3: #8a94a6;
+  --ps-ink-3: #5f6b80; /* hints and captions: 4.5:1+ on white, page and tint */
   /* Pipeline funnel: one blue, light to dark (validated ordinal ramp, lightest step 2.11:1 on white). */
   --ps-stage-1: #86b6ef;
   --ps-stage-2: #3987e5;
@@ -72,7 +72,7 @@
     --ps-tint-50: #12264a;
     --ps-ink: #eef2f8;
     --ps-ink-2: #b4bfd2;
-    --ps-ink-3: #7d8aa3;
+    --ps-ink-3: #8592aa; /* 4.5:1+ on every dark surface */
     /* Dark funnel: same hue stepped for the navy surface (validated, darkest step 2.95:1). */
     --ps-stage-1: #9ec5f4;
     --ps-stage-2: #5598e7;

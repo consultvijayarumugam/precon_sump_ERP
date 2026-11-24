@@ -12,7 +12,7 @@ export const colors = {
   lineStrong: '#CBD5E1',
   ink: '#0F1B2D',
   ink2: '#4A5568',
-  ink3: '#64748B',
+  ink3: '#5F6B80', // hints and captions: 4.5:1+ on card, surface and tint
   red: '#B91C1C',
   redLight: '#FEF2F2',
   redLine: '#FECACA',
