@@ -14,48 +14,17 @@ export function stageRole(can: (tag: string) => boolean): StageRole {
 }
 
 /**
- * Stages offered in "Move stage": every active stage, in the admin's order, for
- * everyone who can move the lead (telecaller, sales or admin). The sides below
- * are only for grouping; crossing the handover changes who has the lead, which
- * the server does (a telecaller moving to Quote Shared hands the lead to sales).
+ * Stages offered in "Move stage": every active stage, in the admin's order, as one
+ * flat list, for whoever owns the lead (telecaller, sales or admin). The stage is
+ * only where the conversation is: it never changes who has the lead (handing over
+ * to sales is the separate "Qualify & hand over" button).
  * A switched-off stage is listed only if the lead is in it.
  */
 export function stageChoices(stages: PipelineStage[], _role: StageRole, currentId: string | null): PipelineStage[] {
   return stages.filter((s) => s.isActive || s.id === currentId);
 }
 
-/** Which side of the handover a stage is on (mirrors the API): New and before; the handover, after it and Won; Lost. */
-export type StageSide = 'telecaller' | 'sales' | 'closed';
-
-export function stageSide(stage: Pick<PipelineStage, 'kind' | 'phase'>): StageSide {
-  if (stage.kind === 'LOST') return 'closed';
-  if (stage.kind === 'WON') return 'sales';
-  if (stage.kind === 'ENTRY') return 'telecaller';
-  return stage.phase === 'QUALIFIED' || stage.phase === 'QUOTED' ? 'sales' : 'telecaller';
-}
-
-export const SIDE_LABELS: Record<StageSide, string> = { telecaller: 'Telecaller side', sales: 'Sales side (after handover)', closed: 'Close' };
-
-/** The choices grouped by side, in pipeline order (empty groups left out). */
-export function groupedChoices(choices: PipelineStage[]): { side: StageSide; label: string; stages: PipelineStage[] }[] {
-  return (['telecaller', 'sales', 'closed'] as StageSide[])
-    .map((side) => ({ side, label: SIDE_LABELS[side], stages: choices.filter((s) => stageSide(s) === side) }))
-    .filter((g) => g.stages.length > 0);
-}
-
-/**
- * What a move will probably do to who has the lead, shown before saving (the
- * server decides for certain): "handover" into the sales side from a
- * telecaller; "return" back before the handover for a lead handed to sales.
- */
-export function moveEffect(target: Pick<PipelineStage, 'kind' | 'phase'>, lead: { ownerIsSales: boolean; handedOver: boolean }): 'handover' | 'return' | 'none' {
-  const side = stageSide(target);
-  if (side === 'sales' && !lead.ownerIsSales) return 'handover';
-  if (side === 'telecaller' && lead.ownerIsSales && lead.handedOver) return 'return';
-  return 'none';
-}
-
-/** Only the lead's current owner (or an admin) moves its stage; the server checks this too. */
+/** Only the lead's current owner (or an admin) changes its stage; the server checks this too. */
 export function canMoveStage(role: StageRole, userId: string, lead: { assignedTo: { id: string } | null }): boolean {
   return role === 'admin' || lead.assignedTo?.id === userId;
 }

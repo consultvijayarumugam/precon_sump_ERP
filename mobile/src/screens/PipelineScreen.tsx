@@ -71,7 +71,7 @@ export function PipelineScreen() {
             {data ? (
               <PipelineCard
                 title="Leads per stage"
-                subtitle={`${data.pipeline.QUALIFIED + data.pipeline.QUOTED} open deals · tap a stage to see its leads`}
+                subtitle={`${data.pipeline.OPEN ?? data.pipeline.QUALIFIED + data.pipeline.QUOTED} open deals · tap a stage to see its leads`}
                 rows={rows}
                 extra={[
                   { key: 'won', label: 'Won this month', count: data.pipeline.wonThisMonth, tone: 'good', status: 'WON' },

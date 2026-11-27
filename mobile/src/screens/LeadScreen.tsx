@@ -14,7 +14,7 @@ import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
 import { formatDuration } from '../lib/call-sync';
 import type { CheckIn } from '../lib/sales';
-import { CALL_OUTCOME_LABELS, CallAttemptRow, CallRow, canBeQualified, DeviceCallRow, DIRECTION_LABELS, formatDateTime, LeadDetail, MessageRow, productLabel, SOURCE_LABELS } from '../lib/workflow';
+import { CALL_OUTCOME_LABELS, CallAttemptRow, CallRow, canHandOver, DeviceCallRow, DIRECTION_LABELS, formatDateTime, LeadDetail, MessageRow, productLabel, SOURCE_LABELS, wasHandedOver } from '../lib/workflow';
 import { useUser } from '../session';
 import { colors } from '../theme';
 import { useResource } from '../use-resource';
@@ -53,11 +53,13 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
   const { user, can } = useUser();
   // Sales: GPS site visits on this lead, moving it along the pipeline. Telecallers have neither tag.
   const visits = useResource<CheckIn[]>(can('sitevisit.read') ? `/leads/${id}/visits` : null);
-  // Whoever owns the lead (telecaller or sales) can move it to any active stage; admins any lead.
+  // Whoever owns the lead (telecaller or sales) sets any active stage; admins any lead. The stage never changes the owner.
   const canMoveStage = (can('leads.write') || can('leads.qualify')) && canMoveLeadStage(stageRole(can), user.id, lead);
+  // Handing over to sales is its own explicit step, for the telecaller who has the lead, in any open stage.
+  const canQualifyHere = canHandOver(lead, user.id, can('leads.receive_qualified'));
   const canVisit = can('sitevisit.write') && lead.assignedTo?.id === user.id;
   // Admin only, once the lead is with sales (as on the web).
-  const canReassign = can('leads.assign') && Boolean(lead.qualifiedAt) && lead.status !== 'NEW' && lead.status !== 'CONTACTED';
+  const canReassign = can('leads.assign') && wasHandedOver(lead);
   const [salesSheet, setSalesSheet] = useState<'stage' | 'visit' | 'reassign' | null>(null);
   // Telecallers edit their own leads with leads.qualify (the server checks the scope), as on web.
   const canEdit = can('leads.write') || can('leads.qualify');
@@ -151,7 +153,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
             {canVisit && <Button testID="lead-at-site" label="I'm at site" icon="navigate" tone="secondary" onPress={() => setSalesSheet('visit')} style={styles.flex} />}
           </View>
         )}
-        {actions.canQualify && canBeQualified(lead.status) && <Button testID="qualify" label="Qualify & hand over" icon="sparkles-outline" tone="qualify" onPress={actions.qualify} style={styles.qualify} />}
+        {actions.canQualify && canQualifyHere && <Button testID="qualify" label="Qualify & hand over" icon="sparkles-outline" tone="qualify" onPress={actions.qualify} style={styles.qualify} />}
 
         <View style={styles.headingRow}>
           <Text style={styles.heading}>Details</Text>
@@ -265,23 +267,9 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         <StageSheet
           lead={lead}
           onClose={() => setSalesSheet(null)}
-          onDone={(stage, result) => {
+          onDone={(stage) => {
             setSalesSheet(null);
-            if (result.movedOutOfScope) {
-              // Moved back before the handover: it went to the telecaller, so it's no longer this person's.
-              ToastAndroid.show(`${leadLabel(lead)} moved to ${stage.name} and went back to the telecaller`, ToastAndroid.LONG);
-              router.back();
-              return;
-            }
-            const handedTo = result.assignedTo && result.assignedTo.id !== lead.assignedTo?.id ? result.assignedTo.fullName : null;
-            ToastAndroid.show(
-              stage.kind === 'WON'
-                ? `${leadLabel(lead)} won 🎉${handedTo ? ` (with ${handedTo})` : ''}`
-                : handedTo
-                  ? `${leadLabel(lead)} moved to ${stage.name} and handed to ${handedTo}`
-                  : `${leadLabel(lead)} moved to ${stage.name}`,
-              ToastAndroid.LONG,
-            );
+            ToastAndroid.show(stage.kind === 'WON' ? `${leadLabel(lead)} won 🎉` : `${leadLabel(lead)} is now ${stage.name}`, ToastAndroid.LONG);
             reloadAll();
           }}
         />

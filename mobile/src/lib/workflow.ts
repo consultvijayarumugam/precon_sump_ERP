@@ -156,7 +156,16 @@ export interface SalesTeam {
 }
 
 /** Stages a telecaller can still qualify from. */
-export const canBeQualified = (status: LeadStatus) => status === 'NEW' || status === 'CONTACTED';
+/**
+ * "Qualify & hand over" is the one way a lead moves from a telecaller to sales:
+ * for the telecaller who has it, while it's open (any stage but Won/Lost). Never
+ * a side effect of the stage, and not for leads already with a salesperson.
+ */
+export const canHandOver = (lead: { status: LeadStatus; assignedTo: { id: string } | null }, userId: string, isSales: boolean) =>
+  !isSales && lead.assignedTo?.id === userId && lead.status !== 'WON' && lead.status !== 'LOST';
+
+/** Handed to sales at some point, whatever its stage now: only then can an admin reassign the salesperson. */
+export const wasHandedOver = (lead: { qualifiedAt?: string | null }) => Boolean(lead.qualifiedAt);
 
 /** The worklist in call order, one section per non-empty bucket. */
 export function toSections(items: WorklistItem[]) {

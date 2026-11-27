@@ -32,7 +32,8 @@ export interface CheckIn {
 }
 
 export interface SalesDashboardData {
-  pipeline: { QUALIFIED: number; QUOTED: number; WON: number; LOST: number; wonThisMonth: number; lostThisMonth: number };
+  /** OPEN: every open lead assigned to you, in any stage (older servers don't send it). The rest count by stage phase. */
+  pipeline: { OPEN?: number; QUALIFIED: number; QUOTED: number; WON: number; LOST: number; wonThisMonth: number; lostThisMonth: number };
   /** Rupees as a decimal string; null when the user can't see revenue (no sales.read tag). */
   revenueThisMonth: string | null;
   handedToday: number;

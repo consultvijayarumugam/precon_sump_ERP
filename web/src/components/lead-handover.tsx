@@ -32,9 +32,8 @@ import { CheckIn } from "@/lib/workflow";
 import { SharedFiles } from "@/components/shared-files";
 import type { SharedFile } from "@/lib/files";
 
-/** Handed to sales (Qualified or later): only then can an admin move it to a different salesperson. */
-export const isHandedOver = (lead: { qualifiedAt: string | null; status: LeadStatus }) =>
-  Boolean(lead.qualifiedAt) && lead.status !== "NEW" && lead.status !== "CONTACTED";
+/** Handed to sales at some point (whatever stage it's in now): only then can an admin move it to a different salesperson. */
+export const isHandedOver = (lead: { qualifiedAt: string | null; status: LeadStatus }) => Boolean(lead.qualifiedAt);
 
 /**
  * Admin only (leads.assign): pick a different salesperson for a handed-over

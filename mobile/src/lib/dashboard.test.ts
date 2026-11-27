@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { leadDateParams } from './date-range.ts';
-import { leadListQuery, ownerLine, pipelineRows, reminderItems, remindersEmpty, type ReminderSummary } from './dashboard.ts';
+import { chipLabel, leadListQuery, ownerLine, pipelineRows, reminderItems, remindersEmpty, stageCountsQuery, type ReminderSummary } from './dashboard.ts';
 import type { PipelineStage } from './sales.ts';
 
 const f = (id: string) => ({ id, scheduledAt: '2026-11-17T05:00:00Z', note: null, lead: { id: `l${id}`, name: id, phone: '9' } });
@@ -39,4 +39,20 @@ test('each lead row says who has it, and warns when nobody does', () => {
   assert.deepEqual(ownerLine({ assignedTo: null }, 'me'), { text: 'Not assigned to anyone', warn: true });
   assert.deepEqual(ownerLine({ assignedTo: { id: 'me', fullName: 'Tara' } }, 'me'), { text: 'Assigned to you', warn: false });
   assert.deepEqual(ownerLine({ assignedTo: { id: 'x', fullName: 'Arjun Telecaller' } }, 'me'), { text: 'With Arjun Telecaller', warn: false });
+});
+
+test('stage chip counts use the same search, dates and person as the list, not the stage', () => {
+  assert.equal(stageCountsQuery({}), '/leads/stage-counts');
+  assert.equal(
+    stageCountsQuery({ search: ' Ravi ', dates: [['createdFrom', '2026-11-01'], ['createdTo', '2026-11-30']], assignedToId: 'u1' }),
+    '/leads/stage-counts?search=Ravi&createdFrom=2026-11-01&createdTo=2026-11-30&assignedToId=u1',
+  );
+});
+
+test('chips read "RNR · 12"; plain names until counts arrive', () => {
+  const counts = { total: 15, stages: [{ stageId: 'rnr', count: 12 }, { stageId: 'new', count: 3 }] };
+  assert.equal(chipLabel('All stages', counts, null), 'All stages · 15');
+  assert.equal(chipLabel('RNR', counts, 'rnr'), 'RNR · 12');
+  assert.equal(chipLabel('Won', counts, 'won'), 'Won · 0');
+  assert.equal(chipLabel('RNR', null, 'rnr'), 'RNR');
 });

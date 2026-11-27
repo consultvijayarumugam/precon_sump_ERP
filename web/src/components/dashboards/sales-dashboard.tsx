@@ -49,7 +49,7 @@ function LeadCard({ lead, now, onChanged }: { lead: SalesLead; now: number; onCh
           {lead.qualifiedAt && ` · ${formatDate(lead.qualifiedAt)}`}
         </div>
       )}
-      {(lead.status === "QUALIFIED" || lead.status === "QUOTED") && (
+      {lead.status !== "WON" && lead.status !== "LOST" && (
         <div className={`mt-1.5 text-xs font-medium ${late ? "text-red-600 dark:text-red-400" : fu ? "text-neutral-600 dark:text-neutral-400" : "text-amber-700 dark:text-amber-300"}`}>
           {fu ? `${late ? "Overdue: " : "Next: "}${formatDateTime(fu.scheduledAt)}` : "No follow-up planned"}
         </div>
@@ -57,7 +57,7 @@ function LeadCard({ lead, now, onChanged }: { lead: SalesLead; now: number; onCh
       {lead.closedAt && (lead.status === "WON" || lead.status === "LOST") && (
         <div className="mt-1 text-xs text-neutral-500">Closed {formatDate(lead.closedAt)}</div>
       )}
-      {(lead.status === "QUALIFIED" || lead.status === "QUOTED") && (
+      {lead.status !== "WON" && lead.status !== "LOST" && (
         <div className="relative z-10 mt-2 flex gap-2">
           <CallButton leadId={lead.id} phone={lead.phone} name={leadLabel(lead)} onLogged={onChanged} />
           <WhatsAppButton leadId={lead.id} name={leadLabel(lead)} variant="icon" />
@@ -132,7 +132,7 @@ export function SalesDashboard() {
       <Greeting
         subtitle={
           data
-            ? `${(p?.QUALIFIED ?? 0) + (p?.QUOTED ?? 0)} open deals · ${data.handedToday} new from telecallers today · ${overdue} follow-ups overdue`
+            ? `${p?.OPEN ?? 0} open deals · ${data.handedToday} new from telecallers today · ${overdue} follow-ups overdue`
             : "Your pipeline, follow-ups and site visits."
         }
       />
@@ -144,7 +144,7 @@ export function SalesDashboard() {
           <KpiTile label="My revenue this month" value={data ? formatINR(data.revenueThisMonth ?? 0) : undefined} href="/leads/won" icon={IndianRupee} module="finance" />
         )}
         <KpiTile label="Won this month" value={p?.wonThisMonth} href="/leads/won" icon={Trophy} module="crm" hint={p && `${p.WON} won in total`} />
-        <KpiTile label="Open pipeline" value={p ? p.QUALIFIED + p.QUOTED : undefined} href="/leads" icon={Target} module="crm" hint={p && `${p.QUALIFIED} qualified · ${p.QUOTED} quoted`} />
+        <KpiTile label="Open pipeline" value={p?.OPEN} href="/leads" icon={Target} module="crm" hint={p && `${p.QUALIFIED} qualified · ${p.QUOTED} quoted · rest earlier stages`} />
         <KpiTile
           label="Follow-ups overdue"
           value={overdue}

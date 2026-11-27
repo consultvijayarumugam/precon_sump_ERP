@@ -82,16 +82,6 @@ export class CreateLeadDto {
   @IsIn(SUMP_SIZES_LITRES as unknown as number[])
   sumpSizeLitres?: number | null;
 
-  @ApiPropertyOptional({ description: 'Pipeline stage to put / move the lead into (see /pipeline-stages). Wins over status.' })
-  @IsOptional()
-  @IsUUID()
-  stageId?: string;
-
-  @ApiPropertyOptional({ enum: LeadStatus, default: LeadStatus.NEW, description: 'Older way to move a lead: goes to the matching stage' })
-  @IsOptional()
-  @IsEnum(LeadStatus)
-  status?: LeadStatus;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -107,7 +97,17 @@ export class CreateLeadDto {
   assignedToId?: string | null;
 }
 
-export class UpdateLeadDto extends PartialType(CreateLeadDto) {}
+export class UpdateLeadDto extends PartialType(CreateLeadDto) {
+  @ApiPropertyOptional({ description: 'Pipeline stage to move the lead into (see /pipeline-stages). Wins over status. Only a label: it never changes who owns the lead. New leads always start in New.' })
+  @IsOptional()
+  @IsUUID()
+  stageId?: string;
+
+  @ApiPropertyOptional({ enum: LeadStatus, description: 'Older way to move a lead: goes to the matching stage' })
+  @IsOptional()
+  @IsEnum(LeadStatus)
+  status?: LeadStatus;
+}
 
 export class ListLeadsQueryDto {
   @ApiPropertyOptional({ enum: LeadStatus })

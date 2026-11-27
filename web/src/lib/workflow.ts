@@ -91,8 +91,9 @@ export interface SalesLead {
 }
 
 export interface SalesDashboardData {
-  pipeline: { QUALIFIED: number; QUOTED: number; WON: number; LOST: number; wonThisMonth: number; lostThisMonth: number };
-  /** The sales-side stages in admin order, with your open leads in each. */
+  /** OPEN: every open lead assigned to you, in any stage. The rest count by stage phase. */
+  pipeline: { OPEN: number; QUALIFIED: number; QUOTED: number; WON: number; LOST: number; wonThisMonth: number; lostThisMonth: number };
+  /** Stages in admin order with your open leads in each (Qualified/Quoted-phase ones always, others when they hold a lead). */
   stages: { id: string; name: string; isActive: boolean; isHandover: boolean; leads: number }[];
   revenueThisMonth: string | null;
   handedToday: number;

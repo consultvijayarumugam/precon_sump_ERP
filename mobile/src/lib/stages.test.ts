@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { PipelineStage } from './sales.ts';
-import { canMoveStage, closedKind, groupedChoices, moveEffect, stageChoices, stageFilters, stageRole, stageSide } from './stages.ts';
+import { canMoveStage, closedKind, stageChoices, stageFilters, stageRole } from './stages.ts';
 
 // The live server's stages (18 Nov): custom ones like Interested, Quote Shared and RNR.
 const s = (id: string, kind: PipelineStage['kind'], phase: PipelineStage['phase'], isActive = true): PipelineStage => ({ id, name: id, kind, phase, isActive });
@@ -31,27 +31,10 @@ test("telecallers and sales are offered every active stage, in the admin's order
   assert.deepEqual(ids(stageChoices(STAGES, 'admin', null)), all);
 });
 
-test('the sides are only grouping: before the handover, the handover and after (with Won), and Lost', () => {
-  assert.deepEqual(STAGES.map((x) => stageSide(x)), ['telecaller', 'telecaller', 'telecaller', 'sales', 'sales', 'sales', 'sales', 'sales', 'closed']);
-  assert.deepEqual(
-    groupedChoices(stageChoices(STAGES, 'telecaller', 'New')).map((g) => [g.label, ids(g.stages)]),
-    [
-      ['Telecaller side', ['New', 'Interested']],
-      ['Sales side (after handover)', ['Details Shared', 'Quote Shared', 'Follow Up', 'RNR', 'Won']],
-      ['Close', ['Lost']],
-    ],
-  );
-});
-
-test('the sheet says when a move hands the lead to sales or back to the telecaller', () => {
-  const byName = (n: string) => STAGES.find((x) => x.id === n)!;
-  assert.equal(moveEffect(byName('Quote Shared'), { ownerIsSales: false, handedOver: false }), 'handover');
-  assert.equal(moveEffect(byName('Won'), { ownerIsSales: false, handedOver: false }), 'handover');
-  assert.equal(moveEffect(byName('Interested'), { ownerIsSales: false, handedOver: false }), 'none');
-  assert.equal(moveEffect(byName('Lost'), { ownerIsSales: false, handedOver: false }), 'none');
-  assert.equal(moveEffect(byName('Interested'), { ownerIsSales: true, handedOver: true }), 'return');
-  assert.equal(moveEffect(byName('RNR'), { ownerIsSales: true, handedOver: true }), 'none');
-  assert.equal(moveEffect(byName('Interested'), { ownerIsSales: true, handedOver: false }), 'none'); // a salesperson's own walk-in
+test('one flat list in pipeline order: no telecaller or sales side', () => {
+  const choices = stageChoices(STAGES, 'telecaller', 'Quote Shared');
+  assert.deepEqual(ids(choices), ['New', 'Interested', 'Details Shared', 'Quote Shared', 'Follow Up', 'RNR', 'Won', 'Lost']);
+  assert.ok(choices.every((c) => !('side' in c)));
 });
 
 test("only the lead's owner (or an admin) gets Move stage; seeing a lead isn't enough", () => {

@@ -18,10 +18,11 @@ import { PipelineStage, useStages } from "@/lib/stages";
 import { TAGS } from "@/lib/tags";
 import { useAction } from "@/lib/use-api";
 
+/** Which phase a middle stage counts as in reports. It never decides who has a lead. */
 const SIDE: Record<string, string> = {
-  CONTACTED: "Telecaller side",
-  QUALIFIED: "Handover to sales",
-  QUOTED: "Sales side",
+  CONTACTED: "Early stage (reports)",
+  QUALIFIED: "Handover point (reports)",
+  QUOTED: "Later stage (reports)",
 };
 
 const iconButton =
@@ -78,7 +79,7 @@ function StageRow({
                 <Lock className="size-3" aria-hidden /> Protected
               </span>
             )}
-            {stage.isHandover && <Badge tone="green">Handover: telecallers qualify into this</Badge>}
+            {stage.isHandover && <Badge tone="green">Handover point (for reports)</Badge>}
             {stage.kind === "MIDDLE" && !stage.isHandover && <span className="text-xs text-[var(--ps-ink-3)]">{SIDE[stage.phase]}</span>}
             {!stage.isActive && <Badge tone="neutral">Switched off</Badge>}
           </div>
@@ -147,14 +148,14 @@ export default function PipelineStagesPage() {
     const order = middle.map((s) => s.id);
     const j = i + dir;
     [order[i], order[j]] = [order[j], order[i]];
-    // Crossing the handover stage changes which side of the handover a stage is on.
+    // Crossing the handover stage changes which phase a stage counts as in reports (never who has a lead).
     const stage = middle[i];
     const other = middle[j];
     const crosses = stage.isHandover ? other.leads : other.isHandover ? stage.leads : 0;
     if (other.isHandover || stage.isHandover) {
       const moving = stage.isHandover ? other : stage;
-      const toSide = (stage.isHandover ? dir === 1 : dir === -1) ? "telecaller side (before handover)" : "sales side (after handover)";
-      if (!window.confirm(`This moves "${moving.name}" to the ${toSide}.${crosses ? ` Its ${crosses} lead(s) move with it and will count as ${toSide.split(" (")[0]}.` : ""}\n\nContinue?`)) return;
+      const toSide = (stage.isHandover ? dir === 1 : dir === -1) ? "early stages (before the handover point)" : "later stages (after the handover point)";
+      if (!window.confirm(`This moves "${moving.name}" among the ${toSide}.${crosses ? ` Its ${crosses} lead(s) will be counted there in reports.` : ""} It doesn't change who has any lead.\n\nContinue?`)) return;
     }
     void run(() => apiPut("/pipeline-stages/order", { ids: order }));
   }
@@ -241,11 +242,13 @@ export default function PipelineStagesPage() {
         <h2 className="font-semibold text-[var(--ps-ink)]">How stages work</h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>
-            Stages before <strong>{handoverAt >= 0 ? middle[handoverAt].name : "the handover stage"}</strong> belong to telecallers (their worklist);
-            the handover stage and everything after it belong to sales. Moving a stage across the handover moves its leads to the other side.
+            A stage is only <strong>where the conversation is</strong>. It never changes who has the lead: a lead stays with the person it&apos;s
+            assigned to, in any stage, and everyone&apos;s worklist is the leads assigned to them.
           </li>
           <li>
-            &ldquo;Qualify &amp; hand over&rdquo; always puts leads into the handover stage, by identity: renaming it or moving it is safe.
+            Leads move from a telecaller to sales only by <strong>&ldquo;Qualify &amp; hand over&rdquo;</strong> (or an admin&apos;s Reassign), and that
+            leaves the stage as it is. <strong>{handoverAt >= 0 ? middle[handoverAt].name : "The handover stage"}</strong> only marks where the
+            later, sales-type stages begin, for counting leads by phase in reports.
           </li>
           <li>A lead&apos;s first call moves it from New into the first active telecaller-side stage.</li>
           <li>Switching a stage off hides it from the stage picker; leads already in it stay, with their history. Only an empty stage can be deleted.</li>

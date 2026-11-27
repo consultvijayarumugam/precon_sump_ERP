@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { callbackPresets, defaultCallbackFor, toSections, productLabel, type WorklistItem } from './workflow.ts';
+import { callbackPresets, canHandOver, defaultCallbackFor, toSections, productLabel, wasHandedOver, type WorklistItem } from './workflow.ts';
 
 const item = (id: string, bucket: WorklistItem['bucket']) => ({ id, bucket }) as WorklistItem;
 
@@ -29,4 +29,21 @@ test('product labels', () => {
   assert.equal(productLabel({ productInterest: null }), null);
   assert.equal(productLabel({ productInterest: 'SUMP', sumpSizeLitres: 10000 }), 'Sump · 10,000 L');
   assert.equal(productLabel({ productInterest: 'MICROBES' }), 'Microbes');
+});
+
+test('"Qualify & hand over" is for the telecaller who has the lead, in any open stage', () => {
+  const tara = 'tara';
+  const lead = (status: 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'QUOTED' | 'WON' | 'LOST', owner = tara) => ({ status, assignedTo: { id: owner } });
+  // A lead she marked Quote Shared (phase QUOTED) is still hers to hand over.
+  for (const status of ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'] as const) assert.equal(canHandOver(lead(status), tara, false), true);
+  assert.equal(canHandOver(lead('WON'), tara, false), false);
+  assert.equal(canHandOver(lead('LOST'), tara, false), false);
+  assert.equal(canHandOver(lead('QUOTED', 'suresh'), tara, false), false); // already with sales
+  assert.equal(canHandOver(lead('NEW', 'suresh'), 'suresh', true), false); // a salesperson's own lead
+});
+
+test('an admin can reassign the salesperson once a lead was handed over, whatever its stage', () => {
+  assert.equal(wasHandedOver({ qualifiedAt: '2026-11-27T10:00:00Z' }), true);
+  assert.equal(wasHandedOver({ qualifiedAt: null }), false);
+  assert.equal(wasHandedOver({}), false);
 });

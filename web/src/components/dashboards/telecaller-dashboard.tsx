@@ -107,7 +107,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
             className={`${secondaryButtonSmClass} border-emerald-300 text-emerald-800 dark:border-emerald-800 dark:text-emerald-300`}
             onClick={() => setPanel("qualify")}
           >
-            <Sparkles className="size-4" aria-hidden /> Qualify
+            <Sparkles className="size-4" aria-hidden /> Qualify &amp; hand over
           </button>
         </div>
       )}
@@ -144,7 +144,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
           }}
           onDone={(handedTo) => {
             setPanel(null);
-            onHandedOver(`${leadLabel(item)} is qualified and handed to ${handedTo}.`);
+            onHandedOver(`${leadLabel(item)} is handed to ${handedTo}. It keeps its stage and leaves your worklist.`);
           }}
         />
       )}

@@ -38,6 +38,16 @@ export class LeadsController {
     return this.leads.list(user, query);
   }
 
+  @Get('stage-counts')
+  @RequirePermissions(PERMISSIONS.LEADS_READ)
+  @ApiOperation({
+    summary: 'How many leads are in each stage, under the same filters as the list (all but the stage itself)',
+    description: `${SCOPE_NOTE} Returns {total, stages: [{stageId, count}]}; stages with no leads are left out.`,
+  })
+  stageCounts(@CurrentUser() user: AuthenticatedUser, @Query() query: ListLeadsQueryDto) {
+    return this.leads.stageCounts(user, query);
+  }
+
   @Get('summary')
   @RequirePermissions(PERMISSIONS.LEADS_READ)
   @ApiOperation({

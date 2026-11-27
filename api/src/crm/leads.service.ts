@@ -10,8 +10,7 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { notifyLeadAssigned, notifyLeadHandedOver } from '../notifications/notify.js';
-import { LeadOwnershipService } from '../intake/lead-ownership.service.js';
+import { notifyLeadAssigned } from '../notifications/notify.js';
 import { StagesService } from '../pipeline/stages.service.js';
 import { describe, diff, recordActivity, STATUS_WORDS } from './lead-history.js';
 import { formatPhone, leadLabel } from './lead-label.js';
@@ -33,19 +32,19 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
     private readonly stages: StagesService,
-    private readonly ownership: LeadOwnershipService,
   ) {}
 
-  async list(user: AuthenticatedUser, query: ListLeadsQueryDto) {
-    const where: Prisma.LeadWhereInput = {
+  /** The list's filters (within the user's scope). Without the stage when counting per stage. */
+  private listWhere(user: AuthenticatedUser, query: ListLeadsQueryDto, opts: { withStage: boolean } = { withStage: true }): Prisma.LeadWhereInput {
+    return {
       AND: [
         leadScope(user),
         {
-          status: query.status,
+          status: opts.withStage ? query.status : undefined,
           source: query.source,
           productInterest: query.productInterest,
           assignedToId: query.assignedToId,
-          stageId: query.stageId,
+          stageId: opts.withStage ? query.stageId : undefined,
           // "Won on" date range (narrows what the user can already see).
           closedAt: dayRangeFilter(query.wonFrom, query.wonTo),
           // "Added on" date range; combines with every filter above.
@@ -64,6 +63,26 @@ export class LeadsService {
           : {},
       ],
     };
+  }
+
+  /**
+   * How many leads each stage holds under the same filters as the list (search,
+   * dates, source, product, person), so the stage picker can say "RNR (12)".
+   * Only the stage filter itself is left out. Within the user's scope.
+   */
+  async stageCounts(user: AuthenticatedUser, query: ListLeadsQueryDto) {
+    const rows = await this.prisma.lead.groupBy({
+      by: ['stageId'],
+      where: this.listWhere(user, query, { withStage: false }),
+      orderBy: { stageId: 'asc' },
+      _count: { _all: true },
+    });
+    const counts = rows.map((r) => ({ stageId: r.stageId, count: (r._count as { _all: number })._all }));
+    return { total: counts.reduce((sum, r) => sum + r.count, 0), stages: counts };
+  }
+
+  async list(user: AuthenticatedUser, query: ListLeadsQueryDto) {
+    const where = this.listWhere(user, query);
 
     // Won leads are listed by when they closed; everything else by newest first.
     const orderBy: Prisma.LeadOrderByWithRelationInput[] =
@@ -125,11 +144,8 @@ export class LeadsService {
     }
     if (assignedToId) await this.ensureAssignable(assignedToId);
 
-    const stage = dto.stageId
-      ? await this.activeStage(dto.stageId)
-      : dto.status
-        ? await this.stages.forStatus(dto.status)
-        : await this.stages.byKind('ENTRY');
+    // Every new lead starts in New; its stage is set afterwards as the conversation goes.
+    const stage = await this.stages.byKind('ENTRY');
     const status = stage.phase;
     const lead = await this.prisma.$transaction(async (tx) => {
       // One number at a time (the same lock Quick add, import and the API use), then the duplicate check.
@@ -185,8 +201,6 @@ export class LeadsService {
         stage: { select: { name: true } },
         assignedToId: true,
         assignedTo: { select: { fullName: true } },
-        telecallerId: true,
-        qualifiedAt: true,
         name: true,
         phone: true,
         email: true,
@@ -227,21 +241,14 @@ export class LeadsService {
       );
     }
 
-    // Anyone may move a lead they own to any active stage; a telecaller who handed a lead
-    // to sales still sees it, but only its salesperson (or an admin) moves it on.
+    // The stage is only where the lead is in the conversation: it never changes who owns the lead.
+    // Whoever owns it sets any active stage; a telecaller who handed a lead to sales still
+    // sees it, but only its owner (or an admin) moves it on.
     if (target && !user.permissions.includes(PERMISSIONS.LEADS_READ_ALL) && existing.assignedToId !== user.id) {
       throw new ForbiddenException(
-        `This lead is with ${existing.assignedTo?.fullName ?? 'someone else'} now; only they or an admin can move its stage`,
+        `This lead is with ${existing.assignedTo?.fullName ?? 'someone else'} now; only they or an admin can change its stage`,
       );
     }
-    // Crossing the handover changes the owner with the stage (an explicit reassignment in the same request wins).
-    const ownership =
-      target && dto.assignedToId === undefined
-        ? await this.ownership.plan(
-            { id, assignedToId: existing.assignedToId, assignedTo: existing.assignedTo, telecallerId: existing.telecallerId, qualifiedAt: existing.qualifiedAt },
-            target,
-          )
-        : null;
 
     if (phoneChanging) await this.refuseOpenDuplicate(this.prisma, dto.phone!, id);
 
@@ -276,7 +283,7 @@ export class LeadsService {
       else if (wasClosed && !isClosed) data.closedAt = null; // reopened
     }
 
-    const { after: updated, moved } = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const after = await tx.lead.update({ where: { id }, data, select: { name: true, phone: true, assignedTo: { select: { fullName: true } } } });
       // History: one entry per kind of change, with from -> to.
       const fields = diff(existing, {
@@ -301,16 +308,6 @@ export class LeadsService {
           changes: [{ field: 'stage', label: 'Stage', from, to: target.name }],
         });
       }
-      const moved =
-        target && ownership
-          ? await this.ownership.apply(
-              tx,
-              ownership,
-              { id, assignedToId: existing.assignedToId, assignedTo: existing.assignedTo, telecallerId: existing.telecallerId, qualifiedAt: existing.qualifiedAt },
-              user,
-              target.name,
-            )
-          : null;
       if (data.assignedToId !== undefined) {
         const from = existing.assignedTo?.fullName ?? null;
         const toName = after.assignedTo?.fullName ?? null;
@@ -322,15 +319,10 @@ export class LeadsService {
           changes: [{ field: 'assignedTo', label: 'Assigned to', from, to: toName }],
         });
       }
-      return { after, moved };
+      return after;
     });
     if (typeof data.assignedToId === 'string') {
       await notifyLeadAssigned(this.prisma, { userId: data.assignedToId, leadId: id, leadName: leadLabel(updated), actorId: user.id, how: `Assigned by ${user.fullName}` });
-    }
-    if (moved?.kind === 'handover') {
-      await notifyLeadHandedOver(this.prisma, { userId: moved.to.id, leadId: id, leadName: leadLabel(updated), fromName: user.fullName, actorId: user.id });
-    } else if (moved?.kind === 'return') {
-      await notifyLeadAssigned(this.prisma, { userId: moved.to.id, leadId: id, leadName: leadLabel(updated), actorId: user.id, how: `Moved back to ${target!.name} by ${user.fullName}` });
     }
 
     // If the change moved the lead out of this user's scope, they can no longer read it.

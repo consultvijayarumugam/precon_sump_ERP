@@ -36,8 +36,11 @@ const OUTCOME_TEXT: Record<CallOutcome, string> = {
   WRONG_NUMBER: 'Wrong number',
 };
 
-/** Stages a telecaller works: before qualification. */
-export const TELECALLER_STAGES: LeadStatus[] = ['NEW', 'CONTACTED'];
+/**
+ * Leads still being worked (not Won or Lost), whatever stage they're in. Worklists
+ * and dashboards are "assigned to me and open": the stage is only a label.
+ */
+export const OPEN_STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'QUALIFIED', 'QUOTED'];
 
 /**
  * The telecaller's quick actions (also open to sales on their own leads):
@@ -159,27 +162,30 @@ export class LeadActionsService {
   }
 
   /**
-   * Telecaller → sales handover. Fills in what the call found out, marks the
-   * lead Qualified and assigns it to a salesperson (chosen, or next in the
-   * sales round-robin). The telecaller's open callbacks close; an optional
-   * follow-up goes on the salesperson's list. The lead leaves the worklist.
+   * Telecaller → sales handover: the explicit action that moves a lead to sales
+   * (with admin Reassign, the only things that change who owns a lead). Fills in
+   * what the call found out and assigns it to a salesperson (chosen, or next in
+   * the sales round-robin). The lead keeps its stage: the stage is only where the
+   * conversation is. The telecaller's open callbacks close; an optional follow-up
+   * goes on the salesperson's list. The lead leaves the telecaller's worklist.
    */
   async qualify(user: AuthenticatedUser, leadId: string, dto: QualifyLeadDto) {
     const lead = await this.leadInScope(user, leadId, { ownOnlyWithoutWrite: true });
-    if (!TELECALLER_STAGES.includes(lead.status)) {
-      throw new BadRequestException(`This lead is already in "${lead.stage?.name ?? lead.status}"; only leads still with a telecaller can be qualified`);
+    if (!OPEN_STATUSES.includes(lead.status)) {
+      throw new BadRequestException(`This lead is ${lead.stage?.name ?? lead.status}, so it can't be handed over; reopen it first`);
     }
     if (dto.productInterest === 'MICROBES' && dto.sumpSizeLitres) throw new BadRequestException('Microbes have no size');
     if (dto.salesFollowUpAt && dto.salesFollowUpAt <= new Date()) throw new BadRequestException('The sales follow-up must be in the future');
 
     const team = await this.assignment.members(ROTATIONS.sales);
+    if (lead.assignedToId && team.some((m) => m.id === lead.assignedToId)) {
+      throw new BadRequestException(`This lead is already with ${lead.assignedTo?.fullName ?? 'a salesperson'}; an admin can reassign it`);
+    }
     if (dto.salesUserId && !team.some((m) => m.id === dto.salesUserId)) {
       throw new BadRequestException(`That person can't receive qualified leads (needs the ${PERMISSIONS.LEADS_RECEIVE_QUALIFIED} tag)`);
     }
     const rotation = team.filter((m) => m.autoAssignEnabled).map((m) => m.id);
     const now = new Date();
-    // The handover stage by identity (isHandover), so renaming "Qualified" changes nothing here.
-    const handoverStage = await this.stages.handover();
 
     return this.prisma.$transaction(async (tx) => {
       const picked = dto.salesUserId ? null : await this.assignment.pickNext(tx, rotation);
@@ -203,8 +209,6 @@ export class LeadActionsService {
       await tx.lead.update({
         where: { id: leadId },
         data: {
-          status: handoverStage.phase,
-          stageId: handoverStage.id,
           productInterest: dto.productInterest,
           sumpSizeLitres: dto.productInterest === 'SUMP' ? (dto.sumpSizeLitres ?? null) : null,
           city: dto.city === undefined ? undefined : dto.city || null,
@@ -225,8 +229,7 @@ export class LeadActionsService {
         type: 'HANDED_OVER',
         summary: `Qualified and handed to ${sales.fullName}${picked ? ' (round-robin)' : ''}`,
         changes: [
-          { field: 'stage', label: 'Stage', from: lead.stage?.name ?? STATUS_WORDS[lead.status], to: handoverStage.name },
-          { field: 'assignedTo', label: 'Salesperson', from: null, to: sales.fullName },
+          { field: 'assignedTo', label: 'Salesperson', from: lead.assignedTo?.fullName ?? null, to: sales.fullName },
           { field: 'productInterest', label: 'Product', from: lead.productInterest, to: dto.productInterest },
           ...(size !== lead.sumpSizeLitres ? [{ field: 'sumpSizeLitres', label: 'Sump size', from: lead.sumpSizeLitres === null ? null : String(lead.sumpSizeLitres), to: size === null ? null : String(size) }] : []),
           ...(dto.city !== undefined && (dto.city || null) !== lead.city ? [{ field: 'city', label: 'City', from: lead.city, to: dto.city || null }] : []),
@@ -245,7 +248,7 @@ export class LeadActionsService {
         });
       }
       await notifyLeadHandedOver(tx, { userId: sales.id, leadId, leadName, fromName: user.fullName, actorId: user.id });
-      return { leadId, status: 'QUALIFIED' as const, handedTo: sales, roundRobin: Boolean(picked) };
+      return { leadId, status: lead.status, stage: lead.stage?.name ?? null, handedTo: sales, roundRobin: Boolean(picked) };
     });
   }
 
@@ -264,8 +267,9 @@ export class LeadActionsService {
     if (!user.permissions.includes(PERMISSIONS.LEADS_ASSIGN)) {
       throw new ForbiddenException('Only an admin can reassign a lead to a different salesperson');
     }
-    if (!lead.qualifiedAt || TELECALLER_STAGES.includes(lead.status)) {
-      throw new BadRequestException('This lead has not been handed to sales yet; use Qualify to hand it over');
+    // Handed to sales at some point (whatever stage it's in now).
+    if (!lead.qualifiedAt) {
+      throw new BadRequestException('This lead has not been handed to sales yet; use "Qualify & hand over" first');
     }
     const team = await this.assignment.members(ROTATIONS.sales);
     const target = team.find((m) => m.id === salesUserId);
@@ -341,6 +345,7 @@ export class LeadActionsService {
         notes: true,
         telecallerId: true,
         assignedToId: true,
+        assignedTo: { select: { fullName: true } },
         productInterest: true,
         sumpSizeLitres: true,
         city: true,

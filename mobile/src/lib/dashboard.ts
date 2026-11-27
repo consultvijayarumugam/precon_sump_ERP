@@ -89,6 +89,31 @@ export function pipelineRows(stages: PipelineStage[], counts: Record<string, num
  * The query string for one page of the lead list. `dates`: the date filter's
  * params (see leadDateParams in date-range.ts), so it combines with the stage and status filters.
  */
+/**
+ * How many leads each stage holds under the list's other filters (GET /leads/stage-counts):
+ * search, dates and person, but not the stage itself.
+ */
+export function stageCountsQuery({ search, dates = [], assignedToId }: { search?: string; dates?: [string, string][]; assignedToId?: string }) {
+  const params: [string, string][] = [];
+  const term = search?.trim();
+  if (term) params.push(['search', term]);
+  params.push(...dates);
+  if (assignedToId) params.push(['assignedToId', assignedToId]);
+  return `/leads/stage-counts${params.length ? `?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}` : ''}`;
+}
+
+export interface StageCounts {
+  total: number;
+  stages: { stageId: string | null; count: number }[];
+}
+
+/** "RNR · 12" for a stage chip; just the name while counts load or when a count wouldn't match the list. */
+export function chipLabel(name: string, counts: StageCounts | null, stageId: string | null): string {
+  if (!counts) return name;
+  const count = stageId === null ? counts.total : (counts.stages.find((c) => c.stageId === stageId)?.count ?? 0);
+  return `${name} · ${count}`;
+}
+
 export function leadListQuery({ search, status, stageId, dates = [], page, pageSize = 30 }: { search?: string; status?: LeadStatus; stageId?: string; dates?: [string, string][]; page: number; pageSize?: number }) {
   const params: [string, string][] = [];
   const term = search?.trim();

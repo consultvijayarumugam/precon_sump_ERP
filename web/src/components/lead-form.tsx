@@ -110,7 +110,8 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
       await onSubmit({
         ...rest,
         name: name.trim() || null,
-        stageId: stageId || undefined,
+        // Only an existing lead's stage is sent; a new lead always starts in New.
+        ...(initial && stageId ? { stageId } : {}),
         productInterest: productInterest || null,
         // A size only applies to sumps; "" = not decided yet.
         sumpSizeLitres: values.productInterest === "SUMP" && sumpSizeLitres ? Number(sumpSizeLitres) : null,
@@ -193,19 +194,20 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
             </select>
           </Field>
         )}
-        <Field label="Stage">
-          <select className={inputClass} value={values.stageId} onChange={(e) => set("stageId", e.target.value)}>
-            {!initial && <option value="">New (first stage)</option>}
-            {pickableStages(stages.data, initial?.stage?.id)
-              .filter((st) => initial || st.kind !== "ENTRY")
-              .map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.name}
-                  {st.isActive ? "" : " (switched off)"}
-                </option>
-              ))}
-          </select>
-        </Field>
+        {/* Every new lead starts in New; the stage is set afterwards as the conversation goes. */}
+        {initial && (
+          <Field label="Stage">
+            <select className={inputClass} value={values.stageId} onChange={(e) => set("stageId", e.target.value)}>
+              {pickableStages(stages.data, initial?.stage?.id)
+                .map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                    {st.isActive ? "" : " (switched off)"}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        )}
         {canAssign && (
           <Field label="Assigned to">
             <select className={inputClass} value={values.assignedToId} onChange={(e) => set("assignedToId", e.target.value)}>

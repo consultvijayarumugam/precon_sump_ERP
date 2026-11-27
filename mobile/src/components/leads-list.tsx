@@ -3,7 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ALL_TIME, leadDateNoun, leadDateParams, rangeLabel, type DateRange } from '../lib/date-range';
-import { leadListQuery, ownerLine, type LeadListItem, type LeadListPage } from '../lib/dashboard';
+import { chipLabel, leadListQuery, ownerLine, stageCountsQuery, type LeadListItem, type LeadListPage, type StageCounts } from '../lib/dashboard';
 import type { PipelineStage } from '../lib/sales';
 import { closedKind, stageFilters } from '../lib/stages';
 import { formatDateTime, productLabel, type LeadStatus } from '../lib/workflow';
@@ -104,6 +104,8 @@ export function LeadsList({
   const [range, setRange] = useState<DateRange>(ALL_TIME);
   const [items, setItems] = useState<LeadListItem[]>([]);
   const [total, setTotal] = useState<number | null>(null);
+  // How many leads each stage chip holds under the same search, dates and person.
+  const [counts, setCounts] = useState<StageCounts | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -128,8 +130,16 @@ export function LeadsList({
       if (pulled) setRefreshing(true);
       try {
         const query = leadListQuery({ search: term, status, stageId, dates: leadDateParams(range, closedAs), page: nextPage, pageSize: PAGE_SIZE });
-        const result = await api<LeadListPage>(assignedToId ? `${query}&assignedToId=${assignedToId}` : query);
+        const showChips = !fixedStageId && !status;
+        const [result, stageCounts] = await Promise.all([
+          api<LeadListPage>(assignedToId ? `${query}&assignedToId=${assignedToId}` : query),
+          // Counts only matter when the stage chips show; a failure just leaves them off.
+          showChips && nextPage === 1
+            ? api<StageCounts>(stageCountsQuery({ search: term, dates: leadDateParams(range, undefined), assignedToId })).catch(() => null)
+            : Promise.resolve(undefined),
+        ]);
         if (run !== latest.current) return;
+        if (stageCounts !== undefined) setCounts(stageCounts);
         setItems((prev) => (nextPage === 1 ? result.items : [...prev, ...result.items]));
         setTotal(result.total);
         setPage(nextPage);
@@ -143,7 +153,7 @@ export function LeadsList({
         }
       }
     },
-    [api, term, status, stageId, range, closedAs, assignedToId],
+    [api, term, status, stageId, range, closedAs, assignedToId, fixedStageId],
   );
 
   // Load on opening (and whenever a filter changes), and again on coming back from a lead.
@@ -192,12 +202,13 @@ export function LeadsList({
           </View>
           {!fixedStageId && !status && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} keyboardShouldPersistTaps="handled" testID="stage-chips">
-              <Chip testID="filter-all" label="All stages" active={chosenStage === null} onPress={() => setChosenStage(null)} />
+              <Chip testID="filter-all" label={chipLabel('All stages', counts, null)} active={chosenStage === null} onPress={() => setChosenStage(null)} />
               {stageFilters(stages.data ?? []).map((s) => (
                 <Chip
                   key={s.id}
                   testID={`filter-${s.name}`}
-                  label={s.name}
+                  // Won/Lost list by close date, counts by date added: with a date range set, leave their count off.
+                  label={chipLabel(s.name, (s.kind === 'WON' || s.kind === 'LOST') && range.preset !== 'all' ? null : counts, s.id)}
                   active={chosenStage === s.id}
                   onPress={() => setChosenStage(s.id)}
                   tone={s.kind === 'WON' ? 'good' : s.kind === 'LOST' ? 'danger' : undefined}

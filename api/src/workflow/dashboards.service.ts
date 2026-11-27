@@ -9,10 +9,13 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { StagesService } from '../pipeline/stages.service.js';
 import { businessDate, businessPeriods } from './business-periods.js';
 import { CheckInsService } from './check-ins.service.js';
-import { TELECALLER_STAGES } from './lead-actions.service.js';
+import { OPEN_STATUSES } from './lead-actions.service.js';
 
-const SALES_OPEN: LeadStatus[] = ['QUALIFIED', 'QUOTED'];
-const SALES_STAGES: LeadStatus[] = ['QUALIFIED', 'QUOTED', 'WON', 'LOST'];
+// A salesperson's open leads are the ones assigned to them and not closed, in any stage
+// (the stage is only a label; a lead can be with sales while marked Interested).
+const SALES_OPEN: LeadStatus[] = OPEN_STATUSES;
+/** Stages always shown on the sales board, even when empty (the rest only when they hold a lead). */
+const SALES_HEADLINE: LeadStatus[] = ['QUALIFIED', 'QUOTED'];
 
 /** Worklist order: who to call first. */
 export const WORKLIST_BUCKETS = ['overdue', 'today', 'new', 'no_next_step', 'later'] as const;
@@ -78,7 +81,9 @@ export class DashboardsService {
   async telecaller(user: AuthenticatedUser) {
     const p = businessPeriods();
     const leads = await this.prisma.lead.findMany({
-      where: { assignedToId: user.id, status: { in: TELECALLER_STAGES } },
+      // Everything assigned to them and still open, whatever its stage: a lead marked
+      // Quote Shared stays here until it's handed over or reassigned.
+      where: { assignedToId: user.id, status: { in: OPEN_STATUSES } },
       orderBy: { createdAt: 'asc' },
       take: 500,
       select: WORKLIST_SELECT,
@@ -132,7 +137,7 @@ export class DashboardsService {
     const p = businessPeriods();
     const mine = { assignedToId: user.id };
     const [byStatus, wonThisMonth, lostThisMonth, open, closedThisMonth, followUps, handedToday, revenue, visits, byStage, stageList] = await Promise.all([
-      this.prisma.lead.groupBy({ by: ['status'], where: { ...mine, status: { in: SALES_STAGES } }, _count: { _all: true } }),
+      this.prisma.lead.groupBy({ by: ['status'], where: mine, _count: { _all: true } }),
       this.prisma.lead.count({ where: { ...mine, status: 'WON', closedAt: { gte: p.monthStart } } }),
       this.prisma.lead.count({ where: { ...mine, status: 'LOST', closedAt: { gte: p.monthStart } } }),
       this.prisma.lead.findMany({
@@ -169,6 +174,8 @@ export class DashboardsService {
     const inStage = (id: string) => byStage.find((g) => g.stageId === id)?._count._all ?? 0;
     return {
       pipeline: {
+        // Every open lead assigned to you, whatever its stage (Interested, Quote Shared, ...).
+        OPEN: SALES_OPEN.reduce((sum, st) => sum + stageCount(st), 0),
         QUALIFIED: stageCount('QUALIFIED'),
         QUOTED: stageCount('QUOTED'),
         WON: stageCount('WON'),
@@ -176,10 +183,11 @@ export class DashboardsService {
         wonThisMonth,
         lostThisMonth,
       },
-      // The sales-side pipeline stages (admin-defined, in order), with your open leads in each.
-      // Switched-off stages only show while they still hold some of your leads.
+      // Your open leads in each stage (admin-defined, in order), from New on: the stage is a label,
+      // so a lead with you can be in any of them. Empty early stages are left out to keep it short;
+      // switched-off stages only show while they still hold some of your leads.
       stages: stageList
-        .filter((st) => st.kind === 'MIDDLE' && SALES_OPEN.includes(st.phase) && (st.isActive || inStage(st.id) > 0))
+        .filter((st) => (st.kind === 'ENTRY' || st.kind === 'MIDDLE') && (inStage(st.id) > 0 || (st.isActive && SALES_HEADLINE.includes(st.phase))))
         .map((st) => ({ id: st.id, name: st.name, isActive: st.isActive, isHandover: st.isHandover, leads: inStage(st.id) })),
       revenueThisMonth: revenue,
       handedToday,
@@ -202,7 +210,7 @@ export class DashboardsService {
 
     const telecallerRows = await Promise.all(
       telecallers.map(async (t) => {
-        const assigned = { assignedToId: t.id, status: { in: TELECALLER_STAGES } };
+        const assigned = { assignedToId: t.id, status: { in: OPEN_STATUSES } };
         const [active, notCalled, oldestNotCalled, overdueCallbacks, callsToday, callsWeek, receivedMonth, convertedMonth, qualifiedMonth] =
           await Promise.all([
             this.prisma.lead.count({ where: assigned }),

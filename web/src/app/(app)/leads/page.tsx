@@ -78,6 +78,12 @@ function LeadsView() {
   const { data, error, reload } = useApi<Paginated<LeadListItem>>(
     `/leads${queryString({ ...filters, createdFrom: added.from, createdTo: added.to, pageSize: PAGE_SIZE })}`,
   );
+  // How many leads each stage holds under the other filters (search, dates, source, product, person).
+  const countFilters = { search: filters.search, source: filters.source, productInterest: filters.productInterest, assignedToId: filters.assignedToId };
+  const stageCounts = useApi<{ total: number; stages: { stageId: string | null; count: number }[] }>(
+    `/leads/stage-counts${queryString({ ...countFilters, createdFrom: added.from, createdTo: added.to })}`,
+  );
+  const countOf = (stageId: string) => stageCounts.data?.stages.find((c) => c.stageId === stageId)?.count ?? 0;
 
   return (
     <>
@@ -122,13 +128,21 @@ function LeadsView() {
           }}
           aria-label="Stage"
         >
-          <option value="">{filters.status ? `Status: ${STATUS_LABELS[filters.status as keyof typeof STATUS_LABELS] ?? filters.status}` : "All stages"}</option>
-          {stages.data?.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-              {s.isActive ? "" : " (switched off)"}
-            </option>
-          ))}
+          <option value="">
+            {filters.status
+              ? `Status: ${STATUS_LABELS[filters.status as keyof typeof STATUS_LABELS] ?? filters.status}`
+              : `All stages${stageCounts.data ? ` (${stageCounts.data.total})` : ""}`}
+          </option>
+          {/* Every stage with how many leads it holds under the other filters; switched-off ones only while they hold leads. */}
+          {stages.data
+            ?.filter((s) => s.isActive || countOf(s.id) > 0 || s.id === filters.stageId)
+            .map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+                {stageCounts.data ? ` (${countOf(s.id)})` : ""}
+                {s.isActive ? "" : " (switched off)"}
+              </option>
+            ))}
         </select>
         <select className={inputClass} value={filters.source} onChange={(e) => setFilter("source", e.target.value)}>
           <option value="">All sources</option>

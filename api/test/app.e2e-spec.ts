@@ -204,9 +204,11 @@ describe('Auth and RBAC (e2e)', () => {
       const res = await http()
         .post('/api/v1/leads')
         .set(as(sales))
-        .send({ name, phone: '9000011111', source: 'MANUAL', productInterest, sumpSizeLitres, status: 'WON' })
+        .send({ name, phone: '9000011111', source: 'MANUAL', productInterest, sumpSizeLitres })
         .expect(201);
       created.leadIds.push(res.body.id);
+      // Every lead starts in New; Suresh then marks it Won.
+      await http().patch(`/api/v1/leads/${res.body.id}`).set(as(sales)).send({ status: 'WON' }).expect(200);
       return res.body.id as string;
     }
 
@@ -406,9 +408,11 @@ describe('Auth and RBAC (e2e)', () => {
 
       // A fresh won lead + order owned by Suresh (sales).
       const lead = await http().post('/api/v1/leads').set(as('sales'))
-        .send({ name: 'E2E Install Customer', phone: '9000033333', source: 'MANUAL', productInterest: 'MICROBES', status: 'WON' })
+        .send({ name: 'E2E Install Customer', phone: '9000033333', source: 'MANUAL', productInterest: 'MICROBES' })
         .expect(201);
       created.leadIds.push(lead.body.id);
+      // Every lead starts in New; Suresh then marks it Won.
+      await http().patch(`/api/v1/leads/${lead.body.id}`).set(as('sales')).send({ status: 'WON' }).expect(200);
       const order = await http().post('/api/v1/sales-orders').set(as('sales'))
         .send({ leadId: lead.body.id, quantity: 1, totalAmount: 1000 }).expect(201);
       created.orderIds.push(order.body.id);
@@ -1227,10 +1231,11 @@ describe('Auth and RBAC (e2e)', () => {
       const a = await http().post(`/api/v1/leads/${first}/qualify`).set(as(tara)).send({
         productInterest: 'SUMP', sumpSizeLitres: 10000, city: 'Erode', notes: 'E2E wants it in 3 weeks', salesFollowUpAt: inHours(20),
       }).expect(200);
-      expect(a.body).toMatchObject({ status: 'QUALIFIED', roundRobin: true });
+      // Handing over changes who has the lead, not its stage: it stays where the conversation is (Contacted).
+      expect(a.body).toMatchObject({ status: 'CONTACTED', roundRobin: true });
       const lead = await db.lead.findUniqueOrThrow({ where: { id: first }, include: { assignedTo: { include: { role: true } } } });
       const taraUser = await userByEmail('telecaller@precon.local');
-      expect(lead).toMatchObject({ status: 'QUALIFIED', productInterest: 'SUMP', sumpSizeLitres: 10000, city: 'Erode', qualifiedById: taraUser.id, telecallerId: taraUser.id });
+      expect(lead).toMatchObject({ status: 'CONTACTED', productInterest: 'SUMP', sumpSizeLitres: 10000, city: 'Erode', qualifiedById: taraUser.id, telecallerId: taraUser.id });
       expect(lead.assignedTo?.role.key).toBe('sales');
       expect(lead.notes).toMatch(/Qualified by Tara Telecaller.*E2E wants it in 3 weeks/s);
       // Tara's callback is closed; the salesperson has the new follow-up.
@@ -1258,10 +1263,10 @@ describe('Auth and RBAC (e2e)', () => {
       const c = await http().post(`/api/v1/leads/${third}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh.id }).expect(200);
       expect(c.body).toMatchObject({ roundRobin: false, handedTo: { id: suresh.id } });
 
-      // It shows on Suresh's sales dashboard as a qualified lead from Tara.
+      // It shows on Suresh's sales dashboard as a lead from Tara, in the stage it was in (never called: New).
       const dash = (await http().get('/api/v1/dashboards/sales').set(as(sales)).expect(200)).body;
       const card = dash.open.find((l: { id: string }) => l.id === third);
-      expect(card).toMatchObject({ status: 'QUALIFIED', qualifiedBy: { fullName: 'Tara Telecaller' } });
+      expect(card).toMatchObject({ status: 'NEW', qualifiedBy: { fullName: 'Tara Telecaller' } });
       expect(typeof card.source).toBe('string'); // mobile: WhatsApp leads open their chat in one tap
     });
 
@@ -1895,9 +1900,10 @@ describe('Auth and RBAC (e2e)', () => {
       }
       const byType = (t: string) => history.filter((h) => h.type === t);
       expect(byType('HANDED_OVER')[0]).toMatchObject({ user: { fullName: 'Tara Telecaller' }, message: 'Qualified and handed to Suresh Sales' });
-      // Stage changes record the stage names, old -> new.
-      expect(byType('HANDED_OVER')[0].changes).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'stage', from: 'Contacted', to: 'Qualified' })]));
-      expect(byType('STATUS_CHANGED')[0]).toMatchObject({ user: { fullName: 'Suresh Sales' }, message: 'Stage: Qualified → Quoted', changes: [{ field: 'stage', from: 'Qualified', to: 'Quoted' }] });
+      // Handing over records the change of owner and leaves the stage alone; stage changes record names, old -> new.
+      expect(byType('HANDED_OVER')[0].changes).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'assignedTo', from: 'Tara Telecaller', to: 'Suresh Sales' })]));
+      expect(byType('HANDED_OVER')[0].changes!.some((c) => c.field === 'stage')).toBe(false);
+      expect(byType('STATUS_CHANGED')[0]).toMatchObject({ user: { fullName: 'Suresh Sales' }, message: 'Stage: Contacted → Quoted', changes: [{ field: 'stage', from: 'Contacted', to: 'Quoted' }] });
       const salespersonChange = byType('ASSIGNED').find((h) => h.message.startsWith('Reassigned by'));
       expect(salespersonChange).toMatchObject({ user: { fullName: 'Asha Admin' }, message: 'Reassigned by Asha Admin: Suresh Sales → Priya Sales', changes: [{ from: 'Suresh Sales', to: 'Priya Sales' }] });
       const notes = byType('NOTES_EDITED');
@@ -2207,7 +2213,7 @@ describe('Auth and RBAC (e2e)', () => {
       expect((await (await prisma()).lead.findUniqueOrThrow({ where: { id: leadIds[0] } })).status).toBe('QUOTED');
     });
 
-    it('renaming the handover stage keeps qualify-and-handover working (by identity); won/lost logic is untouched', async () => {
+    it('handing over never changes the stage, even a renamed handover stage; won/lost logic is untouched', async () => {
       const qualified = byName(await list(), 'Qualified');
       await http().patch(`/api/v1/pipeline-stages/${qualified.id}`).set(as(admin)).send({ name: 'E2E Ready for sales' }).expect(200);
       const id = await newLead('E2E Stage Handover', '9000089003', 'tara');
@@ -2217,11 +2223,11 @@ describe('Auth and RBAC (e2e)', () => {
       const suresh = (await (await prisma()).user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } })).id;
       await http().post(`/api/v1/leads/${id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh }).expect(200);
       const lead = (await http().get(`/api/v1/leads/${id}`).set(as(admin)).expect(200)).body;
-      expect(lead).toMatchObject({ status: 'QUALIFIED', stage: { id: qualified.id, name: 'E2E Ready for sales', isHandover: true } });
-      const history = (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body;
-      expect(history.find((h: { type: string }) => h.type === 'HANDED_OVER').changes).toEqual(
-        expect.arrayContaining([expect.objectContaining({ field: 'stage', from: 'Contacted', to: 'E2E Ready for sales' })]),
-      );
+      // With Suresh now, still marked Contacted: the stage is where the conversation is, not who has it.
+      expect(lead).toMatchObject({ status: 'CONTACTED', stage: { name: 'Contacted' }, assignedTo: { id: suresh } });
+      // Suresh marks it with the (renamed) handover stage himself; it stays his.
+      const marked = (await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ stageId: qualified.id }).expect(200)).body;
+      expect(marked).toMatchObject({ status: 'QUALIFIED', stage: { name: 'E2E Ready for sales' }, assignedTo: { id: suresh } });
       // Won still drives the Won list and closedAt; Lost still closes it.
       const won = (await http().patch(`/api/v1/leads/${id}`).set(as(sales)).send({ stageId: byName(original, 'Won').id }).expect(200)).body;
       expect(won).toMatchObject({ status: 'WON', stage: { name: 'Won' } });
@@ -2955,7 +2961,7 @@ describe('Auth and RBAC (e2e)', () => {
     });
   });
 
-  describe('Any owner moves to any stage; ownership follows the stage across the handover', () => {
+  describe('Stage is a label: it never changes who owns a lead; only hand-over and reassign do', () => {
     const as = (token: string) => ({ Authorization: `Bearer ${token}` });
     const http = () => request(app.getHttpServer());
     const created: string[] = [];
@@ -2973,10 +2979,15 @@ describe('Auth and RBAC (e2e)', () => {
     });
     const worklist = async (token: string) =>
       ((await http().get('/api/v1/dashboards/telecaller').set(as(token)).expect(200)).body.items as { id: string }[]).map((i) => i.id);
+    const salesOpen = async (token: string) =>
+      ((await http().get('/api/v1/dashboards/sales').set(as(token)).expect(200)).body.open as { id: string }[]).map((i) => i.id);
     const history = async (admin: string, id: string) =>
       (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body as { type: string; message: string }[];
 
     beforeAll(async () => {
+      // Leftovers from an interrupted earlier run would show up as duplicates.
+      await (await prisma()).lead.deleteMany({ where: { phone: { startsWith: '+9190000961' } } });
+      await (await prisma()).lead.deleteMany({ where: { phone: { startsWith: '+9190000960' } } });
       const { admin } = await tokens();
       const all = (await http().get('/api/v1/pipeline-stages').set(as(admin)).expect(200)).body as Stage[];
       stage = Object.fromEntries(all.map((x) => [x.key, x]));
@@ -2985,96 +2996,114 @@ describe('Auth and RBAC (e2e)', () => {
       await (await prisma()).lead.deleteMany({ where: { id: { in: created } } });
     });
 
-    it('a telecaller can pick any stage: within her side she keeps it; Quoted hands it to sales; back to Contacted returns it', async () => {
+    it('a telecaller marks her lead Quoted and keeps it; only "Qualify & hand over" moves it to sales, stage unchanged', async () => {
       const db = await prisma();
-      const { admin, tara } = await tokens();
+      const { admin, tara, sales } = await tokens();
       const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const suresh = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
       const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096001', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
       created.push(lead.id);
+      expect(lead.stage.key).toBe('NEW');
 
-      // Her side: Contacted. Still hers, still on her worklist.
-      const contacted = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.CONTACTED.id }).expect(200)).body;
-      expect(contacted.assignedTo.id).toBe(taraUser.id);
-      expect(await worklist(tara)).toContain(lead.id);
-
-      // Straight to Quoted (past the handover): handed to a salesperson in the same step.
-      const quoted = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.QUOTED.id }).expect(200)).body;
-      expect(quoted.stage.key).toBe('QUOTED');
-      const after = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { assignedTo: { include: { role: true } } } });
-      expect(after.assignedTo?.role.key).toBe('sales');
-      expect(after).toMatchObject({ status: 'QUOTED', telecallerId: taraUser.id, qualifiedById: taraUser.id });
-      expect(after.qualifiedAt).not.toBeNull();
-      expect(await worklist(tara)).not.toContain(lead.id); // off her worklist
-      await http().get(`/api/v1/leads/${lead.id}`).set(as(tara)).expect(200); // but she can still open it
-      expect(await db.notification.count({ where: { userId: after.assignedToId!, leadId: lead.id } })).toBeGreaterThan(0);
-      const h1 = await history(admin, lead.id);
-      expect(h1.map((e) => e.message)).toEqual(expect.arrayContaining(['Stage: Contacted → Quoted', `Moved to Quoted: handed to ${after.assignedTo!.fullName} (round-robin)`]));
-
-      // Now it's the salesperson's: Tara can no longer move it.
-      const refused = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.WON.id }).expect(403);
-      expect(refused.body.message).toMatch(/only they or an admin can move its stage/);
-
-      // The salesperson moves it back before the handover: it returns to Tara and leaves their list.
-      const salesToken = (await login(after.assignedTo!.email)).body.accessToken;
-      const back = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(salesToken)).send({ stageId: stage.CONTACTED.id }).expect(200)).body;
-      expect(back).toEqual({ id: lead.id, movedOutOfScope: true });
-      expect((await db.lead.findUniqueOrThrow({ where: { id: lead.id } })).assignedToId).toBe(taraUser.id);
-      expect(await worklist(tara)).toContain(lead.id);
-      expect(await db.notification.count({ where: { userId: taraUser.id, leadId: lead.id, body: { contains: 'Moved back to Contacted' } } })).toBe(1);
-      const h2 = await history(admin, lead.id);
-      expect(h2.map((e) => e.message)).toEqual(expect.arrayContaining(['Stage: Quoted → Contacted', 'Moved back to Contacted: returned to Tara Telecaller']));
-
-      // Lost from her side: closed, still hers.
-      await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.LOST.id }).expect(200);
-      const lost = await db.lead.findUniqueOrThrow({ where: { id: lead.id } });
-      expect(lost).toMatchObject({ status: 'LOST', assignedToId: taraUser.id });
-      expect(lost.closedAt).not.toBeNull();
-    });
-
-    it("a salesperson's own walk-in lead stays theirs on either side; sales can still move theirs to Won", async () => {
-      const db = await prisma();
-      const { sales } = await tokens();
-      const salesUser = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
-      const lead = (await http().post('/api/v1/leads').set(as(sales)).send({ phone: '9000096002', source: 'MANUAL' }).expect(201)).body;
-      created.push(lead.id);
-      for (const key of ['CONTACTED', 'QUOTED', 'CONTACTED', 'WON']) {
-        const res = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(sales)).send({ stageId: stage[key].id }).expect(200)).body;
-        expect(res.assignedTo.id).toBe(salesUser.id);
-        expect(res.stage.key).toBe(key);
+      // Any stage, including ones after the handover: still hers, still on her worklist.
+      for (const key of ['QUOTED', 'QUALIFIED', 'CONTACTED', 'QUOTED']) {
+        const res = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage[key].id }).expect(200)).body;
+        expect(res).toMatchObject({ stage: { key }, assignedTo: { id: taraUser.id } });
       }
-      expect(await db.leadActivity.count({ where: { leadId: lead.id, type: 'HANDED_OVER' } })).toBe(0);
+      expect(await worklist(tara)).toContain(lead.id);
+      const h1 = await history(admin, lead.id);
+      expect(h1.filter((e) => e.type === 'HANDED_OVER')).toHaveLength(0);
+      expect(h1.map((e) => e.message)).toEqual(expect.arrayContaining(['Stage: New → Quoted', 'Stage: Quoted → Qualified', 'Stage: Contacted → Quoted']));
+
+      // The explicit hand-over: to Suresh, and the lead stays in Quoted.
+      const handed = (await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP', salesUserId: suresh.id }).expect(200)).body;
+      expect(handed).toMatchObject({ status: 'QUOTED', stage: 'Quoted', handedTo: { id: suresh.id } });
+      const after = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { stage: true } });
+      expect(after).toMatchObject({ assignedToId: suresh.id, telecallerId: taraUser.id, qualifiedById: taraUser.id });
+      expect(after.stage?.key).toBe('QUOTED');
+      expect(await worklist(tara)).not.toContain(lead.id);
+      expect(await salesOpen(sales)).toContain(lead.id);
+      await http().get(`/api/v1/leads/${lead.id}`).set(as(tara)).expect(200); // she can still open it
+
+      // Now it's Suresh's: Tara can't change its stage, and it can't be handed over again.
+      const refused = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.CONTACTED.id }).expect(403);
+      expect(refused.body.message).toMatch(/only they or an admin can change its stage/);
+      await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP' }).expect(404); // not hers to hand over
+      const again = await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(admin)).send({ productInterest: 'SUMP' }).expect(400);
+      expect(again.body.message).toMatch(/already with Suresh Sales/);
+
+      // Suresh marks it back to Contacted: it stays his (no return to the telecaller), still on his board.
+      const back = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(sales)).send({ stageId: stage.CONTACTED.id }).expect(200)).body;
+      expect(back).toMatchObject({ stage: { key: 'CONTACTED' }, assignedTo: { id: suresh.id } });
+      expect(await salesOpen(sales)).toContain(lead.id);
+      expect(await worklist(tara)).not.toContain(lead.id);
+
+      // The admin can reassign it to another salesperson whatever its stage.
+      const priya = await db.user.findUniqueOrThrow({ where: { email: 'sales2@precon.local' } });
+      await http().put(`/api/v1/leads/${lead.id}/salesperson`).set(as(admin)).send({ salesUserId: priya.id }).expect(200);
+      expect(await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { stage: true } })).toMatchObject({ assignedToId: priya.id, stage: { key: 'CONTACTED' } });
     });
 
-    it("an admin moving a telecaller's lead to Won hands it to sales first (revenue goes to sales)", async () => {
+    it("an admin marking a telecaller's lead Won leaves it with her (the stage never reassigns); Lost ends it", async () => {
       const db = await prisma();
-      const { admin } = await tokens();
+      const { admin, tara } = await tokens();
       const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
       const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096003', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
       created.push(lead.id);
-      await http().patch(`/api/v1/leads/${lead.id}`).set(as(admin)).send({ stageId: stage.WON.id }).expect(200);
-      const won = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { assignedTo: { include: { role: true } } } });
-      expect(won.status).toBe('WON');
-      expect(won.assignedTo?.role.key).toBe('sales');
-      expect(won).toMatchObject({ telecallerId: taraUser.id, qualifiedById: taraUser.id });
+      const won = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(admin)).send({ stageId: stage.WON.id }).expect(200)).body;
+      expect(won).toMatchObject({ status: 'WON', assignedTo: { id: taraUser.id } });
+      expect(won.closedAt).not.toBeNull();
+      expect(await worklist(tara)).not.toContain(lead.id); // closed: off the worklist
+      // A Won or Lost lead can't be handed over until it's reopened.
+      const closed = await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP' }).expect(400);
+      expect(closed.body.message).toMatch(/can't be handed over/);
+      await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.LOST.id }).expect(200);
+      expect(await db.lead.findUniqueOrThrow({ where: { id: lead.id } })).toMatchObject({ status: 'LOST', assignedToId: taraUser.id });
     });
 
-    it('with no salesperson switched on, moving into the handover is refused and nothing changes', async () => {
+    it('every new lead starts in New; creating straight into another stage is refused', async () => {
+      const { admin } = await tokens();
+      const res = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096005', source: 'MANUAL' }).expect(201)).body;
+      created.push(res.id);
+      expect(res).toMatchObject({ status: 'NEW', stage: { key: 'NEW' } });
+      await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096006', source: 'MANUAL', stageId: stage.QUOTED.id }).expect(400);
+      await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096007', source: 'MANUAL', status: 'WON' }).expect(400);
+      // Quick add and import too.
+      const quick = (await http().post('/api/v1/leads/quick-add').set(as(admin)).send({ phone: '9000096008' }).expect(200)).body;
+      expect(quick.status).toBe('created');
+      created.push(quick.lead.id);
+      expect((await http().get(`/api/v1/leads/${quick.lead.id}`).set(as(admin)).expect(200)).body.stage.key).toBe('NEW');
+      const imp = (await http().post('/api/v1/leads/import').set(as(admin)).attach('file', Buffer.from('phone\n9000096009\n'), 'e2e-stage-new.csv').expect(200)).body;
+      const imported = imp.createdRows[0].leadId;
+      created.push(imported);
+      expect((await http().get(`/api/v1/leads/${imported}`).set(as(admin)).expect(200)).body.stage.key).toBe('NEW');
+    });
+
+    it('stage counts follow the list filters and each person sees only their own leads', async () => {
       const db = await prisma();
-      const { admin, tara } = await tokens();
+      const { admin, tara, sales } = await tokens();
       const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
-      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096004', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
-      created.push(lead.id);
-      const salesTeam = (await http().get('/api/v1/lead-assignment').set(as(admin)).expect(200)).body.sales.members as { id: string; autoAssignEnabled: boolean }[];
-      for (const m of salesTeam) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: false }).expect(200);
-      try {
-        const res = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.QUALIFIED.id }).expect(400);
-        expect(res.body.message).toMatch(/no salesperson is switched on/);
-        const unchanged = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { stage: true } });
-        expect(unchanged).toMatchObject({ assignedToId: taraUser.id, qualifiedAt: null });
-        expect(unchanged.stage?.key).toBe('NEW');
-      } finally {
-        for (const m of salesTeam) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: m.autoAssignEnabled }).expect(200);
+      const ids: string[] = [];
+      for (const [i, key] of ['QUOTED', 'QUOTED', 'CONTACTED'].entries()) {
+        const l = (await http().post('/api/v1/leads').set(as(admin)).send({ name: `E2E Count ${i}`, phone: `900009610${i}`, source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+        created.push(l.id);
+        ids.push(l.id);
+        await http().patch(`/api/v1/leads/${l.id}`).set(as(tara)).send({ stageId: stage[key].id }).expect(200);
       }
+      const counts = async (token: string, q = '') =>
+        (await http().get(`/api/v1/leads/stage-counts?search=E2E%20Count${q}`).set(as(token)).expect(200)).body as { total: number; stages: { stageId: string; count: number }[] };
+      const of = (c: { stages: { stageId: string; count: number }[] }, key: string) => c.stages.find((x) => x.stageId === stage[key].id)?.count ?? 0;
+      const mine = await counts(tara);
+      expect([of(mine, 'QUOTED'), of(mine, 'CONTACTED'), mine.total]).toEqual([2, 1, 3]);
+      // The stage filter itself is ignored when counting; others (here: source) apply.
+      expect((await counts(tara, `&stageId=${stage.QUOTED.id}`)).total).toBe(3);
+      expect((await counts(tara, '&source=REFERRAL')).total).toBe(0);
+      // The list with the stage filter shows the same number.
+      const listed = (await http().get(`/api/v1/leads?search=E2E%20Count&stageId=${stage.QUOTED.id}`).set(as(tara)).expect(200)).body;
+      expect(listed.total).toBe(2);
+      // Sales see none of Tara's; admin sees all.
+      expect((await counts(sales)).total).toBe(0);
+      expect(of(await counts(admin), 'QUOTED')).toBe(2);
     });
   });
 });
