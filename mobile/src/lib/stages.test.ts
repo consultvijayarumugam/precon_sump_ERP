@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { PipelineStage } from './sales.ts';
-import { closedKind, stageChoices, stageFilters, stageRole } from './stages.ts';
+import { canMoveStage, closedKind, groupedChoices, moveEffect, stageChoices, stageFilters, stageRole, stageSide } from './stages.ts';
 
 // The live server's stages (18 Nov): custom ones like Interested, Quote Shared and RNR.
 const s = (id: string, kind: PipelineStage['kind'], phase: PipelineStage['phase'], isActive = true): PipelineStage => ({ id, name: id, kind, phase, isActive });
@@ -24,10 +24,41 @@ test('who is moving the lead comes from their tags', () => {
   assert.equal(stageRole(() => false), 'telecaller');
 });
 
-test("custom stages show for the people who use them, in the admin's order", () => {
-  assert.deepEqual(ids(stageChoices(STAGES, 'telecaller', 'New')), ['New', 'Interested', 'Lost']);
-  assert.deepEqual(ids(stageChoices(STAGES, 'sales', 'Details Shared')), ['Details Shared', 'Quote Shared', 'Follow Up', 'RNR', 'Won', 'Lost']);
-  assert.deepEqual(ids(stageChoices(STAGES, 'admin', null)), ['New', 'Interested', 'Details Shared', 'Quote Shared', 'Follow Up', 'RNR', 'Won', 'Lost']);
+test("telecallers and sales are offered every active stage, in the admin's order, like admins", () => {
+  const all = ['New', 'Interested', 'Details Shared', 'Quote Shared', 'Follow Up', 'RNR', 'Won', 'Lost'];
+  assert.deepEqual(ids(stageChoices(STAGES, 'telecaller', 'New')), all);
+  assert.deepEqual(ids(stageChoices(STAGES, 'sales', 'Details Shared')), all);
+  assert.deepEqual(ids(stageChoices(STAGES, 'admin', null)), all);
+});
+
+test('the sides are only grouping: before the handover, the handover and after (with Won), and Lost', () => {
+  assert.deepEqual(STAGES.map((x) => stageSide(x)), ['telecaller', 'telecaller', 'telecaller', 'sales', 'sales', 'sales', 'sales', 'sales', 'closed']);
+  assert.deepEqual(
+    groupedChoices(stageChoices(STAGES, 'telecaller', 'New')).map((g) => [g.label, ids(g.stages)]),
+    [
+      ['Telecaller side', ['New', 'Interested']],
+      ['Sales side (after handover)', ['Details Shared', 'Quote Shared', 'Follow Up', 'RNR', 'Won']],
+      ['Close', ['Lost']],
+    ],
+  );
+});
+
+test('the sheet says when a move hands the lead to sales or back to the telecaller', () => {
+  const byName = (n: string) => STAGES.find((x) => x.id === n)!;
+  assert.equal(moveEffect(byName('Quote Shared'), { ownerIsSales: false, handedOver: false }), 'handover');
+  assert.equal(moveEffect(byName('Won'), { ownerIsSales: false, handedOver: false }), 'handover');
+  assert.equal(moveEffect(byName('Interested'), { ownerIsSales: false, handedOver: false }), 'none');
+  assert.equal(moveEffect(byName('Lost'), { ownerIsSales: false, handedOver: false }), 'none');
+  assert.equal(moveEffect(byName('Interested'), { ownerIsSales: true, handedOver: true }), 'return');
+  assert.equal(moveEffect(byName('RNR'), { ownerIsSales: true, handedOver: true }), 'none');
+  assert.equal(moveEffect(byName('Interested'), { ownerIsSales: true, handedOver: false }), 'none'); // a salesperson's own walk-in
+});
+
+test("only the lead's owner (or an admin) gets Move stage; seeing a lead isn't enough", () => {
+  assert.equal(canMoveStage('telecaller', 'tara', { assignedTo: { id: 'tara' } }), true);
+  assert.equal(canMoveStage('telecaller', 'tara', { assignedTo: { id: 'suresh' } }), false); // handed over: Tara still sees it
+  assert.equal(canMoveStage('sales', 'suresh', { assignedTo: { id: 'suresh' } }), true);
+  assert.equal(canMoveStage('admin', 'asha', { assignedTo: { id: 'suresh' } }), true);
 });
 
 test('a switched-off stage is only offered to a lead already in it', () => {

@@ -12,6 +12,7 @@ import {
 } from './intake.controller.js';
 import { LeadAssignmentService } from './lead-assignment.service.js';
 import { LeadImportService } from './lead-import.service.js';
+import { LeadOwnershipService } from './lead-ownership.service.js';
 import { LeadIntakeService } from './lead-intake.service.js';
 import { MetaWebhookService } from './meta-webhook.service.js';
 import { QuickAddController } from './quick-add.controller.js';
@@ -30,7 +31,7 @@ import { QuickAddService } from './quick-add.service.js';
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: Number(process.env.PUBLIC_API_RATE_LIMIT ?? 60) }]),
   ],
   controllers: [QuickAddController, LeadImportController, LeadAssignmentController, ApiKeysController, PublicLeadsController, MetaWebhookController],
-  exports: [LeadAssignmentService],
-  providers: [LeadAssignmentService, LeadIntakeService, QuickAddService, LeadImportService, ApiKeysService, MetaWebhookService, ApiKeyGuard, ApiKeyThrottlerGuard],
+  exports: [LeadAssignmentService, LeadOwnershipService],
+  providers: [LeadAssignmentService, LeadOwnershipService, LeadIntakeService, QuickAddService, LeadImportService, ApiKeysService, MetaWebhookService, ApiKeyGuard, ApiKeyThrottlerGuard],
 })
 export class IntakeModule {}

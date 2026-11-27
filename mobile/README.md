@@ -44,7 +44,7 @@ Reads real call durations from the telecaller's phone and sends them to the API,
 
 **Admin in the app:** Home (today's team numbers, who needs attention: tap one for that person's leads, team results for any dates), **Leads** (all leads), **Follow-ups** (the whole team's), **Site Visits** (the team's, last 30 days), **More** (Calendar for the team, Reports, Notifications, New lead / Quick add, server, Log out last). Admins can **reassign** a handed-over lead from its page. Users, permissions, pipeline stages, templates and files are set up on the web only.
 
-**Nothing is built into the app that the admin can change on the web.** Pipeline stages (`GET /pipeline-stages`), WhatsApp templates and their attached files (`GET /message-templates`, `GET /files`) are fetched from the server every time a screen or sheet opens, so new or renamed stages and templates show at once, without a new APK. "Move stage" offers: telecallers New, the stages before the handover and Lost; sales the stages after it, Won and Lost; admins all (`lib/stages.ts`, tested).
+**Nothing is built into the app that the admin can change on the web.** Pipeline stages (`GET /pipeline-stages`), WhatsApp templates and their attached files (`GET /message-templates`, `GET /files`) are fetched from the server every time a screen or sheet opens, so new or renamed stages and templates show at once, without a new APK. "Move stage" offers every active stage to whoever owns the lead (telecaller or sales; admins any lead), grouped as Telecaller side / Sales side / Close, and says when a move will hand the lead to sales or back to the telecaller; the server does that (`lib/stages.ts`, tested).
 
 Badges: Callbacks (telecaller) and My Leads (sales) show follow-ups overdue or due today; More shows unread notifications. Both lead lists start with a "Search all my leads" bar (`GET /leads`, any status). Other roles (admin) get Home and More only.
 
@@ -70,7 +70,7 @@ Salespeople get their own tabs, built on the telecaller screens and the same cal
 - **Home** from `GET /dashboards/sales`: my open leads, follow-ups due today, overdue (red), won this month.
 - **My Leads** tab: only leads assigned to them. Overdue follow-ups come first, then today's, then leads with no follow-up planned, then later ones. Each card shows who handed the lead over and has Call and WhatsApp buttons.
 - **Call, WhatsApp and call outcome**: the same as telecallers, including call-log sync and the explanation screen the first time. The next step is called a "follow-up" for sales and a "callback" for telecallers; it's the same endpoint.
-- **Lead page**: the same as telecallers, plus **Move stage** (the sales stages, Won and Lost, via `PATCH /leads/:id`), **I'm at site** and the lead's site visits.
+- **Lead page**: the same as telecallers, plus **Move stage** (any active stage, via `PATCH /leads/:id`), **I'm at site** and the lead's site visits.
 - **I'm at site**: pick one of your leads (`GET /check-ins/leads`), take one GPS reading, and record it with the time on that lead (`POST /check-ins`). It works the same as the web check-in. The **Site Visits** tab has the button too, and lists recent visits on a map and, each with a link to it on OpenStreetMap.
 - **This month** (on Home) and **Won this month** (on Pipeline): revenue this month (shown when the account has the `sales.read` tag), won this month, won in total, lost this month, and the deals won this month.
 

@@ -12,7 +12,8 @@ import { LeadNotes } from "@/components/lead-notes";
 import { LeadVoiceNotes } from "@/components/lead-voice-notes";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
-import { pickableStages, useStages } from "@/lib/stages";
+import { groupedStages, moveEffect } from "@/lib/stage-sides";
+import { useStages, type PipelineStage } from "@/lib/stages";
 import { SharedFiles } from "@/components/shared-files";
 import type { SharedFile } from "@/lib/files";
 import {
@@ -216,24 +217,55 @@ function ContactHistory({ leadId, refreshKey }: { leadId: string; refreshKey: st
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { can, operations } = useAuth();
+  const { can, operations, user } = useAuth();
   const { data: lead, error, reload } = useApi<LeadDetail>(can(TAGS.LEADS_READ) ? `/leads/${id}` : null);
   const stages = useStages(can(TAGS.LEADS_READ));
   const [editing, setEditing] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  // Set when a move took the lead out of this person's list (e.g. sent back to the telecaller).
+  const [movedAway, setMovedAway] = useState<string | null>(null);
 
   if (!can(TAGS.LEADS_READ)) return <NoAccess tag={TAGS.LEADS_READ} />;
+  if (movedAway) {
+    return (
+      <div className="space-y-3">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200" role="status">
+          {movedAway}
+        </p>
+        <Link href="/leads" className="text-sm font-medium text-brand-700 hover:underline dark:text-brand-300">
+          ← Back to leads
+        </Link>
+      </div>
+    );
+  }
   if (error) return <ErrorText error={error} />;
   if (!lead) return <p className="text-sm text-neutral-500">Loading…</p>;
 
   // Telecallers qualify their own leads with leads.qualify; the scope check is on the server.
   const canWrite = can(TAGS.LEADS_WRITE) || can(TAGS.LEADS_QUALIFY);
 
-  async function changeStage(stageId: string) {
+  // Anyone who owns the lead may pick any active stage; admins may move any lead.
+  const isOwner = lead.assignedTo?.id === user.id;
+  const canMoveStage = canWrite && (can(TAGS.LEADS_READ_ALL) || isOwner);
+  // Best guess at who has it, for the warning (the server decides for certain).
+  const ownerIsSales = isOwner ? can(TAGS.LEADS_RECEIVE_QUALIFIED) : Boolean(lead.qualifiedAt && lead.assignedTo?.id !== lead.telecaller?.id);
+
+  async function changeStage(stage: PipelineStage) {
     setStatusError(null);
+    setStatusNotice(null);
+    const effect = moveEffect(stage, { ownerIsSales, handedOver: Boolean(lead!.qualifiedAt) });
+    if (effect === "handover" && !window.confirm(`Moving to "${stage.name}" hands this lead to sales: the next salesperson in turn gets it and it leaves the telecaller's worklist. Continue?`)) return;
+    if (effect === "return" && !window.confirm(`Moving back to "${stage.name}" returns this lead to the telecaller who worked it (or the next one in turn). Continue?`)) return;
+    const before = lead!.assignedTo?.id;
     try {
-      await apiPatch(`/leads/${id}`, { stageId });
+      const result = await apiPatch<LeadDetail | { id: string; movedOutOfScope: true }>(`/leads/${id}`, { stageId: stage.id });
+      if ("movedOutOfScope" in result) {
+        setMovedAway(`Moved to "${stage.name}". The lead went back to the telecaller, so it's no longer in your list.`);
+        return;
+      }
+      if (result.assignedTo?.id !== before && result.assignedTo) setStatusNotice(`Moved to "${stage.name}" and handed to ${result.assignedTo.fullName}.`);
       reload();
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Could not change status");
@@ -325,27 +357,44 @@ export default function LeadDetailPage() {
         can(TAGS.SALES_WRITE) &&
         !editing && <ConvertToOrder lead={lead} />}
 
-      {canWrite && !editing && (
+      {/* Outside the stage section: after a handover the section hides (it's the salesperson's now). */}
+      {statusNotice && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200" role="status">
+          {statusNotice}
+        </p>
+      )}
+      {canWrite && !editing && !canMoveStage && (
+        <p className="text-sm text-neutral-500">
+          This lead is with {lead.assignedTo?.fullName ?? "someone else"} now; only they or an admin can move its stage.
+        </p>
+      )}
+      {canMoveStage && !editing && (
         <section>
           <h2 className="mb-2 font-medium">Move in pipeline</h2>
-          <div className="flex flex-wrap gap-2">
-            {/* The admin-defined stages in order (switched-off ones only if the lead is in one). */}
-            {pickableStages(stages.data, lead.stage?.id).map((s) => {
-              const current = s.id === lead.stage?.id;
-              return (
-                <button
-                  key={s.id}
-                  disabled={current}
-                  aria-current={current ? "step" : undefined}
-                  onClick={() => changeStage(s.id)}
-                  className={`${secondaryButtonCompactClass} ${current ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
-                  title={s.isActive ? undefined : "Switched off by admin; leads can stay here but no new moves"}
-                >
-                  {s.name}
-                  {!s.isActive && " (off)"}
-                </button>
-              );
-            })}
+          {/* Every active stage, grouped by side (switched-off ones only if the lead is in one). Crossing the handover changes who has the lead. */}
+          <div className="space-y-2">
+            {groupedStages(stages.data, lead.stage?.id).map((group) => (
+              <div key={group.side} className="flex flex-wrap items-center gap-2">
+                <span className="w-44 shrink-0 text-xs font-semibold uppercase tracking-wide text-neutral-500">{group.label}</span>
+                {group.stages.map((s) => {
+                  const current = s.id === lead.stage?.id;
+                  return (
+                    <button
+                      key={s.id}
+                      disabled={current}
+                      aria-current={current ? "step" : undefined}
+                      onClick={() => changeStage(s)}
+                      className={`${secondaryButtonCompactClass} ${current ? "bg-neutral-200 dark:bg-neutral-800" : ""}`}
+                      title={s.isActive ? undefined : "Switched off by admin; leads can stay here but no new moves"}
+                    >
+                      {s.name}
+                      {s.isHandover && " (handover)"}
+                      {!s.isActive && " (off)"}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
           <ErrorText error={statusError} />
         </section>

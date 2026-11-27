@@ -2954,4 +2954,127 @@ describe('Auth and RBAC (e2e)', () => {
       expect(await db.leadVoiceNote.count({ where: { leadId: lead.id } })).toBe(0);
     });
   });
+
+  describe('Any owner moves to any stage; ownership follows the stage across the handover', () => {
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const created: string[] = [];
+    type Stage = { id: string; key: string; name: string };
+    let stage: Record<string, Stage> = {};
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    const tokens = async () => ({
+      admin: (await login('admin@precon.local')).body.accessToken as string,
+      tara: (await login('telecaller@precon.local')).body.accessToken as string,
+      sales: (await login('sales@precon.local')).body.accessToken as string,
+    });
+    const worklist = async (token: string) =>
+      ((await http().get('/api/v1/dashboards/telecaller').set(as(token)).expect(200)).body.items as { id: string }[]).map((i) => i.id);
+    const history = async (admin: string, id: string) =>
+      (await http().get(`/api/v1/leads/${id}/history`).set(as(admin)).expect(200)).body as { type: string; message: string }[];
+
+    beforeAll(async () => {
+      const { admin } = await tokens();
+      const all = (await http().get('/api/v1/pipeline-stages').set(as(admin)).expect(200)).body as Stage[];
+      stage = Object.fromEntries(all.map((x) => [x.key, x]));
+    });
+    afterAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { id: { in: created } } });
+    });
+
+    it('a telecaller can pick any stage: within her side she keeps it; Quoted hands it to sales; back to Contacted returns it', async () => {
+      const db = await prisma();
+      const { admin, tara } = await tokens();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096001', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      created.push(lead.id);
+
+      // Her side: Contacted. Still hers, still on her worklist.
+      const contacted = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.CONTACTED.id }).expect(200)).body;
+      expect(contacted.assignedTo.id).toBe(taraUser.id);
+      expect(await worklist(tara)).toContain(lead.id);
+
+      // Straight to Quoted (past the handover): handed to a salesperson in the same step.
+      const quoted = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.QUOTED.id }).expect(200)).body;
+      expect(quoted.stage.key).toBe('QUOTED');
+      const after = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { assignedTo: { include: { role: true } } } });
+      expect(after.assignedTo?.role.key).toBe('sales');
+      expect(after).toMatchObject({ status: 'QUOTED', telecallerId: taraUser.id, qualifiedById: taraUser.id });
+      expect(after.qualifiedAt).not.toBeNull();
+      expect(await worklist(tara)).not.toContain(lead.id); // off her worklist
+      await http().get(`/api/v1/leads/${lead.id}`).set(as(tara)).expect(200); // but she can still open it
+      expect(await db.notification.count({ where: { userId: after.assignedToId!, leadId: lead.id } })).toBeGreaterThan(0);
+      const h1 = await history(admin, lead.id);
+      expect(h1.map((e) => e.message)).toEqual(expect.arrayContaining(['Stage: Contacted → Quoted', `Moved to Quoted: handed to ${after.assignedTo!.fullName} (round-robin)`]));
+
+      // Now it's the salesperson's: Tara can no longer move it.
+      const refused = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.WON.id }).expect(403);
+      expect(refused.body.message).toMatch(/only they or an admin can move its stage/);
+
+      // The salesperson moves it back before the handover: it returns to Tara and leaves their list.
+      const salesToken = (await login(after.assignedTo!.email)).body.accessToken;
+      const back = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(salesToken)).send({ stageId: stage.CONTACTED.id }).expect(200)).body;
+      expect(back).toEqual({ id: lead.id, movedOutOfScope: true });
+      expect((await db.lead.findUniqueOrThrow({ where: { id: lead.id } })).assignedToId).toBe(taraUser.id);
+      expect(await worklist(tara)).toContain(lead.id);
+      expect(await db.notification.count({ where: { userId: taraUser.id, leadId: lead.id, body: { contains: 'Moved back to Contacted' } } })).toBe(1);
+      const h2 = await history(admin, lead.id);
+      expect(h2.map((e) => e.message)).toEqual(expect.arrayContaining(['Stage: Quoted → Contacted', 'Moved back to Contacted: returned to Tara Telecaller']));
+
+      // Lost from her side: closed, still hers.
+      await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.LOST.id }).expect(200);
+      const lost = await db.lead.findUniqueOrThrow({ where: { id: lead.id } });
+      expect(lost).toMatchObject({ status: 'LOST', assignedToId: taraUser.id });
+      expect(lost.closedAt).not.toBeNull();
+    });
+
+    it("a salesperson's own walk-in lead stays theirs on either side; sales can still move theirs to Won", async () => {
+      const db = await prisma();
+      const { sales } = await tokens();
+      const salesUser = await db.user.findUniqueOrThrow({ where: { email: 'sales@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(sales)).send({ phone: '9000096002', source: 'MANUAL' }).expect(201)).body;
+      created.push(lead.id);
+      for (const key of ['CONTACTED', 'QUOTED', 'CONTACTED', 'WON']) {
+        const res = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(sales)).send({ stageId: stage[key].id }).expect(200)).body;
+        expect(res.assignedTo.id).toBe(salesUser.id);
+        expect(res.stage.key).toBe(key);
+      }
+      expect(await db.leadActivity.count({ where: { leadId: lead.id, type: 'HANDED_OVER' } })).toBe(0);
+    });
+
+    it("an admin moving a telecaller's lead to Won hands it to sales first (revenue goes to sales)", async () => {
+      const db = await prisma();
+      const { admin } = await tokens();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096003', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      created.push(lead.id);
+      await http().patch(`/api/v1/leads/${lead.id}`).set(as(admin)).send({ stageId: stage.WON.id }).expect(200);
+      const won = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { assignedTo: { include: { role: true } } } });
+      expect(won.status).toBe('WON');
+      expect(won.assignedTo?.role.key).toBe('sales');
+      expect(won).toMatchObject({ telecallerId: taraUser.id, qualifiedById: taraUser.id });
+    });
+
+    it('with no salesperson switched on, moving into the handover is refused and nothing changes', async () => {
+      const db = await prisma();
+      const { admin, tara } = await tokens();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000096004', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      created.push(lead.id);
+      const salesTeam = (await http().get('/api/v1/lead-assignment').set(as(admin)).expect(200)).body.sales.members as { id: string; autoAssignEnabled: boolean }[];
+      for (const m of salesTeam) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: false }).expect(200);
+      try {
+        const res = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.QUALIFIED.id }).expect(400);
+        expect(res.body.message).toMatch(/no salesperson is switched on/);
+        const unchanged = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { stage: true } });
+        expect(unchanged).toMatchObject({ assignedToId: taraUser.id, qualifiedAt: null });
+        expect(unchanged.stage?.key).toBe('NEW');
+      } finally {
+        for (const m of salesTeam) await http().patch(`/api/v1/lead-assignment/members/${m.id}`).set(as(admin)).send({ enabled: m.autoAssignEnabled }).expect(200);
+      }
+    });
+  });
 });

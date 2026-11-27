@@ -9,6 +9,7 @@ import { SharedNotes } from '../components/lead-notes';
 import { ReassignSheet } from '../components/reassign-sheet';
 import { SiteVisitSheet, VisitRow } from '../components/site-visit';
 import { StageSheet } from '../components/stage-sheet';
+import { canMoveStage as canMoveLeadStage, stageRole } from '../lib/stages';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
 import { formatDuration } from '../lib/call-sync';
@@ -52,8 +53,8 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
   const { user, can } = useUser();
   // Sales: GPS site visits on this lead, moving it along the pipeline. Telecallers have neither tag.
   const visits = useResource<CheckIn[]>(can('sitevisit.read') ? `/leads/${id}/visits` : null);
-  // Telecallers move leads through their own (pre-handover) stages too; sales and admin theirs.
-  const canMoveStage = can('leads.write') || can('leads.qualify');
+  // Whoever owns the lead (telecaller or sales) can move it to any active stage; admins any lead.
+  const canMoveStage = (can('leads.write') || can('leads.qualify')) && canMoveLeadStage(stageRole(can), user.id, lead);
   const canVisit = can('sitevisit.write') && lead.assignedTo?.id === user.id;
   // Admin only, once the lead is with sales (as on the web).
   const canReassign = can('leads.assign') && Boolean(lead.qualifiedAt) && lead.status !== 'NEW' && lead.status !== 'CONTACTED';
@@ -264,9 +265,23 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
         <StageSheet
           lead={lead}
           onClose={() => setSalesSheet(null)}
-          onDone={(stage) => {
+          onDone={(stage, result) => {
             setSalesSheet(null);
-            ToastAndroid.show(stage.kind === 'WON' ? `${leadLabel(lead)} won 🎉` : `${leadLabel(lead)} moved to ${stage.name}`, ToastAndroid.LONG);
+            if (result.movedOutOfScope) {
+              // Moved back before the handover: it went to the telecaller, so it's no longer this person's.
+              ToastAndroid.show(`${leadLabel(lead)} moved to ${stage.name} and went back to the telecaller`, ToastAndroid.LONG);
+              router.back();
+              return;
+            }
+            const handedTo = result.assignedTo && result.assignedTo.id !== lead.assignedTo?.id ? result.assignedTo.fullName : null;
+            ToastAndroid.show(
+              stage.kind === 'WON'
+                ? `${leadLabel(lead)} won 🎉${handedTo ? ` (with ${handedTo})` : ''}`
+                : handedTo
+                  ? `${leadLabel(lead)} moved to ${stage.name} and handed to ${handedTo}`
+                  : `${leadLabel(lead)} moved to ${stage.name}`,
+              ToastAndroid.LONG,
+            );
             reloadAll();
           }}
         />

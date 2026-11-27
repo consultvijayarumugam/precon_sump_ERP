@@ -10,7 +10,8 @@ import type { AuthenticatedUser } from '../access-control/authenticated-user.js'
 import { PERMISSIONS } from '../access-control/permission-catalog.js';
 import { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { notifyLeadAssigned } from '../notifications/notify.js';
+import { notifyLeadAssigned, notifyLeadHandedOver } from '../notifications/notify.js';
+import { LeadOwnershipService } from '../intake/lead-ownership.service.js';
 import { StagesService } from '../pipeline/stages.service.js';
 import { describe, diff, recordActivity, STATUS_WORDS } from './lead-history.js';
 import { formatPhone, leadLabel } from './lead-label.js';
@@ -32,6 +33,7 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
     private readonly stages: StagesService,
+    private readonly ownership: LeadOwnershipService,
   ) {}
 
   async list(user: AuthenticatedUser, query: ListLeadsQueryDto) {
@@ -183,6 +185,8 @@ export class LeadsService {
         stage: { select: { name: true } },
         assignedToId: true,
         assignedTo: { select: { fullName: true } },
+        telecallerId: true,
+        qualifiedAt: true,
         name: true,
         phone: true,
         email: true,
@@ -223,6 +227,22 @@ export class LeadsService {
       );
     }
 
+    // Anyone may move a lead they own to any active stage; a telecaller who handed a lead
+    // to sales still sees it, but only its salesperson (or an admin) moves it on.
+    if (target && !user.permissions.includes(PERMISSIONS.LEADS_READ_ALL) && existing.assignedToId !== user.id) {
+      throw new ForbiddenException(
+        `This lead is with ${existing.assignedTo?.fullName ?? 'someone else'} now; only they or an admin can move its stage`,
+      );
+    }
+    // Crossing the handover changes the owner with the stage (an explicit reassignment in the same request wins).
+    const ownership =
+      target && dto.assignedToId === undefined
+        ? await this.ownership.plan(
+            { id, assignedToId: existing.assignedToId, assignedTo: existing.assignedTo, telecallerId: existing.telecallerId, qualifiedAt: existing.qualifiedAt },
+            target,
+          )
+        : null;
+
     if (phoneChanging) await this.refuseOpenDuplicate(this.prisma, dto.phone!, id);
 
     const data: Prisma.LeadUncheckedUpdateInput = {
@@ -256,7 +276,7 @@ export class LeadsService {
       else if (wasClosed && !isClosed) data.closedAt = null; // reopened
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const { after: updated, moved } = await this.prisma.$transaction(async (tx) => {
       const after = await tx.lead.update({ where: { id }, data, select: { name: true, phone: true, assignedTo: { select: { fullName: true } } } });
       // History: one entry per kind of change, with from -> to.
       const fields = diff(existing, {
@@ -281,6 +301,16 @@ export class LeadsService {
           changes: [{ field: 'stage', label: 'Stage', from, to: target.name }],
         });
       }
+      const moved =
+        target && ownership
+          ? await this.ownership.apply(
+              tx,
+              ownership,
+              { id, assignedToId: existing.assignedToId, assignedTo: existing.assignedTo, telecallerId: existing.telecallerId, qualifiedAt: existing.qualifiedAt },
+              user,
+              target.name,
+            )
+          : null;
       if (data.assignedToId !== undefined) {
         const from = existing.assignedTo?.fullName ?? null;
         const toName = after.assignedTo?.fullName ?? null;
@@ -292,10 +322,15 @@ export class LeadsService {
           changes: [{ field: 'assignedTo', label: 'Assigned to', from, to: toName }],
         });
       }
-      return after;
+      return { after, moved };
     });
     if (typeof data.assignedToId === 'string') {
       await notifyLeadAssigned(this.prisma, { userId: data.assignedToId, leadId: id, leadName: leadLabel(updated), actorId: user.id, how: `Assigned by ${user.fullName}` });
+    }
+    if (moved?.kind === 'handover') {
+      await notifyLeadHandedOver(this.prisma, { userId: moved.to.id, leadId: id, leadName: leadLabel(updated), fromName: user.fullName, actorId: user.id });
+    } else if (moved?.kind === 'return') {
+      await notifyLeadAssigned(this.prisma, { userId: moved.to.id, leadId: id, leadName: leadLabel(updated), actorId: user.id, how: `Moved back to ${target!.name} by ${user.fullName}` });
     }
 
     // If the change moved the lead out of this user's scope, they can no longer read it.
