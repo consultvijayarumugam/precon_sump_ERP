@@ -10,6 +10,7 @@ import { StagesService } from '../pipeline/stages.service.js';
 import { businessDate, businessPeriods } from './business-periods.js';
 import { CheckInsService } from './check-ins.service.js';
 import { OPEN_STATUSES } from './lead-actions.service.js';
+import { ConstructionStagesService, NOT_KNOWN } from '../pipeline/construction-stages.service.js';
 
 // A salesperson's open leads are the ones assigned to them and not closed, in any stage
 // (the stage is only a label; a lead can be with sales while marked Interested).
@@ -28,6 +29,7 @@ const WORKLIST_SELECT = {
   city: true,
   status: true,
   stage: { select: { id: true, name: true, phase: true, isActive: true } },
+  constructionStage: { select: { id: true, name: true } },
   source: true,
   sourceDetail: true,
   productInterest: true,
@@ -52,6 +54,7 @@ const SALES_LEAD_SELECT = {
   source: true, // WhatsApp leads open their chat in one tap (mobile)
   status: true,
   stage: { select: { id: true, name: true, phase: true, isActive: true } },
+  constructionStage: { select: { id: true, name: true } },
   productInterest: true,
   sumpSizeLitres: true,
   qualifiedAt: true,
@@ -74,7 +77,29 @@ export class DashboardsService {
     private readonly checkIns: CheckInsService,
     private readonly stages: StagesService,
     private readonly deviceCalls: DeviceCallsService,
+    private readonly construction: ConstructionStagesService,
   ) {}
+
+  /**
+   * Open leads per construction stage, in admin order ("how many at Foundation / Roof"),
+   * with Not known first. Switched-off stages only show while they hold a lead.
+   */
+  async constructionBreakdown(where: Prisma.LeadWhereInput) {
+    const [rows, list] = await Promise.all([
+      this.prisma.lead.groupBy({
+        by: ['constructionStageId'],
+        where: { AND: [where, { status: { in: OPEN_STATUSES } }] },
+        orderBy: { constructionStageId: 'asc' },
+        _count: { _all: true },
+      }),
+      this.construction.all(),
+    ]);
+    const n = (id: string | null) => (rows.find((r) => r.constructionStageId === id)?._count as { _all: number } | undefined)?._all ?? 0;
+    return {
+      notKnown: { name: NOT_KNOWN, leads: n(null) },
+      stages: list.filter((c) => c.isActive || n(c.id) > 0).map((c) => ({ id: c.id, name: c.name, isActive: c.isActive, leads: n(c.id) })),
+    };
+  }
 
   // --- Telecaller workbench ------------------------------------------------------
 
@@ -116,7 +141,9 @@ export class DashboardsService {
       this.prisma.lead.count({ where: { qualifiedById: user.id, qualifiedAt: { gte: p.weekStart } } }),
     ]);
     const count = (b: WorklistBucket) => items.filter((i) => i.bucket === b).length;
+    const construction = await this.constructionBreakdown({ assignedToId: user.id });
     return {
+      construction,
       counts: {
         newToday,
         callbacksDueToday: count('today'),
@@ -172,7 +199,10 @@ export class DashboardsService {
 
     const stageCount = (s: LeadStatus) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
     const inStage = (id: string) => byStage.find((g) => g.stageId === id)?._count._all ?? 0;
+    const construction = await this.constructionBreakdown(mine);
     return {
+      // Your open leads per construction stage (a second, independent label).
+      construction,
       pipeline: {
         // Every open lead assigned to you, whatever its stage (Interested, Quote Shared, ...).
         OPEN: SALES_OPEN.reduce((sum, st) => sum + stageCount(st), 0),
@@ -395,6 +425,8 @@ export class DashboardsService {
         active: byStage.reduce((n, g) => n + g._count._all, 0),
         stages: openStages,
         qualifiedYesterday,
+        // All open leads per construction stage, beside the lead-status funnel.
+        construction: await this.constructionBreakdown({}),
       },
       revenue: {
         monthToDate: already.revenueMonth.toFixed(2),

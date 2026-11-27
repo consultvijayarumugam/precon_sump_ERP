@@ -10,6 +10,7 @@ import {
   IsString,
   IsUUID,
   Matches,
+  ValidateIf,
   Max,
   MaxLength,
   Min,
@@ -107,6 +108,15 @@ export class UpdateLeadDto extends PartialType(CreateLeadDto) {
   @IsOptional()
   @IsEnum(LeadStatus)
   status?: LeadStatus;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Construction stage (see /construction-stages); null = Not known. Only a label: never changes who has the lead.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  constructionStageId?: string | null;
 }
 
 export class ListLeadsQueryDto {
@@ -130,10 +140,15 @@ export class ListLeadsQueryDto {
   @IsUUID()
   assignedToId?: string;
 
-  @ApiPropertyOptional({ description: 'Only leads in this pipeline stage' })
+  @ApiPropertyOptional({ description: 'Only leads with this lead status (pipeline stage)' })
   @IsOptional()
   @IsUUID()
   stageId?: string;
+
+  @ApiPropertyOptional({ description: "Only leads at this construction stage; 'none' = Not known" })
+  @IsOptional()
+  @Matches(/^(none|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i, { message: "constructionStageId must be a construction stage id or 'none'" })
+  constructionStageId?: string;
 
   @ApiPropertyOptional({ example: '2026-09-01', description: 'Won on or after this day (closedAt, business time zone)' })
   @IsOptional()

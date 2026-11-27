@@ -12,6 +12,7 @@ import { LeadStatus, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { notifyLeadAssigned } from '../notifications/notify.js';
 import { StagesService } from '../pipeline/stages.service.js';
+import { ConstructionStagesService, NOT_KNOWN } from '../pipeline/construction-stages.service.js';
 import { describe, diff, recordActivity, STATUS_WORDS } from './lead-history.js';
 import { formatPhone, leadLabel } from './lead-label.js';
 import { phoneMatchKey, phoneSearchKey } from '../intake/intake-parsing.js';
@@ -32,19 +33,26 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
     private readonly stages: StagesService,
+    private readonly construction: ConstructionStagesService,
   ) {}
 
-  /** The list's filters (within the user's scope). Without the stage when counting per stage. */
-  private listWhere(user: AuthenticatedUser, query: ListLeadsQueryDto, opts: { withStage: boolean } = { withStage: true }): Prisma.LeadWhereInput {
+  /**
+   * The list's filters (within the user's scope). When counting per lead status, the status
+   * filter is left out (and the construction one when counting per construction stage), so each
+   * picker's counts follow every other filter.
+   */
+  private listWhere(user: AuthenticatedUser, query: ListLeadsQueryDto, omit: 'status' | 'construction' | null = null): Prisma.LeadWhereInput {
+    const construction = omit === 'construction' || !query.constructionStageId ? undefined : query.constructionStageId === 'none' ? null : query.constructionStageId;
     return {
       AND: [
         leadScope(user),
         {
-          status: opts.withStage ? query.status : undefined,
+          status: omit === 'status' ? undefined : query.status,
           source: query.source,
           productInterest: query.productInterest,
           assignedToId: query.assignedToId,
-          stageId: opts.withStage ? query.stageId : undefined,
+          stageId: omit === 'status' ? undefined : query.stageId,
+          constructionStageId: construction,
           // "Won on" date range (narrows what the user can already see).
           closedAt: dayRangeFilter(query.wonFrom, query.wonTo),
           // "Added on" date range; combines with every filter above.
@@ -66,19 +74,30 @@ export class LeadsService {
   }
 
   /**
-   * How many leads each stage holds under the same filters as the list (search,
-   * dates, source, product, person), so the stage picker can say "RNR (12)".
-   * Only the stage filter itself is left out. Within the user's scope.
+   * How many leads each lead status and each construction stage holds under the list's
+   * other filters (search, dates, source, product, person, and the other picker), so the
+   * pickers can say "RNR (12)" and "Foundation (4)". Within the user's scope.
    */
   async stageCounts(user: AuthenticatedUser, query: ListLeadsQueryDto) {
-    const rows = await this.prisma.lead.groupBy({
-      by: ['stageId'],
-      where: this.listWhere(user, query, { withStage: false }),
-      orderBy: { stageId: 'asc' },
-      _count: { _all: true },
-    });
-    const counts = rows.map((r) => ({ stageId: r.stageId, count: (r._count as { _all: number })._all }));
-    return { total: counts.reduce((sum, r) => sum + r.count, 0), stages: counts };
+    const [byStatus, byConstruction] = await Promise.all([
+      this.prisma.lead.groupBy({ by: ['stageId'], where: this.listWhere(user, query, 'status'), orderBy: { stageId: 'asc' }, _count: { _all: true } }),
+      this.prisma.lead.groupBy({
+        by: ['constructionStageId'],
+        where: this.listWhere(user, query, 'construction'),
+        orderBy: { constructionStageId: 'asc' },
+        _count: { _all: true },
+      }),
+    ]);
+    const n = (c: unknown) => (c as { _all: number })._all;
+    const stages = byStatus.map((r) => ({ stageId: r.stageId, count: n(r._count) }));
+    const construction = byConstruction.map((r) => ({ constructionStageId: r.constructionStageId, count: n(r._count) }));
+    return {
+      total: stages.reduce((sum, r) => sum + r.count, 0),
+      stages,
+      // Each construction stage's count (constructionStageId null = Not known), following the other filters.
+      constructionTotal: construction.reduce((sum, r) => sum + r.count, 0),
+      construction,
+    };
   }
 
   async list(user: AuthenticatedUser, query: ListLeadsQueryDto) {
@@ -199,6 +218,8 @@ export class LeadsService {
         status: true,
         stageId: true,
         stage: { select: { name: true } },
+        constructionStageId: true,
+        constructionStage: { select: { name: true } },
         assignedToId: true,
         assignedTo: { select: { fullName: true } },
         name: true,
@@ -241,12 +262,16 @@ export class LeadsService {
       );
     }
 
-    // The stage is only where the lead is in the conversation: it never changes who owns the lead.
-    // Whoever owns it sets any active stage; a telecaller who handed a lead to sales still
-    // sees it, but only its owner (or an admin) moves it on.
-    if (target && !user.permissions.includes(PERMISSIONS.LEADS_READ_ALL) && existing.assignedToId !== user.id) {
+    // The construction stage, if it's changing (null = Not known).
+    const constructionChanging = dto.constructionStageId !== undefined && dto.constructionStageId !== existing.constructionStageId;
+    const constructionTarget = constructionChanging ? await this.construction.usable(dto.constructionStageId ?? null) : null;
+
+    // Lead status and construction stage are only labels: neither ever changes who owns the
+    // lead. Whoever owns it sets either; a telecaller who handed a lead to sales still sees
+    // it, but only its owner (or an admin) changes them.
+    if ((target || constructionChanging) && !user.permissions.includes(PERMISSIONS.LEADS_READ_ALL) && existing.assignedToId !== user.id) {
       throw new ForbiddenException(
-        `This lead is with ${existing.assignedTo?.fullName ?? 'someone else'} now; only they or an admin can change its stage`,
+        `This lead is with ${existing.assignedTo?.fullName ?? 'someone else'} now; only they or an admin can change its status or construction stage`,
       );
     }
 
@@ -273,6 +298,8 @@ export class LeadsService {
       // Moved to a telecaller by hand: they're now the one working it (for their scorecard).
       if (targetTags.includes(PERMISSIONS.LEADS_AUTO_ASSIGN)) data.telecallerId = dto.assignedToId;
     }
+
+    if (constructionChanging) data.constructionStageId = constructionTarget?.id ?? null;
 
     if (target) {
       data.stageId = target.id;
@@ -306,6 +333,17 @@ export class LeadsService {
           type: 'STATUS_CHANGED',
           summary: `Stage: ${from} → ${target.name}`,
           changes: [{ field: 'stage', label: 'Stage', from, to: target.name }],
+        });
+      }
+      if (constructionChanging) {
+        const from = existing.constructionStage?.name ?? NOT_KNOWN;
+        const to = constructionTarget?.name ?? NOT_KNOWN;
+        await recordActivity(tx, {
+          leadId: id,
+          userId: user.id,
+          type: 'FIELD_CHANGED',
+          summary: `Construction stage: ${from} → ${to}`,
+          changes: [{ field: 'constructionStage', label: 'Construction stage', from, to }],
         });
       }
       if (data.assignedToId !== undefined) {

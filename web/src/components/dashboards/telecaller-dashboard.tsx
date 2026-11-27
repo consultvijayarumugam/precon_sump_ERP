@@ -1,5 +1,6 @@
 "use client";
 
+import { ConstructionBadge, ConstructionBreakdownCard } from "@/components/construction-breakdown";
 import { AlarmClock, CalendarClock, PhoneCall, PhoneOutgoing, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -57,6 +58,7 @@ function WorkCard({ item, now, onChanged, onHandedOver }: { item: WorklistItem; 
               {leadLabel(item)}
             </Link>
             <StatusBadge status={item.status} stage={item.stage} />
+            <ConstructionBadge stage={item.constructionStage} />
           </div>
           <p className="mt-0.5 text-xs text-neutral-500">
             {SOURCE_LABELS[item.source]} · arrived {ago(item.createdAt, now)}
@@ -185,6 +187,7 @@ export function TelecallerDashboard() {
           hint={c && `${c.callsThisWeek} this week · ${c.qualifiedToday} qualified today`}
         />
       </KpiRow>
+      <ConstructionBreakdownCard data={data?.construction} title="My open leads by construction stage" />
 
       <PeriodReport title="My results" />
 

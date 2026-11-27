@@ -1,5 +1,6 @@
 "use client";
 
+import { ConstructionBreakdownCard } from "@/components/construction-breakdown";
 import {
   AlarmClock,
   ArrowDownRight,
@@ -716,12 +717,15 @@ export function CeoDashboard() {
               </Panel>
             </div>
             <Panel
-              title="Pipeline by stage"
+              title="Pipeline by lead status"
               subtitle={`${o.pipeline.active} open leads`}
               className="lg:col-span-2"
               action={<PanelLink href="/reports">Reports</PanelLink>}
             >
               <Funnel stages={o.pipeline.stages} />
+              <div className="mt-4">
+                <ConstructionBreakdownCard data={o.pipeline.construction} title="Open leads by construction stage" />
+              </div>
               <div className="mt-5 border-t border-[var(--ps-line)] pt-4">
                 <div className="mb-2 flex items-center justify-between text-xs">
                   <span className="font-semibold uppercase tracking-[0.06em] text-[var(--ps-ink-3)]">Today&apos;s leads by telecaller</span>

@@ -1,5 +1,6 @@
 "use client";
 
+import { ConstructionBadge, ConstructionBreakdownCard } from "@/components/construction-breakdown";
 import { IndianRupee, MapPin, Target, TriangleAlert, Trophy } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -39,6 +40,11 @@ function LeadCard({ lead, now, onChanged }: { lead: SalesLead; now: number; onCh
       <Link href={`/leads/${lead.id}`} className="block font-semibold text-neutral-900 after:absolute after:inset-0 dark:text-white">
         {leadLabel(lead)}
       </Link>
+      {lead.constructionStage && (
+        <div className="mt-1">
+          <ConstructionBadge stage={lead.constructionStage} />
+        </div>
+      )}
       <div className="mt-0.5 text-xs text-neutral-500">
         {productInterestLabel(lead)}
         {lead.city && ` · ${lead.city}`}
@@ -155,6 +161,7 @@ export function SalesDashboard() {
           hint={`${dueToday} more due today`}
         />
       </KpiRow>
+      <ConstructionBreakdownCard data={data?.construction} title="My open leads by construction stage" />
 
       <PeriodReport title="My results" />
 

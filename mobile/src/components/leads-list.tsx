@@ -3,7 +3,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ALL_TIME, leadDateNoun, leadDateParams, rangeLabel, type DateRange } from '../lib/date-range';
-import { chipLabel, leadListQuery, ownerLine, stageCountsQuery, type LeadListItem, type LeadListPage, type StageCounts } from '../lib/dashboard';
+import { chipLabel, constructionChipLabel, leadListQuery, ownerLine, stageCountsQuery, type LeadListItem, type LeadListPage, type StageCounts } from '../lib/dashboard';
+import type { ConstructionList } from '../lib/construction';
+import { ConstructionBadge } from './construction';
 import type { PipelineStage } from '../lib/sales';
 import { closedKind, stageFilters } from '../lib/stages';
 import { formatDateTime, productLabel, type LeadStatus } from '../lib/workflow';
@@ -40,6 +42,10 @@ const LeadRow = memo(function LeadRow({ item, meId, onChanged }: { item: LeadLis
             {leadLabel(item)}
           </Text>
           <StageBadge status={item.status} stage={item.stage} />
+        </View>
+        {/* Where the customer's building is, in front of you when you call. */}
+        <View style={styles.badgeRow}>
+          <ConstructionBadge stage={item.constructionStage} />
         </View>
         <Text style={styles.details}>{[isUnnamed(item) ? null : item.phone, details].filter(Boolean).join(' · ')}</Text>
         {when && <Text style={[styles.when, late && styles.late]}>{when}</Text>}
@@ -101,6 +107,9 @@ export function LeadsList({
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
   const [chosenStage, setChosenStage] = useState<string | null>(null);
+  // Construction stage filter: an id, 'none' (Not known), or null for all.
+  const [chosenConstruction, setChosenConstruction] = useState<string | null>(null);
+  const construction = useResource<ConstructionList>('/construction-stages');
   const [range, setRange] = useState<DateRange>(ALL_TIME);
   const [items, setItems] = useState<LeadListItem[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -129,13 +138,14 @@ export function LeadsList({
       setLoading(true);
       if (pulled) setRefreshing(true);
       try {
-        const query = leadListQuery({ search: term, status, stageId, dates: leadDateParams(range, closedAs), page: nextPage, pageSize: PAGE_SIZE });
+        const constructionStageId = chosenConstruction ?? undefined;
+        const query = leadListQuery({ search: term, status, stageId, constructionStageId, dates: leadDateParams(range, closedAs), page: nextPage, pageSize: PAGE_SIZE });
         const showChips = !fixedStageId && !status;
         const [result, stageCounts] = await Promise.all([
           api<LeadListPage>(assignedToId ? `${query}&assignedToId=${assignedToId}` : query),
           // Counts only matter when the stage chips show; a failure just leaves them off.
           showChips && nextPage === 1
-            ? api<StageCounts>(stageCountsQuery({ search: term, dates: leadDateParams(range, undefined), assignedToId })).catch(() => null)
+            ? api<StageCounts>(stageCountsQuery({ search: term, dates: leadDateParams(range, undefined), assignedToId, stageId, constructionStageId })).catch(() => null)
             : Promise.resolve(undefined),
         ]);
         if (run !== latest.current) return;
@@ -153,7 +163,7 @@ export function LeadsList({
         }
       }
     },
-    [api, term, status, stageId, range, closedAs, assignedToId, fixedStageId],
+    [api, term, status, stageId, range, closedAs, assignedToId, fixedStageId, chosenConstruction],
   );
 
   // Load on opening (and whenever a filter changes), and again on coming back from a lead.
@@ -202,7 +212,7 @@ export function LeadsList({
           </View>
           {!fixedStageId && !status && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} keyboardShouldPersistTaps="handled" testID="stage-chips">
-              <Chip testID="filter-all" label={chipLabel('All stages', counts, null)} active={chosenStage === null} onPress={() => setChosenStage(null)} />
+              <Chip testID="filter-all" label={chipLabel('All statuses', counts, null)} active={chosenStage === null} onPress={() => setChosenStage(null)} />
               {stageFilters(stages.data ?? []).map((s) => (
                 <Chip
                   key={s.id}
@@ -216,12 +226,25 @@ export function LeadsList({
               ))}
             </ScrollView>
           )}
+          {!fixedStageId && !status && (
+            // The second, independent filter: where the customer's building is.
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} keyboardShouldPersistTaps="handled" testID="construction-chips">
+              <Chip testID="construction-all" label={constructionChipLabel('All construction', counts, 'all')} active={chosenConstruction === null} onPress={() => setChosenConstruction(null)} />
+              <Chip testID="construction-none" label={constructionChipLabel(construction.data?.notKnown.name ?? 'Not known', counts, 'none')} active={chosenConstruction === 'none'} onPress={() => setChosenConstruction('none')} />
+              {(construction.data?.stages ?? [])
+                .filter((c) => c.isActive || c.id === chosenConstruction)
+                .map((c) => (
+                  <Chip key={c.id} testID={`construction-${c.name}`} label={constructionChipLabel(c.name, counts, c.id)} active={chosenConstruction === c.id} onPress={() => setChosenConstruction(c.id)} />
+                ))}
+            </ScrollView>
+          )}
           <DateRangeBar value={range} onChange={setRange} caption={`${dateWord}: ${rangeLabel(range)}`} />
           <ErrorBanner message={error ?? stages.error} />
           {total !== null && (
             <Text style={styles.count} testID="lead-count">
               {total} lead{total === 1 ? '' : 's'}
               {stage ? ` in ${stage.name}` : ''}
+              {chosenConstruction ? ` · ${chosenConstruction === 'none' ? 'construction not known' : `at ${construction.data?.stages.find((c) => c.id === chosenConstruction)?.name ?? 'that stage'}`}` : ''}
               {term.trim() ? ` matching "${term.trim()}"` : ''}
               {range.preset !== 'all' ? ` · ${leadDateNoun(closedAs)} ${rangeLabel(range).replace(/^This /, 'this ').replace(/^Last /, 'last ').replace(/^Today$/, 'today')}` : ''}
             </Text>
@@ -241,6 +264,7 @@ export function LeadsList({
 }
 
 const styles = StyleSheet.create({
+  badgeRow: { flexDirection: 'row', marginTop: 4 },
   flex: { flex: 1 },
   pressed: { opacity: 0.85 },
   searchRow: { marginHorizontal: 12, marginTop: 12, justifyContent: 'center' },

@@ -44,6 +44,8 @@ export const LEAD_SELECT = {
   status: true,
   // The configurable stage people see; `status` is its fixed phase.
   stage: { select: { id: true, key: true, name: true, kind: true, phase: true, isHandover: true, position: true, isActive: true } },
+  // Where the customer's building is; null = Not known. Independent of the lead status.
+  constructionStage: { select: { id: true, name: true, isActive: true } },
   notes: true,
   sourceDetail: true,
   autoAssigned: true,

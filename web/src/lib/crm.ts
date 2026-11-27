@@ -82,6 +82,8 @@ export interface Lead {
   productInterest: ProductInterest | null;
   /** The admin-defined pipeline stage; `status` is the fixed phase it counts as. */
   stage: { id: string; key: string; name: string; kind: string; phase: LeadStatus; isHandover: boolean; position: number; isActive: boolean } | null;
+  /** Where the customer's building is (a second label, independent of the status); null = Not known. */
+  constructionStage: { id: string; name: string; isActive?: boolean } | null;
   sumpSizeLitres: number | null;
   status: LeadStatus;
   notes: string | null;

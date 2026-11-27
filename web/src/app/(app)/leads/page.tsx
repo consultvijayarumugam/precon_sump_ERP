@@ -28,6 +28,7 @@ import {
   TAGS,
 } from "@/lib/crm";
 import { useStages } from "@/lib/stages";
+import { NOT_KNOWN, useConstructionStages } from "@/lib/construction";
 import { useApi } from "@/lib/use-api";
 
 const PAGE_SIZE = 25;
@@ -42,6 +43,8 @@ function LeadsView() {
   const filters = {
     status: params.get("status") ?? "",
     stageId: params.get("stageId") ?? "",
+    // A construction stage id, or "none" for Not known.
+    constructionStageId: params.get("constructionStageId") ?? "",
     source: params.get("source") ?? "",
     productInterest: params.get("productInterest") ?? "",
     assignedToId: params.get("assignedToId") ?? "",
@@ -75,15 +78,29 @@ function LeadsView() {
   const canAssign = can(TAGS.LEADS_ASSIGN);
   const assignees = useApi<{ id: string; fullName: string; role: { name: string } }[]>(canAssign ? "/leads/assignees" : null);
   const stages = useStages();
+  const construction = useConstructionStages();
   const { data, error, reload } = useApi<Paginated<LeadListItem>>(
     `/leads${queryString({ ...filters, createdFrom: added.from, createdTo: added.to, pageSize: PAGE_SIZE })}`,
   );
-  // How many leads each stage holds under the other filters (search, dates, source, product, person).
-  const countFilters = { search: filters.search, source: filters.source, productInterest: filters.productInterest, assignedToId: filters.assignedToId };
-  const stageCounts = useApi<{ total: number; stages: { stageId: string | null; count: number }[] }>(
-    `/leads/stage-counts${queryString({ ...countFilters, createdFrom: added.from, createdTo: added.to })}`,
-  );
+  // How many leads each lead status / construction stage holds under the other filters
+  // (search, dates, source, product, person, and the other picker).
+  const countFilters = {
+    search: filters.search,
+    source: filters.source,
+    productInterest: filters.productInterest,
+    assignedToId: filters.assignedToId,
+    stageId: filters.stageId,
+    status: filters.status,
+    constructionStageId: filters.constructionStageId,
+  };
+  const stageCounts = useApi<{
+    total: number;
+    stages: { stageId: string | null; count: number }[];
+    constructionTotal: number;
+    construction: { constructionStageId: string | null; count: number }[];
+  }>(`/leads/stage-counts${queryString({ ...countFilters, createdFrom: added.from, createdTo: added.to })}`);
   const countOf = (stageId: string) => stageCounts.data?.stages.find((c) => c.stageId === stageId)?.count ?? 0;
+  const constructionCountOf = (id: string | null) => stageCounts.data?.construction.find((c) => c.constructionStageId === id)?.count ?? 0;
 
   return (
     <>
@@ -111,7 +128,7 @@ function LeadsView() {
           )
         }
       />
-      <div className={`mb-4 grid gap-2 ${canAssign ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
+      <div className={`mb-4 grid gap-2 ${canAssign ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-3 lg:grid-cols-5"}`}>
         <input
           className={inputClass}
           placeholder="Search name, phone, city"
@@ -126,12 +143,12 @@ function LeadsView() {
             const next = { ...filters, stageId: e.target.value, status: "", page: 1 };
             router.replace(`${pathname}${queryString({ ...next, ...dates, page: undefined })}`);
           }}
-          aria-label="Stage"
+          aria-label="Lead status"
         >
           <option value="">
             {filters.status
               ? `Status: ${STATUS_LABELS[filters.status as keyof typeof STATUS_LABELS] ?? filters.status}`
-              : `All stages${stageCounts.data ? ` (${stageCounts.data.total})` : ""}`}
+              : `All lead statuses${stageCounts.data ? ` (${stageCounts.data.total})` : ""}`}
           </option>
           {/* Every stage with how many leads it holds under the other filters; switched-off ones only while they hold leads. */}
           {stages.data
@@ -141,6 +158,27 @@ function LeadsView() {
                 {s.name}
                 {stageCounts.data ? ` (${countOf(s.id)})` : ""}
                 {s.isActive ? "" : " (switched off)"}
+              </option>
+            ))}
+        </select>
+        <select
+          className={inputClass}
+          value={filters.constructionStageId}
+          onChange={(e) => setFilter("constructionStageId", e.target.value)}
+          aria-label="Construction stage"
+        >
+          <option value="">{`All construction stages${stageCounts.data ? ` (${stageCounts.data.constructionTotal})` : ""}`}</option>
+          <option value="none">
+            {NOT_KNOWN}
+            {stageCounts.data ? ` (${constructionCountOf(null)})` : ""}
+          </option>
+          {construction.data?.stages
+            .filter((c) => c.isActive || constructionCountOf(c.id) > 0 || c.id === filters.constructionStageId)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {stageCounts.data ? ` (${constructionCountOf(c.id)})` : ""}
+                {c.isActive ? "" : " (switched off)"}
               </option>
             ))}
         </select>

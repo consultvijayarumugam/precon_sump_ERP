@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { ConstructionCard } from '../components/construction';
 import { useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { DailyQuoteCard, PipelineCard, RemindersCard } from '../components/dashboard-cards';
@@ -74,6 +75,7 @@ export function TelecallerHomeScreen() {
           ))}
         </>
       )}
+      {data?.construction && <ConstructionCard data={data.construction} title="My open leads by construction stage" />}
       {pipeline && <PipelineCard title="My pipeline" subtitle={summary.data ? `${summary.data.openLeads} open of ${summary.data.totalLeads} leads · tap a stage to see its leads` : undefined} rows={pipeline} />}
     </ScrollView>
   );

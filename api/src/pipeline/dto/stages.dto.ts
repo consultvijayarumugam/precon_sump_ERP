@@ -40,3 +40,17 @@ export class ReorderStagesDto {
   @IsUUID('all', { each: true })
   ids: string[];
 }
+
+export class CreateConstructionStageDto {
+  @ApiProperty({ example: 'Lintel' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1, { message: 'Give the stage a name' })
+  @MaxLength(60)
+  name: string;
+
+  @ApiPropertyOptional({ description: 'Put it right after this construction stage (default: at the end)' })
+  @IsOptional()
+  @IsUUID()
+  afterId?: string;
+}

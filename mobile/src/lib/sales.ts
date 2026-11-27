@@ -1,6 +1,7 @@
 // The salesperson's side of the workflow, mirroring GET /dashboards/sales
 // (api/src/workflow/dashboards.service.ts) and web/src/lib/workflow.ts.
 import type { LeadStatus, ProductInterest, StageRef } from './workflow.ts';
+import type { ConstructionBreakdown, ConstructionRef } from './construction.ts';
 
 export interface SalesLead {
   id: string;
@@ -10,6 +11,8 @@ export interface SalesLead {
   source: string;
   status: LeadStatus;
   stage: StageRef | null;
+  /** Where the customer's building is; null = Not known (older servers don't send it). */
+  constructionStage?: ConstructionRef;
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   qualifiedAt: string | null;
@@ -32,6 +35,8 @@ export interface CheckIn {
 }
 
 export interface SalesDashboardData {
+  /** Your open leads per construction stage (older servers don't send it). */
+  construction?: ConstructionBreakdown;
   /** OPEN: every open lead assigned to you, in any stage (older servers don't send it). The rest count by stage phase. */
   pipeline: { OPEN?: number; QUALIFIED: number; QUOTED: number; WON: number; LOST: number; wonThisMonth: number; lostThisMonth: number };
   /** Rupees as a decimal string; null when the user can't see revenue (no sales.read tag). */

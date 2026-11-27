@@ -1,4 +1,5 @@
 // The admin's phone screens: the master dashboard (GET /dashboards/master) and reports (GET /reports).
+import type { ConstructionBreakdown } from './construction.ts';
 
 export interface AttentionFlag {
   severity: 'high' | 'medium';
@@ -13,6 +14,8 @@ export interface AttentionFlag {
 
 /** The parts of the master dashboard the phone shows. */
 export interface MasterSummary {
+  /** All open leads per construction stage (older servers don't send it). */
+  overview?: { pipeline?: { construction?: ConstructionBreakdown } };
   team: { incomingToday: number; callsToday: number; notCalled: number; overdue: number; qualifiedToday: number; wonMonth: number };
   flags: AttentionFlag[];
 }

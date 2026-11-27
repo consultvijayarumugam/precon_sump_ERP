@@ -13,6 +13,8 @@ import { LeadVoiceNotes } from "@/components/lead-voice-notes";
 import { CallButton } from "@/components/call-button";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { pickableStages, useStages, type PipelineStage } from "@/lib/stages";
+import { NOT_KNOWN, pickableConstruction, useConstructionStages } from "@/lib/construction";
+import { ConstructionBadge } from "@/components/construction-breakdown";
 import { QualifyPanel } from "@/components/lead-quick-actions";
 import { SharedFiles } from "@/components/shared-files";
 import type { SharedFile } from "@/lib/files";
@@ -220,6 +222,7 @@ export default function LeadDetailPage() {
   const { can, operations, user } = useAuth();
   const { data: lead, error, reload } = useApi<LeadDetail>(can(TAGS.LEADS_READ) ? `/leads/${id}` : null);
   const stages = useStages(can(TAGS.LEADS_READ));
+  const construction = useConstructionStages(can(TAGS.LEADS_READ));
   const [editing, setEditing] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -248,7 +251,18 @@ export default function LeadDetailPage() {
       await apiPatch(`/leads/${id}`, { stageId: stage.id });
       reload();
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Could not change the stage");
+      setStatusError(err instanceof Error ? err.message : "Could not change the lead status");
+    }
+  }
+
+  async function changeConstruction(constructionStageId: string | null) {
+    setStatusError(null);
+    setStatusNotice(null);
+    try {
+      await apiPatch(`/leads/${id}`, { constructionStageId });
+      reload();
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : "Could not change the construction stage");
     }
   }
 
@@ -264,6 +278,7 @@ export default function LeadDetailPage() {
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{leadLabel(lead)}</h1>
           <StatusBadge status={lead.status} stage={lead.stage} />
+          <ConstructionBadge stage={lead.constructionStage} />
           {canWrite && !editing && (
             <button className={secondaryButtonCompactClass} onClick={() => setEditing(true)}>
               Edit
@@ -371,8 +386,8 @@ export default function LeadDetailPage() {
       )}
       {canMoveStage && !editing && (
         <section>
-          <h2 className="mb-2 font-medium">Stage</h2>
-          <p className="mb-2 text-sm text-neutral-500">Where the conversation is. It doesn&apos;t change who has the lead.</p>
+          <h2 className="mb-2 font-medium">Lead status</h2>
+          <p className="mb-2 text-sm text-neutral-500">Where the sales conversation is. It doesn&apos;t change who has the lead.</p>
           <div className="flex flex-wrap gap-2">
             {/* Every active stage, in pipeline order (switched-off ones only if the lead is in one). */}
             {pickableStages(stages.data, lead.stage?.id).map((s) => {
@@ -388,6 +403,26 @@ export default function LeadDetailPage() {
                 >
                   {s.name}
                   {!s.isActive && " (off)"}
+                </button>
+              );
+            })}
+          </div>
+          <h2 className="mb-2 mt-5 font-medium">Construction stage</h2>
+          <p className="mb-2 text-sm text-neutral-500">Where the customer&apos;s building is. Ask them; set it here instead of in the notes.</p>
+          <div className="flex flex-wrap gap-2">
+            {[{ id: null as string | null, name: NOT_KNOWN, isActive: true }, ...pickableConstruction(construction.data?.stages, lead.constructionStage?.id)].map((c) => {
+              const current = (lead.constructionStage?.id ?? null) === c.id;
+              return (
+                <button
+                  key={c.id ?? "none"}
+                  disabled={current}
+                  aria-current={current ? "step" : undefined}
+                  onClick={() => changeConstruction(c.id)}
+                  className={`${secondaryButtonCompactClass} ${current ? "bg-orange-100 dark:bg-orange-950" : ""}`}
+                  title={c.isActive ? undefined : "Switched off by admin"}
+                >
+                  {c.name}
+                  {!c.isActive && " (off)"}
                 </button>
               );
             })}

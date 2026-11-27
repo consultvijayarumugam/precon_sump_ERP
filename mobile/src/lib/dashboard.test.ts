@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { leadDateParams } from './date-range.ts';
-import { chipLabel, leadListQuery, ownerLine, pipelineRows, reminderItems, remindersEmpty, stageCountsQuery, type ReminderSummary } from './dashboard.ts';
+import { chipLabel, constructionChipLabel, leadListQuery, ownerLine, pipelineRows, reminderItems, remindersEmpty, stageCountsQuery, type ReminderSummary } from './dashboard.ts';
 import type { PipelineStage } from './sales.ts';
 
 const f = (id: string) => ({ id, scheduledAt: '2026-11-17T05:00:00Z', note: null, lead: { id: `l${id}`, name: id, phone: '9' } });
@@ -55,4 +55,30 @@ test('chips read "RNR · 12"; plain names until counts arrive', () => {
   assert.equal(chipLabel('RNR', counts, 'rnr'), 'RNR · 12');
   assert.equal(chipLabel('Won', counts, 'won'), 'Won · 0');
   assert.equal(chipLabel('RNR', null, 'rnr'), 'RNR');
+});
+
+test('construction chips count by the other filters; "none" is Not known', () => {
+  const counts = {
+    total: 10,
+    stages: [],
+    constructionTotal: 10,
+    construction: [
+      { constructionStageId: null, count: 7 },
+      { constructionStageId: 'f', count: 3 },
+    ],
+  };
+  assert.equal(constructionChipLabel('All construction', counts, 'all'), 'All construction · 10');
+  assert.equal(constructionChipLabel('Not known', counts, 'none'), 'Not known · 7');
+  assert.equal(constructionChipLabel('Foundation', counts, 'f'), 'Foundation · 3');
+  assert.equal(constructionChipLabel('Roof', counts, 'r'), 'Roof · 0');
+  // An older server without construction counts: just the name.
+  assert.equal(constructionChipLabel('Roof', { total: 1, stages: [] }, 'r'), 'Roof');
+});
+
+test('both filters go to the list and to the counts', () => {
+  assert.equal(
+    leadListQuery({ stageId: 's1', constructionStageId: 'none', page: 1, pageSize: 30 }),
+    '/leads?stageId=s1&constructionStageId=none&page=1&pageSize=30',
+  );
+  assert.equal(stageCountsQuery({ stageId: 's1', constructionStageId: 'f' }), '/leads/stage-counts?stageId=s1&constructionStageId=f');
 });

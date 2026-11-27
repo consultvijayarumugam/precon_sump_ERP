@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { ConstructionCard } from '../components/construction';
 import { useRouter } from 'expo-router';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { DailyQuoteCard } from '../components/dashboard-cards';
@@ -54,6 +55,7 @@ export function AdminHomeScreen() {
         </View>
       )}
       <DailyQuoteCard />
+      <ConstructionCard data={data?.overview?.pipeline?.construction} title="Open leads by construction stage" />
 
       {data && (
         <>

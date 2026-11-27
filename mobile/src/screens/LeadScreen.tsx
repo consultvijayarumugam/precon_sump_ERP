@@ -9,6 +9,8 @@ import { SharedNotes } from '../components/lead-notes';
 import { ReassignSheet } from '../components/reassign-sheet';
 import { SiteVisitSheet, VisitRow } from '../components/site-visit';
 import { StageSheet } from '../components/stage-sheet';
+import { ConstructionBadge, ConstructionSheet } from '../components/construction';
+import { constructionLabel } from '../lib/construction';
 import { canMoveStage as canMoveLeadStage, stageRole } from '../lib/stages';
 import { Button, Centered, ErrorBanner, StageBadge } from '../components/ui';
 import { useLeadActions } from '../components/use-lead-actions';
@@ -60,7 +62,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
   const canVisit = can('sitevisit.write') && lead.assignedTo?.id === user.id;
   // Admin only, once the lead is with sales (as on the web).
   const canReassign = can('leads.assign') && wasHandedOver(lead);
-  const [salesSheet, setSalesSheet] = useState<'stage' | 'visit' | 'reassign' | null>(null);
+  const [salesSheet, setSalesSheet] = useState<'stage' | 'construction' | 'visit' | 'reassign' | null>(null);
   // Telecallers edit their own leads with leads.qualify (the server checks the scope), as on web.
   const canEdit = can('leads.write') || can('leads.qualify');
   const [editing, setEditing] = useState(false);
@@ -117,6 +119,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
             {leadLabel(lead)}
           </Text>
           <StageBadge status={lead.status} stage={lead.stage} />
+          <ConstructionBadge stage={lead.constructionStage} />
         </View>
 
         <View style={styles.actions}>
@@ -147,10 +150,16 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
             />
           )}
         </View>
-        {(canMoveStage || canVisit) && (
+        {canMoveStage && (
+          // Two independent labels; neither changes who has the lead.
           <View style={styles.actions}>
-            {canMoveStage && <Button testID="move-stage" label="Move stage" icon="git-commit-outline" tone="secondary" onPress={() => setSalesSheet('stage')} style={styles.flex} />}
-            {canVisit && <Button testID="lead-at-site" label="I'm at site" icon="navigate" tone="secondary" onPress={() => setSalesSheet('visit')} style={styles.flex} />}
+            <Button testID="move-stage" label="Lead status" icon="git-commit-outline" tone="secondary" onPress={() => setSalesSheet('stage')} style={styles.flex} />
+            <Button testID="set-construction" label="Construction" icon="construct-outline" tone="secondary" onPress={() => setSalesSheet('construction')} style={styles.flex} />
+          </View>
+        )}
+        {canVisit && (
+          <View style={styles.actions}>
+            <Button testID="lead-at-site" label="I'm at site" icon="navigate" tone="secondary" onPress={() => setSalesSheet('visit')} style={styles.flex} />
           </View>
         )}
         {actions.canQualify && canQualifyHere && <Button testID="qualify" label="Qualify & hand over" icon="sparkles-outline" tone="qualify" onPress={actions.qualify} style={styles.qualify} />}
@@ -165,6 +174,7 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           )}
         </View>
         <View style={styles.card}>
+          <Info label="Construction stage">{constructionLabel(lead.constructionStage)}</Info>
           <Info label="City">{lead.city ?? '-'}</Info>
           <Info label="Product">{productLabel(lead) ?? 'Not known yet'}</Info>
           <Info label="Source">{`${SOURCE_LABELS[lead.source] ?? lead.source}${lead.sourceDetail ? ` · ${lead.sourceDetail}` : ''}`}</Info>
@@ -259,6 +269,17 @@ function LeadBody({ lead, id, refreshing, onRefresh, reloadLead }: { lead: LeadD
           onDone={(message) => {
             setFollowUp(null);
             ToastAndroid.show(message, ToastAndroid.SHORT);
+            reloadAll();
+          }}
+        />
+      )}
+      {salesSheet === 'construction' && (
+        <ConstructionSheet
+          lead={lead}
+          onClose={() => setSalesSheet(null)}
+          onDone={(name) => {
+            setSalesSheet(null);
+            ToastAndroid.show(`${leadLabel(lead)}: construction stage ${name}`, ToastAndroid.LONG);
             reloadAll();
           }}
         />

@@ -1,4 +1,5 @@
 // Types and rules of the telecaller workflow, mirroring the API and web/src/lib/workflow.ts.
+import type { ConstructionBreakdown, ConstructionRef } from './construction.ts';
 
 export const CALL_OUTCOMES = ['NO_ANSWER', 'BUSY', 'CALL_BACK', 'INTERESTED', 'NOT_INTERESTED', 'WRONG_NUMBER'] as const;
 export type CallOutcome = (typeof CALL_OUTCOMES)[number];
@@ -62,6 +63,8 @@ export interface WorklistItem {
   city: string | null;
   status: LeadStatus;
   stage: StageRef | null;
+  /** Where the customer's building is; null = Not known (older servers don't send it). */
+  constructionStage?: ConstructionRef;
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   createdAt: string;
@@ -74,6 +77,8 @@ export interface WorklistItem {
 }
 
 export interface TelecallerData {
+  /** Your open leads per construction stage (older servers don't send it). */
+  construction?: ConstructionBreakdown;
   counts: { newToday: number; callbacksDueToday: number; overdue: number; callsToday: number; callsThisWeek: number; qualifiedToday: number; notCalledYet: number };
   items: WorklistItem[];
 }
@@ -96,6 +101,8 @@ export interface LeadDetail {
   sourceDetail: string | null;
   status: LeadStatus;
   stage: StageRef | null;
+  /** Where the customer's building is; null = Not known (older servers don't send it). */
+  constructionStage?: ConstructionRef;
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   notes: string | null;

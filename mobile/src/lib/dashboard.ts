@@ -2,6 +2,7 @@
 // stage, and the full lead list. Mirrors GET /notifications/summary,
 // GET /leads/summary and GET /leads.
 import type { PipelineStage } from './sales.ts';
+import type { ConstructionBreakdown, ConstructionRef } from './construction.ts';
 import type { LeadStatus, ProductInterest, StageRef } from './workflow.ts';
 
 interface ReminderFollowUp {
@@ -37,6 +38,8 @@ export interface LeadListItem {
   source: string;
   status: LeadStatus;
   stage: StageRef | null;
+  /** Where the customer's building is; null = Not known (older servers don't send it). */
+  constructionStage?: ConstructionRef;
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   nextFollowUpAt: string | null;
@@ -93,18 +96,44 @@ export function pipelineRows(stages: PipelineStage[], counts: Record<string, num
  * How many leads each stage holds under the list's other filters (GET /leads/stage-counts):
  * search, dates and person, but not the stage itself.
  */
-export function stageCountsQuery({ search, dates = [], assignedToId }: { search?: string; dates?: [string, string][]; assignedToId?: string }) {
+export function stageCountsQuery({
+  search,
+  dates = [],
+  assignedToId,
+  stageId,
+  constructionStageId,
+}: {
+  search?: string;
+  dates?: [string, string][];
+  assignedToId?: string;
+  /** The other picker's choice: the server leaves each picker's own filter out of its counts. */
+  stageId?: string;
+  constructionStageId?: string;
+}) {
   const params: [string, string][] = [];
   const term = search?.trim();
   if (term) params.push(['search', term]);
   params.push(...dates);
   if (assignedToId) params.push(['assignedToId', assignedToId]);
+  if (stageId) params.push(['stageId', stageId]);
+  if (constructionStageId) params.push(['constructionStageId', constructionStageId]);
   return `/leads/stage-counts${params.length ? `?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}` : ''}`;
 }
 
 export interface StageCounts {
   total: number;
   stages: { stageId: string | null; count: number }[];
+  /** Per construction stage (constructionStageId null = Not known); older servers don't send it. */
+  constructionTotal?: number;
+  construction?: { constructionStageId: string | null; count: number }[];
+}
+
+/** "Foundation · 4" for a construction chip: id 'all' = every lead, 'none' = Not known. */
+export function constructionChipLabel(name: string, counts: StageCounts | null, id: string): string {
+  if (!counts?.construction) return name;
+  const count =
+    id === 'all' ? (counts.constructionTotal ?? 0) : (counts.construction.find((c) => c.constructionStageId === (id === 'none' ? null : id))?.count ?? 0);
+  return `${name} · ${count}`;
 }
 
 /** "RNR · 12" for a stage chip; just the name while counts load or when a count wouldn't match the list. */
@@ -114,12 +143,30 @@ export function chipLabel(name: string, counts: StageCounts | null, stageId: str
   return `${name} · ${count}`;
 }
 
-export function leadListQuery({ search, status, stageId, dates = [], page, pageSize = 30 }: { search?: string; status?: LeadStatus; stageId?: string; dates?: [string, string][]; page: number; pageSize?: number }) {
+export function leadListQuery({
+  search,
+  status,
+  stageId,
+  constructionStageId,
+  dates = [],
+  page,
+  pageSize = 30,
+}: {
+  search?: string;
+  status?: LeadStatus;
+  stageId?: string;
+  /** A construction stage id, or 'none' for Not known. */
+  constructionStageId?: string;
+  dates?: [string, string][];
+  page: number;
+  pageSize?: number;
+}) {
   const params: [string, string][] = [];
   const term = search?.trim();
   if (term) params.push(['search', term]);
   if (status) params.push(['status', status]);
   if (stageId) params.push(['stageId', stageId]);
+  if (constructionStageId) params.push(['constructionStageId', constructionStageId]);
   params.push(...dates);
   params.push(['page', String(page)], ['pageSize', String(pageSize)]);
   return `/leads?${params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;

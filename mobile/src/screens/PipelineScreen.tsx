@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { ConstructionCard } from '../components/construction';
 import { Stack, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
@@ -70,7 +71,7 @@ export function PipelineScreen() {
             )}
             {data ? (
               <PipelineCard
-                title="Leads per stage"
+                title="Leads per lead status"
                 subtitle={`${data.pipeline.OPEN ?? data.pipeline.QUALIFIED + data.pipeline.QUOTED} open deals · tap a stage to see its leads`}
                 rows={rows}
                 extra={[
@@ -78,7 +79,8 @@ export function PipelineScreen() {
                   { key: 'lost', label: 'Lost this month', count: data.pipeline.lostThisMonth, tone: 'muted', status: 'LOST' },
                 ]}
               />
-            ) : (
+            ) : null}
+            {data ? <ConstructionCard data={data.construction} title="My open leads by construction stage" /> : (
               <View style={salesStyles.loading}>{error ? <Button label="Try again" onPress={reload} /> : <Centered />}</View>
             )}
           </>

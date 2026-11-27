@@ -17,6 +17,7 @@ import {
   TAGS,
 } from "@/lib/crm";
 import { pickableStages, useStages } from "@/lib/stages";
+import { NOT_KNOWN, pickableConstruction, useConstructionStages } from "@/lib/construction";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 
@@ -30,17 +31,21 @@ export interface LeadFormValues {
   productInterest: ProductInterest | "";
   /** "" = not decided yet (sumps only). */
   sumpSizeLitres: string;
-  /** Pipeline stage id; "" = the first stage (New) for a new lead. */
+  /** Lead status (pipeline stage) id; "" = New for a new lead. */
   stageId: string;
+  /** Construction stage id; "" = Not known. */
+  constructionStageId: string;
   notes: string;
   assignedToId: string;
 }
 
 /** What the form submits: assignedToId is null for "unassigned", absent if the user can't assign. */
-export type LeadSubmitValues = Omit<LeadFormValues, "name" | "assignedToId" | "sumpSizeLitres" | "productInterest" | "stageId"> & {
+export type LeadSubmitValues = Omit<LeadFormValues, "name" | "assignedToId" | "sumpSizeLitres" | "productInterest" | "stageId" | "constructionStageId"> & {
   /** null = no name yet (screens show the phone). */
   name: string | null;
   stageId?: string;
+  /** null = Not known; absent for a new lead (it starts Not known). */
+  constructionStageId?: string | null;
   productInterest: ProductInterest | null;
   assignedToId?: string | null;
   sumpSizeLitres: number | null;
@@ -78,6 +83,7 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
   const lockContact = !can(TAGS.LEADS_WRITE);
   const assignees = useApi<Assignee[]>(canAssign ? "/leads/assignees" : null);
   const stages = useStages();
+  const construction = useConstructionStages(Boolean(initial));
 
   const [values, setValues] = useState<LeadFormValues>({
     name: initial?.name ?? "",
@@ -89,6 +95,7 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     productInterest: initial?.productInterest ?? "",
     sumpSizeLitres: initial?.sumpSizeLitres ? String(initial.sumpSizeLitres) : "",
     stageId: initial?.stage?.id ?? "",
+    constructionStageId: initial?.constructionStage?.id ?? "",
     notes: initial?.notes ?? "",
     assignedToId: initial?.assignedTo?.id ?? "",
   });
@@ -106,12 +113,14 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     setError(null);
     setExistingLeadId(null);
     try {
-      const { assignedToId, sumpSizeLitres, productInterest, stageId, name, ...rest } = values;
+      const { assignedToId, sumpSizeLitres, productInterest, stageId, constructionStageId, name, ...rest } = values;
       await onSubmit({
         ...rest,
         name: name.trim() || null,
         // Only an existing lead's stage is sent; a new lead always starts in New.
         ...(initial && stageId ? { stageId } : {}),
+        // Only an existing lead's construction stage is sent; a new lead starts Not known.
+        ...(initial ? { constructionStageId: constructionStageId || null } : {}),
         productInterest: productInterest || null,
         // A size only applies to sumps; "" = not decided yet.
         sumpSizeLitres: values.productInterest === "SUMP" && sumpSizeLitres ? Number(sumpSizeLitres) : null,
@@ -194,9 +203,9 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
             </select>
           </Field>
         )}
-        {/* Every new lead starts in New; the stage is set afterwards as the conversation goes. */}
+        {/* Every new lead starts New + Not known; both are set afterwards as the conversation goes. */}
         {initial && (
-          <Field label="Stage">
+          <Field label="Lead status">
             <select className={inputClass} value={values.stageId} onChange={(e) => set("stageId", e.target.value)}>
               {pickableStages(stages.data, initial?.stage?.id)
                 .map((st) => (
@@ -205,6 +214,19 @@ export function LeadForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
                     {st.isActive ? "" : " (switched off)"}
                   </option>
                 ))}
+            </select>
+          </Field>
+        )}
+        {initial && (
+          <Field label="Construction stage">
+            <select className={inputClass} value={values.constructionStageId} onChange={(e) => set("constructionStageId", e.target.value)}>
+              <option value="">{NOT_KNOWN}</option>
+              {pickableConstruction(construction.data?.stages, initial?.constructionStage?.id).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.isActive ? "" : " (switched off)"}
+                </option>
+              ))}
             </select>
           </Field>
         )}

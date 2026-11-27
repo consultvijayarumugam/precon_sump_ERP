@@ -1,5 +1,6 @@
 "use client";
 
+import { ConstructionBadge } from "@/components/construction-breakdown";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
@@ -46,6 +47,7 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                   {leadLabel(lead)}
                 </Link>
                 {variant === "all" && <StatusBadge status={lead.status} stage={lead.stage} />}
+                {variant === "all" && <ConstructionBadge stage={lead.constructionStage} />}
               </div>
               <p className="mt-0.5 text-xs text-neutral-500">
                 {[lead.city, productInterestLabel(lead), SOURCE_LABELS[lead.source], showOwner ? (lead.assignedTo?.fullName ?? "Not assigned") : null].filter(Boolean).join(" · ")}
@@ -76,7 +78,8 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
             <th className={thClass}>Phone</th>
             <th className={thClass}>Product</th>
             <th className={thClass}>Source</th>
-            {variant === "all" && <th className={thClass}>Status</th>}
+            {variant === "all" && <th className={thClass}>Lead status</th>}
+            {variant === "all" && <th className={thClass}>Construction</th>}
             {showOwner && <th className={thClass}>Assigned to</th>}
             <th className={thClass}>{variant === "won" ? "Won on" : "Next follow-up"}</th>
           </tr>
@@ -106,6 +109,11 @@ export function LeadsTable({ leads, variant = "all", onChanged }: { leads: LeadL
                 {variant === "all" && (
                   <td className={tdClass}>
                     <StatusBadge status={lead.status} stage={lead.stage} />
+                  </td>
+                )}
+                {variant === "all" && (
+                  <td className={tdClass}>
+                    <ConstructionBadge stage={lead.constructionStage} />
                   </td>
                 )}
                 {showOwner && (

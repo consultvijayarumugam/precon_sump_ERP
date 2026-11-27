@@ -3027,7 +3027,7 @@ describe('Auth and RBAC (e2e)', () => {
 
       // Now it's Suresh's: Tara can't change its stage, and it can't be handed over again.
       const refused = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: stage.CONTACTED.id }).expect(403);
-      expect(refused.body.message).toMatch(/only they or an admin can change its stage/);
+      expect(refused.body.message).toMatch(/only they or an admin can change its status or construction stage/);
       await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(tara)).send({ productInterest: 'SUMP' }).expect(404); // not hers to hand over
       const again = await http().post(`/api/v1/leads/${lead.id}/qualify`).set(as(admin)).send({ productInterest: 'SUMP' }).expect(400);
       expect(again.body.message).toMatch(/already with Suresh Sales/);
@@ -3104,6 +3104,175 @@ describe('Auth and RBAC (e2e)', () => {
       // Sales see none of Tara's; admin sees all.
       expect((await counts(sales)).total).toBe(0);
       expect(of(await counts(admin), 'QUOTED')).toBe(2);
+    });
+  });
+
+  describe('Two independent labels: lead status and construction stage', () => {
+    const as = (token: string) => ({ Authorization: `Bearer ${token}` });
+    const http = () => request(app.getHttpServer());
+    const created: string[] = [];
+    type Stage = { id: string; key: string; name: string; isActive: boolean };
+    let status: Record<string, Stage> = {};
+    let construction: Record<string, Stage> = {};
+
+    async function prisma() {
+      const { PrismaService } = await import('./../src/prisma/prisma.service.js');
+      return app.get(PrismaService);
+    }
+    const tokens = async () => ({
+      admin: (await login('admin@precon.local')).body.accessToken as string,
+      tara: (await login('telecaller@precon.local')).body.accessToken as string,
+      sales: (await login('sales@precon.local')).body.accessToken as string,
+    });
+
+    beforeAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { phone: { startsWith: '+9190000980' } } });
+      const { admin } = await tokens();
+      status = Object.fromEntries(((await http().get('/api/v1/pipeline-stages').set(as(admin)).expect(200)).body as Stage[]).map((x) => [x.key, x]));
+      const list = (await http().get('/api/v1/construction-stages').set(as(admin)).expect(200)).body;
+      expect(list.notKnown.name).toBe('Not known');
+      construction = Object.fromEntries((list.stages as Stage[]).map((x) => [x.key, x]));
+    });
+    afterAll(async () => {
+      await (await prisma()).lead.deleteMany({ where: { id: { in: created } } });
+    });
+
+    it('seeded construction stages; new leads start New + Not known', async () => {
+      expect(Object.values(construction).map((c) => c.name).slice(0, 6)).toEqual(['Planning', 'Foundation', 'Plinth Beam', 'Basement', 'Roof', 'Finishing']);
+      const { admin } = await tokens();
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000098001', source: 'META' }).expect(201)).body;
+      created.push(lead.id);
+      expect(lead).toMatchObject({ stage: { key: 'NEW' }, constructionStage: null });
+      await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000098002', source: 'META', constructionStageId: construction.foundation.id }).expect(400);
+    });
+
+    it('the owner sets both independently (Quoted AND Foundation); neither reassigns; both are in the history', async () => {
+      const db = await prisma();
+      const { admin, tara, sales } = await tokens();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000098003', source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+      created.push(lead.id);
+
+      const a = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: status.QUOTED.id }).expect(200)).body;
+      expect(a).toMatchObject({ stage: { key: 'QUOTED' }, constructionStage: null, assignedTo: { id: taraUser.id } });
+      const b = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ constructionStageId: construction.foundation.id }).expect(200)).body;
+      expect(b).toMatchObject({ stage: { key: 'QUOTED' }, constructionStage: { name: 'Foundation' }, assignedTo: { id: taraUser.id } });
+      // Both at once, then back to Not known.
+      const c = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ stageId: status.CONTACTED.id, constructionStageId: construction.roof.id }).expect(200)).body;
+      expect(c).toMatchObject({ stage: { key: 'CONTACTED' }, constructionStage: { name: 'Roof' } });
+      const d = (await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ constructionStageId: null }).expect(200)).body;
+      expect(d.constructionStage).toBeNull();
+
+      const history = ((await http().get(`/api/v1/leads/${lead.id}/history`).set(as(admin)).expect(200)).body as { message: string }[]).map((h) => h.message);
+      expect(history).toEqual(expect.arrayContaining([
+        'Stage: New → Quoted',
+        'Construction stage: Not known → Foundation',
+        'Construction stage: Foundation → Roof',
+        'Construction stage: Roof → Not known',
+      ]));
+
+      // Only the owner (or an admin): sales can't see it; a switched-off stage can't be picked.
+      await http().patch(`/api/v1/leads/${lead.id}`).set(as(sales)).send({ constructionStageId: construction.roof.id }).expect(404);
+      await http().patch(`/api/v1/construction-stages/${construction.finishing.id}`).set(as(admin)).send({ isActive: false }).expect(200);
+      try {
+        const off = await http().patch(`/api/v1/leads/${lead.id}`).set(as(tara)).send({ constructionStageId: construction.finishing.id }).expect(400);
+        expect(off.body.message).toMatch(/switched off/);
+      } finally {
+        await http().patch(`/api/v1/construction-stages/${construction.finishing.id}`).set(as(admin)).send({ isActive: true }).expect(200);
+      }
+    });
+
+    it('filters and counts: each picker counts under the other filters; Not known is filterable', async () => {
+      const db = await prisma();
+      const { admin, tara } = await tokens();
+      const taraUser = await db.user.findUniqueOrThrow({ where: { email: 'telecaller@precon.local' } });
+      const plan: [string, string | null][] = [['QUOTED', 'foundation'], ['QUOTED', 'foundation'], ['QUOTED', null], ['CONTACTED', 'foundation']];
+      for (const [i, [st, cs]] of plan.entries()) {
+        const l = (await http().post('/api/v1/leads').set(as(admin)).send({ name: `E2E Split ${i}`, phone: `900009801${i}`, source: 'META', assignedToId: taraUser.id }).expect(201)).body;
+        created.push(l.id);
+        await http().patch(`/api/v1/leads/${l.id}`).set(as(tara)).send({ stageId: status[st].id, constructionStageId: cs ? construction[cs].id : null }).expect(200);
+      }
+      const q = 'search=E2E%20Split';
+      const counts = async (extra = '') => (await http().get(`/api/v1/leads/stage-counts?${q}${extra}`).set(as(tara)).expect(200)).body as {
+        total: number; stages: { stageId: string; count: number }[]; constructionTotal: number; construction: { constructionStageId: string | null; count: number }[];
+      };
+      const all = await counts();
+      const cOf = (c: typeof all, id: string | null) => c.construction.find((x) => x.constructionStageId === id)?.count ?? 0;
+      const sOf = (c: typeof all, key: string) => c.stages.find((x) => x.stageId === status[key].id)?.count ?? 0;
+      expect([all.total, sOf(all, 'QUOTED'), sOf(all, 'CONTACTED')]).toEqual([4, 3, 1]);
+      expect([all.constructionTotal, cOf(all, construction.foundation.id), cOf(all, null)]).toEqual([4, 3, 1]);
+      // Picking Quoted narrows the construction counts (and vice versa), not their own.
+      const quoted = await counts(`&stageId=${status.QUOTED.id}`);
+      expect([quoted.total, cOf(quoted, construction.foundation.id), cOf(quoted, null)]).toEqual([4, 2, 1]);
+      const foundation = await counts(`&constructionStageId=${construction.foundation.id}`);
+      expect([foundation.constructionTotal, sOf(foundation, 'QUOTED'), sOf(foundation, 'CONTACTED')]).toEqual([4, 2, 1]);
+      // The list itself, with both filters, and Not known.
+      const listed = async (extra: string) => (await http().get(`/api/v1/leads?${q}${extra}`).set(as(tara)).expect(200)).body.total;
+      expect(await listed(`&stageId=${status.QUOTED.id}&constructionStageId=${construction.foundation.id}`)).toBe(2);
+      expect(await listed('&constructionStageId=none')).toBe(1);
+      await http().get(`/api/v1/leads?constructionStageId=bogus`).set(as(tara)).expect(400);
+
+      // Dashboards show the construction breakdown beside the status pipeline.
+      const bench = (await http().get('/api/v1/dashboards/telecaller').set(as(tara)).expect(200)).body;
+      expect(bench.construction.notKnown.name).toBe('Not known');
+      expect(bench.construction.stages.find((c: { name: string }) => c.name === 'Foundation').leads).toBeGreaterThanOrEqual(3);
+      expect(bench.items.find((i: { name: string }) => i.name === 'E2E Split 0').constructionStage.name).toBe('Foundation');
+      const master = (await http().get('/api/v1/dashboards/master').set(as(admin)).expect(200)).body;
+      expect(master.overview.pipeline.construction.stages.map((c: { name: string }) => c.name)).toContain("Foundation");
+    });
+
+    it('admin manages the construction list: add, rename, reorder, switch off, delete only when empty; others cannot', async () => {
+      const { admin, tara } = await tokens();
+      await http().post('/api/v1/construction-stages').set(as(tara)).send({ name: 'E2E Lintel' }).expect(403);
+      const added = (await http().post('/api/v1/construction-stages').set(as(admin)).send({ name: 'E2E Lintel', afterId: construction['plinth-beam'].id }).expect(201)).body;
+      try {
+        let list = (await http().get('/api/v1/construction-stages').set(as(admin)).expect(200)).body.stages as Stage[];
+        expect(list.map((x) => x.name).indexOf('E2E Lintel')).toBe(list.map((x) => x.name).indexOf('Plinth Beam') + 1);
+        await http().patch(`/api/v1/construction-stages/${added.id}`).set(as(admin)).send({ name: 'E2E Lintel Beam' }).expect(200);
+        await http().patch(`/api/v1/construction-stages/${added.id}`).set(as(admin)).send({ name: 'Not known' }).expect(400);
+        await http().post('/api/v1/construction-stages').set(as(admin)).send({ name: 'roof' }).expect(409);
+        const ids = list.map((x) => x.id);
+        await http().put('/api/v1/construction-stages/order').set(as(admin)).send({ ids: [added.id, ...ids.filter((x) => x !== added.id)] }).expect(200);
+        list = (await http().get('/api/v1/construction-stages').set(as(admin)).expect(200)).body.stages;
+        expect(list[0].name).toBe('E2E Lintel Beam');
+        await http().put('/api/v1/construction-stages/order').set(as(admin)).send({ ids }).expect(200); // back
+      } finally {
+        await http().delete(`/api/v1/construction-stages/${added.id}`).set(as(admin)).expect(204);
+      }
+      // A stage with leads can't be deleted.
+      const busy = await http().delete(`/api/v1/construction-stages/${construction.foundation.id}`).set(as(admin)).expect(409);
+      expect(busy.body.message).toMatch(/Switch it off instead/);
+    });
+
+    it('the data migration maps an old construction-type status to the new field and keeps the lead and its history', async () => {
+      const db = await prisma();
+      const { admin } = await tokens();
+      const { readFileSync, readdirSync } = await import('node:fs');
+      const path = await import('node:path');
+      const dir = path.join(process.cwd(), 'prisma', 'migrations');
+      const sql = readFileSync(path.join(dir, readdirSync(dir).find((d) => d.endsWith('_construction_stages'))!, 'migration.sql'), 'utf8');
+      const doBlock = sql.slice(sql.indexOf('DO $migration$'));
+
+      // An old-style "Roof Stage" status with a lead in it, as on the live server.
+      const roofStatus = (await http().post('/api/v1/pipeline-stages').set(as(admin)).send({ name: 'Roof Stage' }).expect(201)).body;
+      const lead = (await http().post('/api/v1/leads').set(as(admin)).send({ phone: '9000098020', source: 'META' }).expect(201)).body;
+      created.push(lead.id);
+      await http().patch(`/api/v1/leads/${lead.id}`).set(as(admin)).send({ stageId: roofStatus.id }).expect(200);
+      const historyBefore = await db.leadActivity.count({ where: { leadId: lead.id } });
+
+      await db.$executeRawUnsafe(doBlock);
+
+      const after = await db.lead.findUniqueOrThrow({ where: { id: lead.id }, include: { stage: true, constructionStage: true } });
+      expect(after.constructionStage?.name).toBe('Roof');
+      expect(after.stage?.phase).toBe('QUOTED'); // a Quoted-phase status, as it was
+      expect(after.stage?.name).not.toBe('Roof Stage');
+      expect(await db.pipelineStage.count({ where: { id: roofStatus.id } })).toBe(0); // left the status list
+      const history = await db.leadActivity.findMany({ where: { leadId: lead.id }, orderBy: { createdAt: 'desc' } });
+      expect(history).toHaveLength(historyBefore + 1); // nothing lost, one line added
+      expect(history[0].message).toMatch(/^System update: pipeline split .* Lead status Roof Stage → .*; construction stage set to Roof$/);
+      // Running it again changes nothing.
+      await db.$executeRawUnsafe(doBlock);
+      expect(await db.leadActivity.count({ where: { leadId: lead.id } })).toBe(historyBefore + 1);
     });
   });
 });

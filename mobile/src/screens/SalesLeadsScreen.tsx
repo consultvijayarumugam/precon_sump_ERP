@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { ConstructionBadge } from '../components/construction';
 import { useRouter } from 'expo-router';
 import { memo, useMemo, useState, type ReactElement } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
@@ -37,6 +38,11 @@ export const SalesCard = memo(function SalesCard({ lead, onChanged }: { lead: Sa
           <StageBadge status={lead.status} stage={lead.stage} />
           <Ionicons name="chevron-forward" size={18} color={colors.ink3} />
         </View>
+        {lead.constructionStage ? (
+          <View style={{ flexDirection: 'row', marginTop: 4 }}>
+            <ConstructionBadge stage={lead.constructionStage} />
+          </View>
+        ) : null}
         {details !== '' && <Text style={styles.details}>{details}</Text>}
         <Text style={[styles.followUp, { color: bucket === 'overdue' ? colors.red : bucket === 'none' ? colors.ink3 : colors.ink2 }]}>{followUp}</Text>
         {lead.nextFollowUp?.note ? <Text style={styles.details}>{lead.nextFollowUp.note}</Text> : null}

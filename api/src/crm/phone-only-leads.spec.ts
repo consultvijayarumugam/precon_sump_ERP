@@ -134,7 +134,7 @@ describe('New lead by hand: duplicates by phone', () => {
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
     };
     const stages = { byKind: vi.fn(async () => ({ id: 'stage-new', name: 'New', phase: 'NEW' })) };
-    return { service: new LeadsService(db as never, {} as never, stages as never), created, activities };
+    return { service: new LeadsService(db as never, {} as never, stages as never, {} as never), created, activities };
   }
 
   it('a phone-only lead is created with no name and source Manual', async () => {

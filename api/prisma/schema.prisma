@@ -213,6 +213,10 @@ model Lead {
   // two consistent (see the pipeline_stages migration).
   stageId         String?          @map("stage_id") @db.Uuid
   stage           PipelineStage?   @relation(fields: [stageId], references: [id])
+  // Where the customer's building is (Planning, Foundation, ...). Independent of the lead status;
+  // null = "Not known". Only a label: it never changes who has the lead.
+  constructionStageId String?            @map("construction_stage_id") @db.Uuid
+  constructionStage   ConstructionStage? @relation(fields: [constructionStageId], references: [id])
   notes           String?
   // Where it came from in more detail, e.g. "Import: march-leads.xlsx",
   // "API key: Website form", "Meta lead form 123 (leadgen 456)".
@@ -255,6 +259,7 @@ model Lead {
   @@index([createdAt])
   @@index([telecallerId, createdAt])
   @@index([stageId])
+  @@index([constructionStageId])
   @@index([status, closedAt])
   @@index([phone])
   @@map("leads")
@@ -947,6 +952,22 @@ model PipelineStage {
 
   @@index([position])
   @@map("pipeline_stages")
+}
+
+// The construction stages the admin manages (Admin → Lead statuses & construction stages).
+// "Not known" isn't a row: it's a lead with no construction stage, always first.
+model ConstructionStage {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  name      String   @unique
+  position  Int
+  isActive  Boolean  @default(true) @map("is_active")
+  leads     Lead[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([position])
+  @@map("construction_stages")
 }
 
 enum FileCategory {

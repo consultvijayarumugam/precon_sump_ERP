@@ -17,6 +17,7 @@ import { api, apiPatch, apiPost, apiPut } from "@/lib/api";
 import { PipelineStage, useStages } from "@/lib/stages";
 import { TAGS } from "@/lib/tags";
 import { useAction } from "@/lib/use-api";
+import { ConstructionStagesAdmin } from "@/components/construction-stages-admin";
 
 /** Which phase a middle stage counts as in reports. It never decides who has a lead. */
 const SIDE: Record<string, string> = {
@@ -190,9 +191,15 @@ export default function PipelineStagesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Pipeline stages"
-        subtitle="Shape the middle of the pipeline. New, Won and Lost are protected because revenue, the Won list and closing a lead depend on them."
+        title="Lead statuses & construction stages"
+        subtitle="Two separate lists. A lead has one of each: its lead status (the sales conversation) and its construction stage (where the customer's building is). Changing either never changes who has the lead."
       />
+      <div>
+        <h2 className="text-lg font-bold tracking-tight">Lead statuses</h2>
+        <p className="text-sm text-[var(--ps-ink-2)]">
+          The sales conversation. Shape the middle; New, Won and Lost are protected because revenue, the Won list and closing a lead depend on them.
+        </p>
+      </div>
       <ErrorText error={error ?? action.error} />
 
       <section className={`${panelClass} overflow-hidden`}>
@@ -218,7 +225,7 @@ export default function PipelineStagesPage() {
 
       <form onSubmit={add} className={`${panelClass} flex flex-wrap items-end gap-3 p-4`}>
         <label className="min-w-[14rem] flex-1 text-sm">
-          <span className="mb-1.5 block font-medium text-[var(--ps-ink-2)]">New stage name</span>
+          <span className="mb-1.5 block font-medium text-[var(--ps-ink-2)]">New lead status</span>
           <input className={inputClass} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Site visit done" maxLength={40} />
         </label>
         <label className="text-sm">
@@ -234,12 +241,14 @@ export default function PipelineStagesPage() {
           </select>
         </label>
         <button type="submit" className={buttonSmClass} disabled={action.busy || newName.trim().length < 2}>
-          <Plus className="size-4" aria-hidden /> Add stage
+          <Plus className="size-4" aria-hidden /> Add lead status
         </button>
       </form>
 
+      <ConstructionStagesAdmin />
+
       <section className={`${panelClass} space-y-2 p-5 text-sm text-[var(--ps-ink-2)]`}>
-        <h2 className="font-semibold text-[var(--ps-ink)]">How stages work</h2>
+        <h2 className="font-semibold text-[var(--ps-ink)]">How lead statuses work</h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>
             A stage is only <strong>where the conversation is</strong>. It never changes who has the lead: a lead stays with the person it&apos;s

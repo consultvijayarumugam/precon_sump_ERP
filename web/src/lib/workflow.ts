@@ -2,6 +2,7 @@
 // qualification, GPS check-ins) and the three role dashboards.
 import type { LeadSource, LeadStatus, ProductInterest, UserRef } from "@/lib/crm";
 import type { StageRef } from "@/lib/stages";
+import type { ConstructionBreakdown, ConstructionRef } from "@/lib/construction";
 
 export const CALL_OUTCOMES = ["NO_ANSWER", "BUSY", "CALL_BACK", "INTERESTED", "NOT_INTERESTED", "WRONG_NUMBER"] as const;
 export type CallOutcome = (typeof CALL_OUTCOMES)[number];
@@ -35,6 +36,8 @@ export interface WorklistItem {
   city: string | null;
   status: LeadStatus;
   stage: StageRef | null;
+  /** Where the customer's building is; null = Not known. */
+  constructionStage: ConstructionRef;
   source: LeadSource;
   sourceDetail: string | null;
   productInterest: ProductInterest | null;
@@ -48,6 +51,8 @@ export interface WorklistItem {
 }
 
 export interface TelecallerDashboardData {
+  /** Your open leads per construction stage. */
+  construction: ConstructionBreakdown;
   counts: {
     newToday: number;
     callbacksDueToday: number;
@@ -82,6 +87,8 @@ export interface SalesLead {
   city: string | null;
   status: LeadStatus;
   stage: StageRef | null;
+  /** Where the customer's building is; null = Not known. */
+  constructionStage: ConstructionRef;
   productInterest: ProductInterest | null;
   sumpSizeLitres: number | null;
   qualifiedAt: string | null;
@@ -91,6 +98,8 @@ export interface SalesLead {
 }
 
 export interface SalesDashboardData {
+  /** Your open leads per construction stage. */
+  construction: ConstructionBreakdown;
   /** OPEN: every open lead assigned to you, in any stage. The rest count by stage phase. */
   pipeline: { OPEN: number; QUALIFIED: number; QUOTED: number; WON: number; LOST: number; wonThisMonth: number; lostThisMonth: number };
   /** Stages in admin order with your open leads in each (Qualified/Quoted-phase ones always, others when they hold a lead). */
@@ -217,6 +226,8 @@ export interface MasterDashboardData {
       /** New + middle stages in admin order (switched-off ones only while they hold leads). */
       stages: { id: string; key: string; name: string; phase: LeadStatus; isActive: boolean; isHandover: boolean; leads: number }[];
       qualifiedYesterday: number;
+      /** All open leads per construction stage, beside the lead-status funnel. */
+      construction: ConstructionBreakdown;
     };
     revenue: {
       monthToDate: string;
